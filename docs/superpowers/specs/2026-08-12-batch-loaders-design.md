@@ -76,9 +76,11 @@ old workflows keep working). Unused slots return `None` and are hidden on the ca
 - **Drop zone** at the top of the node accepts multiple files; an **＋ Add** button opens a file
   picker (multi-select). Only files whose type matches the node (image / audio) are accepted;
   rejects are reported in the status line, not silently dropped.
-- **Rows**: one per file — thumbnail + pixel size for images, waveform glyph + duration + sample
-  rate for audio; a ⠿ drag grip to reorder; a ✕ to remove. **Sort by name** button for one-click
-  folder order. No inline audio player in v1.
+- **Rows**: one per file — thumbnail + pixel size for images, waveform glyph + duration for audio
+  (the file's native sample rate is not shown in the row: browsers resample on decode, and parsing
+  container headers per format isn't worth it in v1 — the `AUDIO` socket still carries the native
+  rate); a ⠿ drag grip to reorder; a ✕ to remove. **Sort by name** button for one-click folder
+  order. No inline audio player in v1.
 - **List order = socket order**: row 1 feeds `image_1`/`audio_1`, and so on. Files land in drop
   order.
 - **Grow/trim**: after any list change the JS trims `node.outputs` to `count` + the loaded groups
