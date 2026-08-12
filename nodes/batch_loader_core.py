@@ -69,3 +69,16 @@ def downscale_size(width, height, mode, max_size):
 
     # stretch
     return ((max_size, max_size), None)
+
+
+def remove_file(files, index):
+    """Remove ``files[index]`` without leaving a hole.
+
+    Returns ``(new_files, moved_names)`` where ``moved_names`` are the files that were
+    promoted one slot — the caller uses them to warn about disturbed wires.
+    """
+    if not 0 <= index < len(files):
+        raise IndexError(f"file index {index} out of range (have {len(files)}).")
+    new_files = files[:index] + files[index + 1:]
+    moved_names = [f["name"] for f in files[index + 1:]]
+    return new_files, moved_names

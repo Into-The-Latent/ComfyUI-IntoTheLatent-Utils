@@ -94,3 +94,34 @@ def test_unknown_mode_raises():
     import pytest
     with pytest.raises(ValueError, match="downscale_mode"):
         downscale_size(100, 100, "zoom", 1200)
+
+
+from nodes.batch_loader_core import remove_file
+
+
+def _files(*names):
+    return [{"name": n, "subfolder": "", "type": "input"} for n in names]
+
+
+def test_remove_middle_shifts_up():
+    new, moved = remove_file(_files("a.png", "b.png", "c.png"), 1)
+    assert [f["name"] for f in new] == ["a.png", "c.png"]
+    assert moved == ["c.png"]
+
+
+def test_remove_last_moves_nothing():
+    new, moved = remove_file(_files("a.png", "b.png"), 1)
+    assert [f["name"] for f in new] == ["a.png"]
+    assert moved == []
+
+
+def test_remove_does_not_mutate_input():
+    original = _files("a.png", "b.png")
+    remove_file(original, 0)
+    assert len(original) == 2
+
+
+def test_remove_bad_index_raises():
+    import pytest
+    with pytest.raises(IndexError):
+        remove_file(_files("a.png"), 5)
