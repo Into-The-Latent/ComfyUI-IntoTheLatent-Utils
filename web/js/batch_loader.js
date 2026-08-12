@@ -120,21 +120,26 @@ app.registerExtension({
         const free = MAX_FILES - node._blRows.length;
         const taking = files.slice(0, free);
         const skipped = files.length - taking.length;
+        let failed = null;
         for (const f of taking) {
           try {
             node._blRows.push(await uploadFile(f));
           } catch (e) {
-            setStatus("❌ " + e.message, "#e0555a");
+            failed = e.message;
             break;
           }
         }
         syncJson();
         node._blSyncOutputs();
         node._blRender?.();
-        const parts = [`${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded`];
-        if (skipped) parts.push(`only ${MAX_FILES} fit — ${skipped} skipped`);
-        if (rejected) parts.push(`${rejected} not ${cfg.kind} — ignored`);
-        setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; "), skipped || rejected ? "#e0a03c" : "#46b4e6");
+        if (failed) {
+          setStatus(`❌ ${failed} — ${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded before the error.`, "#e0555a");
+        } else {
+          const parts = [`${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded`];
+          if (skipped) parts.push(`only ${MAX_FILES} fit — ${skipped} skipped`);
+          if (rejected) parts.push(`${rejected} not ${cfg.kind} — ignored`);
+          setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; "), skipped || rejected ? "#e0a03c" : "#46b4e6");
+        }
       }
       node._blAddFiles = addFiles;
 
