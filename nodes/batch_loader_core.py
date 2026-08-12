@@ -41,3 +41,31 @@ def parse_files(raw):
             raise ValueError(f"{where}: 'subfolder' must be a string.")
         files.append({"name": name, "subfolder": subfolder, "type": "input"})
     return files
+
+
+def downscale_size(width, height, mode, max_size):
+    """Compute the downscale geometry for one image.
+
+    Returns ``((target_w, target_h), crop_box)``; ``crop_box`` is ``(left, top, right,
+    bottom)`` to apply before resizing, or ``None``. Triggers only when the longest edge
+    exceeds ``max_size``; ``fit`` and ``crop`` never upscale. ``stretch`` forces a
+    ``max_size`` square (its shorter side may grow — inherent to forcing a square).
+    """
+    if mode not in DOWNSCALE_MODES:
+        raise ValueError(f"Unknown downscale_mode {mode!r} — expected one of {DOWNSCALE_MODES}.")
+    if mode == "off" or max(width, height) <= max_size:
+        return ((width, height), None)
+
+    if mode == "fit":
+        scale = max_size / max(width, height)
+        return ((max(1, round(width * scale)), max(1, round(height * scale))), None)
+
+    if mode == "crop":
+        side = min(width, height)
+        left = (width - side) // 2
+        top = (height - side) // 2
+        target = min(side, max_size)
+        return ((target, target), (left, top, left + side, top + side))
+
+    # stretch
+    return ((max_size, max_size), None)
