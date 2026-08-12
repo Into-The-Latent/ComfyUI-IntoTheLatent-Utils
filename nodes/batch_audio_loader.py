@@ -52,8 +52,6 @@ def _load_audio(path):
             if not frames:
                 raise ValueError("file decoded to zero samples")
             wav = _f32_pcm(torch.cat(frames, dim=1))
-    except ValueError:
-        raise
     except Exception as e:
         raise ValueError(f"Could not read audio {os.path.basename(path)!r}: {e}") from e
     return {"waveform": wav.unsqueeze(0), "sample_rate": sr}

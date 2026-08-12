@@ -24,6 +24,7 @@ def _write_wav(path, sample_rate=22050, n=2205):
 
 
 def test_advanced_audio_and_filenames(input_dir):
+    import torch
     from nodes.batch_audio_loader import _run_audio
     _write_wav(input_dir / "vo.wav", sample_rate=22050)
     _write_wav(input_dir / "bed.wav", sample_rate=44100)
@@ -33,7 +34,8 @@ def test_advanced_audio_and_filenames(input_dir):
     a1, name1, a2 = out[1], out[2], out[3]
     assert a1["sample_rate"] == 22050          # native rate, no resampling
     assert a2["sample_rate"] == 44100
-    assert a1["waveform"].ndim == 3 and a1["waveform"].shape[0] == 1   # [1,C,S]
+    assert a1["waveform"].shape == (1, 1, 2205)   # batch=1, mono, 2205 samples
+    assert a1["waveform"].dtype == torch.float32
     assert name1 == "vo.wav"
     assert out[5] is None                       # padding after file 2's group
 
@@ -50,3 +52,11 @@ def test_missing_file_raises(input_dir):
     from nodes.batch_audio_loader import _run_audio
     with pytest.raises(ValueError, match="gone.wav"):
         _run_audio(json.dumps([{"name": "gone.wav"}]), advanced=False)
+
+
+def test_corrupt_file_raises(input_dir):
+    from nodes.batch_audio_loader import _run_audio
+    # Write a text file with .wav extension
+    (input_dir / "bad.wav").write_text("not audio data")
+    with pytest.raises(ValueError, match="bad.wav"):
+        _run_audio(json.dumps([{"name": "bad.wav"}]), advanced=False)
