@@ -209,8 +209,9 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
   status line whenever a change touches a socket that has a wire, so check your connections.
 - **Downscaling (image nodes):** set `downscale_mode` to `fit` (shrink keeping shape), `crop`
   (centered square) or `stretch` (forced square) and any image whose longest edge exceeds
-  `max_size` is shrunk on load — `off` (the default) passes images through untouched. Never
-  upscales; masks are resized with their image; originals in `input/` are never modified.
+  `max_size` is shrunk on load — `off` (the default) passes images through untouched. `fit` and
+  `crop` never upscale; `stretch` may enlarge the shorter side (forcing a square does that). Masks
+  are resized with their image; originals in `input/` are never modified.
 - **Masks** (Advanced): inverted alpha, exactly like stock Load Image — files without an alpha
   channel yield the stock 64×64 empty mask.
 - **Audio is never resampled** — each `audio_N` keeps its file's native sample rate.
