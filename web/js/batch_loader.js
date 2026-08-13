@@ -118,6 +118,8 @@ app.registerExtension({
     if (!cfg) return;
     ensureStyles();
 
+    const MIRRORED = ["downscale_mode", "max_size"];   // present on image nodes only; findWidget just misses on audio
+
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;
       const jsonW = findWidget(node, "files_json");
@@ -191,6 +193,137 @@ app.registerExtension({
       node._blDropEl = dropEl;
       node.addDOMWidget("batch_loader_drop", "drop", dropEl, { serialize: false });
 
+      // ── Rows list (DOM widget): one row per file, in socket order. ──
+      const listEl = document.createElement("div");
+      listEl.className = "ai2go-bl";
+      const rowsWidget = node.addDOMWidget("batch_loader_rows", "rows", listEl, { serialize: false });
+      let dragIndex = -1;
+
+      // Auto-fit node height to the rows (measured; the prompt_batch pattern).
+      function fitToContent() {
+        const h = Math.max(listEl.scrollHeight, 8);
+        rowsWidget.computeSize = () => [node.size?.[0] || 300, h + 8];
+        const want = node.computeSize?.();
+        if (want) node.setSize([node.size[0], want[1]]);
+        node.setDirtyCanvas?.(true, true);
+      }
+      let lastFitH = 0;
+      const ro = new ResizeObserver(() => {
+        const h = listEl.scrollHeight;
+        if (h && h !== lastFitH) { lastFitH = h; fitToContent(); }
+      });
+      ro.observe(listEl);
+      chainCallback(node, "onRemoved", () => ro.disconnect());
+
+      const viewUrl = (f) =>
+        `/view?filename=${encodeURIComponent(f.name)}&type=input&subfolder=${encodeURIComponent(f.subfolder)}`;
+
+      // Any wire on any group socket means a reorder/delete changes what flows where.
+      const anyGroupWired = () =>
+        (node.outputs || []).slice(1).some((o) => o.links && o.links.length);
+
+      function removeAt(k) {
+        const removed = node._blRows[k].name;
+        const moved = node._blRows.slice(k + 1).map((f) => f.name);   // mirror of core remove_file
+        const start = 1 + k * cfg.group.length;
+        const disturbed = (node.outputs || []).slice(start).some((o) => o.links && o.links.length);
+        node._blRows.splice(k, 1);
+        node._blSyncJson(); node._blSyncOutputs(); render();
+        if (disturbed && moved.length) {
+          node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.`, "#e0a03c");
+        } else {
+          node._blSetStatus(`Removed ${removed}.`, "#8a8a8a");
+        }
+      }
+
+      function render() {
+        listEl.replaceChildren();
+        if (!node._blRows.length) {
+          const empty = document.createElement("div");
+          empty.className = "bl-empty";
+          empty.textContent = "No files loaded.";
+          listEl.appendChild(empty);
+          return;
+        }
+        node._blRows.forEach((f, k) => {
+          const row = document.createElement("div");
+          row.className = "bl-row";
+
+          const grip = document.createElement("span");
+          grip.className = "bl-grip";
+          grip.textContent = "⠿";
+          grip.title = "Drag to reorder";
+          grip.addEventListener("mousedown", () => { row.draggable = true; });
+          row.addEventListener("mouseup", () => { row.draggable = false; });
+          row.addEventListener("dragstart", (e) => { dragIndex = k; e.dataTransfer.effectAllowed = "move"; row.classList.add("bl-drag"); });
+          row.addEventListener("dragend", () => { row.draggable = false; dragIndex = -1; row.classList.remove("bl-drag"); listEl.querySelectorAll(".bl-over").forEach((n) => n.classList.remove("bl-over")); });
+          row.addEventListener("dragover", (e) => { e.preventDefault(); if (dragIndex > -1 && dragIndex !== k) row.classList.add("bl-over"); });
+          row.addEventListener("dragleave", () => row.classList.remove("bl-over"));
+          row.addEventListener("drop", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            row.classList.remove("bl-over");
+            if (dragIndex > -1 && dragIndex !== k) {
+              const wired = anyGroupWired();
+              const [movedRow] = node._blRows.splice(dragIndex, 1);
+              node._blRows.splice(k, 0, movedRow);
+              node._blSyncJson(); render();
+              if (wired) node._blSetStatus("⚠ Reordered — sockets now carry different files. Check your wires.", "#e0a03c");
+            }
+          });
+
+          const num = document.createElement("span");
+          num.className = "bl-num";
+          num.textContent = String(k + 1);
+
+          let preview;
+          const meta = document.createElement("span");
+          meta.className = "bl-meta";
+          if (cfg.kind === "image") {
+            preview = document.createElement("img");
+            preview.className = "bl-thumb";
+            preview.src = viewUrl(f);
+            preview.addEventListener("load", () => { meta.textContent = `${preview.naturalWidth}×${preview.naturalHeight}`; });
+          } else {
+            preview = document.createElement("span");
+            preview.className = "bl-wave";
+            preview.textContent = "♪";
+            const probe = new Audio();
+            probe.preload = "metadata";
+            probe.src = viewUrl(f);
+            probe.addEventListener("loadedmetadata", () => {
+              const s = Math.round(probe.duration);
+              meta.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+            });
+          }
+
+          const name = document.createElement("span");
+          name.className = "bl-name";
+          name.textContent = f.name;
+          name.title = (f.subfolder ? f.subfolder + "/" : "") + f.name;
+
+          const x = document.createElement("span");
+          x.className = "bl-x";
+          x.textContent = "✕";
+          x.title = "Remove this file";
+          x.addEventListener("click", () => removeAt(k));
+
+          row.append(grip, num, preview, name, meta, x);
+          listEl.appendChild(row);
+        });
+      }
+      node._blRender = render;
+
+      const sortBtn = node.addWidget("button", "Sort by name", null, () => {
+        if (node._blRows.length < 2) return;
+        const wired = anyGroupWired();
+        node._blRows.sort((a, b) => a.name.localeCompare(b.name));
+        node._blSyncJson(); render();
+        node._blSetStatus(wired ? "⚠ Sorted — sockets now carry different files. Check your wires." : "Sorted by name.", wired ? "#e0a03c" : "#8a8a8a");
+      });
+      sortBtn.serialize = false;
+
+      render();
+
       const addBtn = node.addWidget("button", cfg.kind === "image" ? "＋ Add images" : "＋ Add audio", null, () => {
         const picker = document.createElement("input");
         picker.type = "file";
@@ -211,15 +344,32 @@ app.registerExtension({
     // After a workflow loads: rebuild rows from the restored files_json, then re-trim.
     // (Serialized nodes save their trimmed outputs, so this is normally a no-op — it heals
     // hand-edited or older workflows.)
-    chainCallback(nodeType.prototype, "onConfigure", function () {
+    chainCallback(nodeType.prototype, "onConfigure", function (info) {
       const node = this;
       requestAnimationFrame(() => {
+        const mirror = info?.properties?.ai2go_bl;
+        if (mirror && typeof mirror === "object") {
+          for (const name of MIRRORED) {
+            const w = findWidget(node, name);
+            if (w && mirror[name] !== undefined) w.value = mirror[name];
+          }
+        }
         const res = parseFiles(findWidget(node, "files_json")?.value);
         node._blRows = res.ok ? res.files : [];
         node._blSyncJson?.();
         node._blSyncOutputs?.();
         node._blRender?.();
       });
+    });
+
+    chainCallback(nodeType.prototype, "onSerialize", function (o) {
+      const mirror = {};
+      for (const name of MIRRORED) {
+        const w = findWidget(this, name);
+        if (w) mirror[name] = w.value;
+      }
+      o.properties = o.properties || {};
+      o.properties.ai2go_bl = mirror;
     });
   },
 });
