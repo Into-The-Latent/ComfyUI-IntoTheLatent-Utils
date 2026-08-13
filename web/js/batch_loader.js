@@ -50,6 +50,36 @@ function hideWidget(w) {
   w.computeSize = () => [0, -4];
 }
 
+function ensureStyles() {
+  if (document.getElementById("ai2go-bl-style")) return;
+  const s = document.createElement("style");
+  s.id = "ai2go-bl-style";
+  s.textContent = `
+  .ai2go-bl-drop{box-sizing:border-box;width:100%;padding:10px;margin:2px 0;text-align:center;
+    font:11.5px -apple-system,"Segoe UI",Roboto,sans-serif;color:#7ab8e6;background:#1d2733;
+    border:1px dashed #46b4e6;border-radius:8px;cursor:copy}
+  .ai2go-bl-drop.over{background:#24384c;border-style:solid}
+  .ai2go-bl{display:flex;flex-direction:column;gap:5px;width:100%;box-sizing:border-box;
+    font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0}
+  .ai2go-bl .bl-row{display:flex;align-items:center;gap:7px;background:#262625;
+    border:1px solid #3a3a38;border-radius:8px;padding:5px 7px}
+  .ai2go-bl .bl-row.bl-drag{opacity:.45}
+  .ai2go-bl .bl-row.bl-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
+  .ai2go-bl .bl-grip{color:#6d6d68;font-size:14px;cursor:grab;user-select:none;flex:none}
+  .ai2go-bl .bl-num{flex:none;width:18px;height:18px;border-radius:50%;background:#333331;
+    color:#8b8b86;font:600 10px/18px ui-monospace,Consolas,monospace;text-align:center}
+  .ai2go-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19}
+  .ai2go-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
+    color:#46cca8;font-size:15px;line-height:34px;text-align:center}
+  .ai2go-bl .bl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+  .ai2go-bl .bl-meta{flex:none;color:#8b8b86;font:10px ui-monospace,Consolas,monospace}
+  .ai2go-bl .bl-x{flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
+  .ai2go-bl .bl-x:hover{color:#c86b6b}
+  .ai2go-bl .bl-empty{padding:6px;text-align:center;color:#6d6d68;font-size:11px}
+  `;
+  document.head.appendChild(s);
+}
+
 // Trim node.outputs to count + fileCount groups; re-add (in schema order) up to the ceiling.
 // removeOutput disconnects any links on the removed slot — that is the intended behavior.
 function syncOutputs(node, cfg, fileCount) {
@@ -86,6 +116,7 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     const cfg = NODES[nodeData?.name];
     if (!cfg) return;
+    ensureStyles();
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;
@@ -142,6 +173,23 @@ app.registerExtension({
         }
       }
       node._blAddFiles = addFiles;
+
+      // ── Drop zone (DOM widget). stopPropagation beats ComfyUI's global drop handler,
+      // which would otherwise try to load the files as a workflow. ──
+      const dropEl = document.createElement("div");
+      dropEl.className = "ai2go-bl-drop";
+      dropEl.textContent = cfg.kind === "image" ? "Drop images here" : "Drop audio here";
+      for (const ev of ["dragenter", "dragover"]) {
+        dropEl.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropEl.classList.add("over"); });
+      }
+      dropEl.addEventListener("dragleave", () => dropEl.classList.remove("over"));
+      dropEl.addEventListener("drop", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropEl.classList.remove("over");
+        if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+      });
+      node._blDropEl = dropEl;
+      node.addDOMWidget("batch_loader_drop", "drop", dropEl, { serialize: false });
 
       const addBtn = node.addWidget("button", cfg.kind === "image" ? "＋ Add images" : "＋ Add audio", null, () => {
         const picker = document.createElement("input");
