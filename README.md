@@ -188,6 +188,33 @@ error at run time.
 If the index ever overshoots the list (more runs than prompts), it clamps to the last prompt instead of
 erroring.
 
+### AI2Go Batch Loaders (Image & Audio)
+
+Drop **multiple files onto one node** and every file gets its **own output socket** — wire each
+image or clip somewhere different in the same run. Four nodes, two flavors each:
+
+| Node | Per file | Always |
+|---|---|---|
+| **Batch Image Loader** | `image_N` | `count` |
+| **Batch Image Loader Advanced** | `image_N` + `mask_N` + `filename_N` | `count` |
+| **Batch Audio Loader** | `audio_N` | `count` |
+| **Batch Audio Loader Advanced** | `audio_N` + `filename_N` | `count` |
+
+- **Up to 8 files per node.** Sockets appear as you add files and disappear as you remove them.
+  Files are uploaded into ComfyUI's `input/` folder (like the stock Load Image), so saved
+  workflows survive restarts.
+- **Rows** show a thumbnail + pixel size (images) or a duration (audio). Drag the ⠿ grip to
+  reorder, ✕ to remove, **Sort by name** for folder order. Row order = socket order.
+- **Removing or reordering files shifts what each socket carries** — the node warns you in its
+  status line whenever a change touches a socket that has a wire, so check your connections.
+- **Downscaling (image nodes):** set `downscale_mode` to `fit` (shrink keeping shape), `crop`
+  (centered square) or `stretch` (forced square) and any image whose longest edge exceeds
+  `max_size` is shrunk on load — `off` (the default) passes images through untouched. Never
+  upscales; masks are resized with their image; originals in `input/` are never modified.
+- **Masks** (Advanced): inverted alpha, exactly like stock Load Image — files without an alpha
+  channel yield the stock 64×64 empty mask.
+- **Audio is never resampled** — each `audio_N` keeps its file's native sample rate.
+
 ### AI2Go Resolution Selector
 
 Pick a model-valid **width/height** by aspect ratio and mode, and (optionally) push it straight into
