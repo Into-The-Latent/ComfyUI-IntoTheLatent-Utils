@@ -205,7 +205,8 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
   stock Load Image), so saved workflows survive restarts.
 - **`output_slots`:** pin a fixed socket count (1-8) instead of `auto` to keep the sockets — and
   your wires — in place while you swap files around. Extra sockets with no file behind them
-  output nothing, so don't wire more than you actually load.
+  output nothing, so don't wire more than you actually load; when the pinned count is lower than
+  the number of loaded files, the extra files simply aren't reachable (no socket carries them).
 - **Drop the files onto the field, or click it to browse** — same field does both; no separate
   add button.
 - **Rows** show a thumbnail + pixel size (images) or a duration (audio). Drag the ⠿ grip to

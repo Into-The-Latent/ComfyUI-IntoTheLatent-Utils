@@ -175,8 +175,16 @@ app.registerExtension({
         if (!raw || raw === "auto") return "";
         const slots = Math.max(1, Math.min(MAX_FILES, parseInt(raw, 10) || 0));
         const n = node._blRows.length;
-        if (n < slots) return ` — sockets ${n + 1}-${slots} have no file yet; leave them unwired until you add more.`;
-        if (n > slots) return ` — only ${slots} socket${slots === 1 ? "" : "s"} shown, so file${n - slots === 1 ? "" : "s"} ${slots + 1}-${n} can't be reached.`;
+        // Format a range as "a" for a single item, "a-b" for a span.
+        const formatRange = (start, end) => (start === end ? String(start) : `${start}-${end}`);
+        if (n < slots) {
+          const range = formatRange(n + 1, slots);
+          return ` — socket${n + 1 === slots ? "" : "s"} ${range} have${n + 1 === slots ? "s" : ""} no file yet; leave them unwired until you add more.`;
+        }
+        if (n > slots) {
+          const range = formatRange(slots + 1, n);
+          return ` — only ${slots} socket${slots === 1 ? "" : "s"} shown, so file${n - slots === 1 ? "" : "s"} ${range} can't be reached.`;
+        }
         return "";
       }
       node._blSlotNote = slotNote;
