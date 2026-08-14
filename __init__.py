@@ -12,6 +12,7 @@ from .nodes.prompt_batch import AI2GoPromptBatch
 from .nodes.save_civitai_metadata import AI2GoSaveCivitaiMetadata, AI2GoSaveCivitaiMetadataAdvanced
 from .nodes.multi_image_loader import AI2GoMultiImageLoader, AI2GoMultiImageLoaderAdvanced
 from .nodes.multi_audio_loader import AI2GoMultiAudioLoader, AI2GoMultiAudioLoaderAdvanced
+from .nodes.multi_video_loader import AI2GoMultiVideoLoader, AI2GoMultiVideoLoaderAdvanced
 
 # Key MUST match each node's schema node_id.
 NODE_CLASS_MAPPINGS = {
@@ -25,6 +26,8 @@ NODE_CLASS_MAPPINGS = {
     "AI2GoMultiImageLoaderAdvanced": AI2GoMultiImageLoaderAdvanced,
     "AI2GoMultiAudioLoader": AI2GoMultiAudioLoader,
     "AI2GoMultiAudioLoaderAdvanced": AI2GoMultiAudioLoaderAdvanced,
+    "AI2GoMultiVideoLoader": AI2GoMultiVideoLoader,
+    "AI2GoMultiVideoLoaderAdvanced": AI2GoMultiVideoLoaderAdvanced,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -38,6 +41,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AI2GoMultiImageLoaderAdvanced": "AI2Go Multi Image Loader Advanced",
     "AI2GoMultiAudioLoader": "AI2Go Multi Audio Loader",
     "AI2GoMultiAudioLoaderAdvanced": "AI2Go Multi Audio Loader Advanced",
+    "AI2GoMultiVideoLoader": "AI2Go Multi Video Loader",
+    "AI2GoMultiVideoLoaderAdvanced": "AI2Go Multi Video Loader Advanced",
 }
 
 # Folder of front-end JavaScript served to the ComfyUI client.
