@@ -59,21 +59,30 @@ def _load_image(path, mode, max_size, pos):
 
 
 def _run_image(files_json, downscale_mode, max_size, advanced):
-    """Shared engine for both nodes. Returns the padded output list (count first)."""
+    """Shared engine for both nodes. Returns the padded output list (count first).
+
+    A row with ``enabled: False`` keeps its socket position — its group's slots stay
+    None — and is not counted; it is never opened/loaded. ``count`` is the number of
+    files actually emitted (enabled rows), not the number of rows.
+    """
     files = parse_files(files_json)
     group = 3 if advanced else 1
     outputs = [None] * (1 + MAX_FILES * group)
-    outputs[0] = len(files)
+    emitted = 0
     for i, f in enumerate(files):
+        base = 1 + i * group  # slot base stays tied to the loop index — disabled rows don't shift later ones
+        if not f["enabled"]:
+            continue
         path = _input_path(f)
         if not os.path.isfile(path):
             raise ValueError(f"File #{i + 1} ({f['name']!r}): not found in the input folder — re-add it to the node.")
         image, mask = _load_image(path, downscale_mode, max_size, i + 1)
-        base = 1 + i * group
         outputs[base] = image
         if advanced:
             outputs[base + 1] = mask
             outputs[base + 2] = f["name"]
+        emitted += 1
+    outputs[0] = emitted
     return outputs
 
 
@@ -87,9 +96,9 @@ def _fingerprint(files_json, downscale_mode, max_size):
     for f in files:
         try:
             st = os.stat(_input_path(f))
-            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}")
+            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}:{f['enabled']}")
         except (OSError, ValueError):
-            sig.append(f"{f['subfolder']}/{f['name']}:missing")
+            sig.append(f"{f['subfolder']}/{f['name']}:missing:{f['enabled']}")
     return "|".join(sig)
 
 
@@ -141,9 +150,13 @@ class AI2GoMultiImageLoader(io.ComfyNode):
             search_aliases=["batch", "load", "images", "multi", "drop", "upload"],
             description="Drop up to 8 images onto the node; each gets its own image_N output "
                         "socket (sockets appear/disappear with the list, or pin output_slots to a "
-                        "fixed count so wires survive file edits). Optional downscaling: set "
-                        "downscale_mode to keep aspect ratio/crop to square/stretch to square and "
-                        "images larger than max_size shrink on load. count = number of files loaded.",
+                        "fixed count so wires survive file edits). Each row has an on/off toggle: a "
+                        "switched-off row keeps its socket position but outputs None for image_N "
+                        "(and mask_N/filename_N on Advanced) — equivalent to leaving an unplugged "
+                        "OPTIONAL input, so don't switch off a row feeding a REQUIRED input. "
+                        "Optional downscaling: set downscale_mode to keep aspect ratio/crop to "
+                        "square/stretch to square and images larger than max_size shrink on load. "
+                        "count = number of files actually emitted (enabled rows), not the row count.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=False),
         )

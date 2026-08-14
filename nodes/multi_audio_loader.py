@@ -62,19 +62,28 @@ def _load_audio(path, pos):
 
 
 def _run_audio(files_json, advanced):
-    """Shared engine for both nodes. Returns the padded output list (count first)."""
+    """Shared engine for both nodes. Returns the padded output list (count first).
+
+    A row with ``enabled: False`` keeps its socket position — its group's slots stay
+    None — and is not counted; it is never opened/decoded. ``count`` is the number of
+    files actually emitted (enabled rows), not the number of rows.
+    """
     files = parse_files(files_json)
     group = 2 if advanced else 1
     outputs = [None] * (1 + MAX_FILES * group)
-    outputs[0] = len(files)
+    emitted = 0
     for i, f in enumerate(files):
+        base = 1 + i * group  # slot base stays tied to the loop index — disabled rows don't shift later ones
+        if not f["enabled"]:
+            continue
         path = _input_path(f)
         if not os.path.isfile(path):
             raise ValueError(f"File #{i + 1} ({f['name']!r}): not found in the input folder — re-add it to the node.")
-        base = 1 + i * group
         outputs[base] = _load_audio(path, i + 1)
         if advanced:
             outputs[base + 1] = f["name"]
+        emitted += 1
+    outputs[0] = emitted
     return outputs
 
 
@@ -87,9 +96,9 @@ def _fingerprint(files_json):
     for f in files:
         try:
             st = os.stat(_input_path(f))
-            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}")
+            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}:{f['enabled']}")
         except (OSError, ValueError):
-            sig.append(f"{f['subfolder']}/{f['name']}:missing")
+            sig.append(f"{f['subfolder']}/{f['name']}:missing:{f['enabled']}")
     return "|".join(sig)
 
 
@@ -129,9 +138,13 @@ class AI2GoMultiAudioLoader(io.ComfyNode):
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "wav", "mp3"],
             description="Drop up to 8 audio files onto the node; each gets its own audio_N "
                         "output socket (sockets appear/disappear with the list, or pin "
-                        "output_slots to a fixed count so wires survive file edits). Audio is "
-                        "never resampled — each output keeps its file's native sample rate. "
-                        "count = number of files loaded.",
+                        "output_slots to a fixed count so wires survive file edits). Each row has "
+                        "an on/off toggle: a switched-off row keeps its socket position but "
+                        "outputs None for audio_N (and filename_N on Advanced) — equivalent to "
+                        "leaving an unplugged OPTIONAL input, so don't switch off a row feeding a "
+                        "REQUIRED input. Audio is never resampled — each output keeps its file's "
+                        "native sample rate. count = number of files actually emitted (enabled "
+                        "rows), not the row count.",
             inputs=_audio_inputs(),
             outputs=_audio_outputs(advanced=False),
         )

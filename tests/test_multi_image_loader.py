@@ -52,3 +52,24 @@ def test_missing_file_raises(input_dir):
     from nodes.multi_image_loader import _run_image
     with pytest.raises(ValueError, match="gone.png"):
         _run_image(json.dumps([{"name": "gone.png"}]), "off", 1200, advanced=False)
+
+
+def test_disabled_row_holds_position(input_dir):
+    # Middle file disabled: its slots stay None (not skipped-and-shifted), the third file
+    # still lands in its own image_3/mask_3/filename_3 group, and count only reflects the
+    # two enabled files.
+    from nodes.multi_image_loader import _run_image
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(input_dir / "a.png")
+    Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "b.png")
+    Image.new("RGB", (8, 8), (0, 0, 255)).save(input_dir / "c.png")
+    out = _run_image(json.dumps([
+        {"name": "a.png"},
+        {"name": "b.png", "enabled": False},
+        {"name": "c.png"},
+    ]), "off", 1200, advanced=True)
+
+    assert out[0] == 2                              # count = enabled files, not rows
+    assert out[1] is not None                        # image_1
+    assert out[4] is None and out[5] is None and out[6] is None   # image_2/mask_2/filename_2 all None
+    img3, mask3, name3 = out[7], out[8], out[9]       # image_3/mask_3/filename_3 — its own slots, not moved up
+    assert img3 is not None and mask3 is not None and name3 == "c.png"

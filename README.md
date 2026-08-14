@@ -213,6 +213,12 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
   reorder, ✕ to remove, **Sort by name** for folder order. Row order = socket order.
 - **Removing or reordering files shifts what each socket carries** — the node warns you in its
   status line whenever a change touches a socket that has a wire, so check your connections.
+- **Per-row on/off toggle**, plus a **Toggle All** control above the list. Switching a row off is
+  different from removing it: the row **keeps its socket position** — nothing shifts — and that
+  socket simply outputs nothing (`None`) on the next run; `count` only counts the enabled files
+  actually emitted. That's equivalent to leaving an **OPTIONAL** input unplugged, so it's safe for
+  wires feeding optional inputs downstream. Don't switch off a row whose socket feeds a
+  **REQUIRED** input — that node will fail on `None`.
 - **Downscaling (image nodes):** set `downscale_mode` to `keep aspect ratio` (shrink keeping
   shape), `crop to square` (centered square) or `stretch to square` (forced square) and any image
   whose longest edge exceeds `max_size` is shrunk on load — `off` (the default) passes images

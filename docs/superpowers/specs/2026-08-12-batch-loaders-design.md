@@ -191,3 +191,10 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
   shrinking (and destroying a wire) whenever a file is removed.
 - **Drop zone doubles as the file picker**: the separate ＋ Add button was removed; clicking the
   drop zone now opens the same file picker, so there is one field for both gestures.
+- **Per-row on/off toggles + Toggle All** (rgthree Power Lora Loader styling): switching a row off
+  is not the same as removing it — the row keeps its socket position (no shift) and that group's
+  outputs become `None` on the next run; `count` reports only the enabled files actually emitted.
+- **Why `None` is safe here**: `get_input_data` only passes inputs present in the prompt, so an
+  unconnected OPTIONAL input is never passed and the node falls back to its `=None` default.
+  Feeding `None` to a connected OPTIONAL input therefore reproduces exactly that unplugged state —
+  it does **not** hold for REQUIRED inputs, so a row feeding one must not be switched off.

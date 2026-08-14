@@ -13,9 +13,24 @@ def test_parse_valid_list():
     ])
     files = parse_files(raw)
     assert files == [
-        {"name": "fox.png", "subfolder": "", "type": "input"},
-        {"name": "city.jpg", "subfolder": "", "type": "input"},
+        {"name": "fox.png", "subfolder": "", "type": "input", "enabled": True},
+        {"name": "city.jpg", "subfolder": "", "type": "input", "enabled": True},
     ]
+
+
+def test_parse_enabled_defaults_true():
+    files = parse_files(json.dumps([{"name": "a.png"}]))
+    assert files[0]["enabled"] is True
+
+
+def test_parse_enabled_false_preserved():
+    files = parse_files(json.dumps([{"name": "a.png", "enabled": False}]))
+    assert files[0]["enabled"] is False
+
+
+def test_parse_enabled_non_bool_raises():
+    with pytest.raises(ValueError, match="File #1"):
+        parse_files(json.dumps([{"name": "a.png", "enabled": "true"}]))
 
 
 def test_parse_keeps_subfolder():

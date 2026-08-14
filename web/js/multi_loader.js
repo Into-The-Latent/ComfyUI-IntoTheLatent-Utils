@@ -4,8 +4,12 @@
  * Shared front-end for the four Multi Loader nodes. GPL-3.0, like the rest of the pack.
  *
  * Files dropped/picked are uploaded once to ComfyUI's input/ folder; the hidden `files_json`
- * widget (a JSON array of {name, subfolder, type}) is the single source of truth for save,
- * restore and execution — the Prompt Batch pattern. The Python schema declares MAX_FILES
+ * widget (a JSON array of {name, subfolder, type, enabled}) is the single source of truth for
+ * save, restore and execution — the Prompt Batch pattern. A row's `enabled` flag (per-row
+ * pill toggle, default true) holds its socket position when off — the file is skipped but the
+ * slot isn't removed, so later files don't shift up; see nodes/multi_loader_core.py for why
+ * feeding None to a connected OPTIONAL input is safe (it is NOT safe for a REQUIRED input).
+ * The Python schema declares MAX_FILES
  * output groups; syncOutputs() trims node.outputs to `count` + a slot count and re-adds up to
  * the ceiling when the slot count grows. That slot count is `output_slots` in "auto" mode (it
  * tracks the file count) or a pinned number, so wires on fixed sockets survive file-list edits.
@@ -26,10 +30,12 @@ const NODES = {
   AI2GoMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
-// ── Mirror of parse_files in nodes/multi_loader_core.py — two intentional deviations:
-// (1) empty files_json is OK here (Python raises "No files loaded" only at run time), and
+// ── Mirror of parse_files in nodes/multi_loader_core.py — three intentional deviations:
+// (1) empty files_json is OK here (Python raises "No files loaded" only at run time),
 // (2) entries beyond MAX_FILES are silently ignored here instead of raising (Python rejects
-// the whole list with a "too many files" error). ──
+// the whole list with a "too many files" error), and
+// (3) a non-boolean 'enabled' is coerced to true here instead of raising (Python rejects it) —
+// the row list should still render from a hand-edited/older files_json. ──
 function parseFiles(raw) {
   const text = (raw || "").trim();
   if (!text) return { ok: true, files: [] }; // empty is fine in the UI; Python rejects at run time
@@ -42,7 +48,12 @@ function parseFiles(raw) {
     if (!e || typeof e !== "object" || typeof e.name !== "string" || !e.name.trim()) {
       return { ok: false, error: `File #${i + 1}: 'name' must be a non-empty string.` };
     }
-    files.push({ name: e.name, subfolder: typeof e.subfolder === "string" ? e.subfolder : "", type: "input" });
+    files.push({
+      name: e.name,
+      subfolder: typeof e.subfolder === "string" ? e.subfolder : "",
+      type: "input",
+      enabled: typeof e.enabled === "boolean" ? e.enabled : true,
+    });
   }
   return { ok: true, files };
 }
@@ -72,17 +83,29 @@ function ensureStyles() {
     border:1px solid #3a3a38;border-radius:8px;padding:5px 7px}
   .ai2go-bl .bl-row.bl-drag{opacity:.45}
   .ai2go-bl .bl-row.bl-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
+  .ai2go-bl .bl-row.bl-off{opacity:.5}
   .ai2go-bl .bl-grip{color:#6d6d68;font-size:14px;cursor:grab;user-select:none;flex:none}
   .ai2go-bl .bl-num{flex:none;width:18px;height:18px;border-radius:50%;background:#333331;
     color:#8b8b86;font:600 10px/18px ui-monospace,Consolas,monospace;text-align:center}
   .ai2go-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19}
+  .ai2go-bl .bl-thumb.bl-off{filter:grayscale(1)}
   .ai2go-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
     color:#46cca8;font-size:15px;line-height:34px;text-align:center}
+  .ai2go-bl .bl-wave.bl-off{background:#2b2b29;color:#6d6d68}
   .ai2go-bl .bl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
   .ai2go-bl .bl-meta{flex:none;color:#8b8b86;font:10px ui-monospace,Consolas,monospace}
   .ai2go-bl .bl-x{flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
   .ai2go-bl .bl-x:hover{color:#c86b6b}
   .ai2go-bl .bl-empty{padding:6px;text-align:center;color:#6d6d68;font-size:11px}
+  .ai2go-bl .bl-toggle{flex:none;width:26px;height:14px;border-radius:7px;background:#3a3a38;
+    border:1px solid #4a4a47;cursor:pointer;position:relative;box-sizing:border-box;padding:0}
+  .ai2go-bl .bl-toggle .bl-knob{position:absolute;top:1px;left:1px;width:10px;height:10px;
+    border-radius:50%;background:#8b8b86;transition:left .12s ease,background .12s ease}
+  .ai2go-bl .bl-toggle.bl-on{background:#1d3644;border-color:#46b4e6}
+  .ai2go-bl .bl-toggle.bl-on .bl-knob{left:13px;background:#46b4e6}
+  .ai2go-bl .bl-header{display:flex;align-items:center;gap:7px;padding:2px 7px 5px}
+  .ai2go-bl .bl-header .bl-toggle-all-label{flex:1;color:#8b8b86;font:600 10.5px -apple-system,"Segoe UI",Roboto,sans-serif;
+    text-transform:uppercase;letter-spacing:.03em}
   `;
   document.head.appendChild(s);
 }
@@ -116,7 +139,7 @@ async function uploadFile(file) {
     : await fetch("/upload/image", { method: "POST", body: form });
   if (res.status !== 200) throw new Error(`upload of ${file.name} failed (HTTP ${res.status})`);
   const data = await res.json();
-  return { name: data.name, subfolder: data.subfolder || "", type: "input" };
+  return { name: data.name, subfolder: data.subfolder || "", type: "input", enabled: true };
 }
 
 app.registerExtension({
@@ -190,6 +213,14 @@ app.registerExtension({
       }
       node._blSlotNote = slotNote;
 
+      // Terse reminder appended to add/remove status lines when some rows are switched off —
+      // those rows still occupy a socket but emit nothing, so it's worth flagging inline.
+      function offSuffix() {
+        const n = node._blRows.filter((f) => !f.enabled).length;
+        return n ? ` (${n} off)` : "";
+      }
+      node._blOffSuffix = offSuffix;
+
       // Changing the pinned slot count re-syncs sockets immediately and reports the new
       // file/socket mismatch (if any) in the status line.
       const slotsW = findWidget(node, "output_slots");
@@ -238,12 +269,12 @@ app.registerExtension({
         node._blSyncOutputs();
         node._blRender?.();
         if (failed) {
-          setStatus(`❌ ${failed} — ${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded before the error.`, "#e0555a");
+          setStatus(`❌ ${failed} — ${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded before the error.${offSuffix()}`, "#e0555a");
         } else {
           const parts = [`${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded`];
           if (skipped) parts.push(`only ${MAX_FILES} fit — ${skipped} skipped`);
           if (rejected) parts.push(`${rejected} not ${cfg.kind} — ignored`);
-          setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; ") + slotNote(), skipped || rejected ? "#e0a03c" : "#46b4e6");
+          setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; ") + offSuffix() + slotNote(), skipped || rejected ? "#e0a03c" : "#46b4e6");
         }
       }
       node._blAddFiles = addFiles;
@@ -313,6 +344,47 @@ app.registerExtension({
       const anyGroupWired = () =>
         (node.outputs || []).slice(1).some((o) => o.links && o.links.length);
 
+      // Pill toggle (Power Lora Loader style): rounded track + sliding knob, on = accent
+      // colour, off = muted. Click stops propagation so it can never arm the row's drag
+      // (the grip is the only drag affordance) or bubble into a row/header click.
+      function makeToggle(checked, title, onToggle) {
+        const el = document.createElement("span");
+        el.className = "bl-toggle" + (checked ? " bl-on" : "");
+        el.title = title;
+        const knob = document.createElement("span");
+        knob.className = "bl-knob";
+        el.appendChild(knob);
+        el.addEventListener("mousedown", (e) => e.stopPropagation());
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onToggle();
+        });
+        return el;
+      }
+
+      // Flip one row's enabled flag. A disabled row keeps its socket position — the Python
+      // side emits None for it instead of shifting later rows up (hold-position semantics).
+      function toggleRow(k) {
+        const f = node._blRows[k];
+        f.enabled = !f.enabled;
+        node._blSyncJson(); render();
+        node._blSetStatus(
+          `${f.enabled ? "Enabled" : "Disabled"} ${f.name}${f.enabled ? "" : " — its socket now outputs nothing"}.${offSuffix()}`,
+          "#8a8a8a",
+        );
+      }
+
+      // Toggle All: on when every row is enabled; clicking flips ALL rows to the opposite of
+      // that state (any row off -> turn everything on; all on -> turn everything off).
+      function toggleAllRows() {
+        const allOn = node._blRows.length > 0 && node._blRows.every((r) => r.enabled);
+        const next = !allOn;
+        node._blRows.forEach((r) => { r.enabled = next; });
+        node._blSyncJson(); render();
+        const n = node._blRows.length;
+        node._blSetStatus(`${next ? "Enabled" : "Disabled"} all ${n} row${n === 1 ? "" : "s"}.${offSuffix()}`, "#8a8a8a");
+      }
+
       function removeAt(k) {
         const removed = node._blRows[k].name;
         const moved = node._blRows.slice(k + 1).map((f) => f.name);   // mirror of core remove_file
@@ -321,11 +393,11 @@ app.registerExtension({
         node._blRows.splice(k, 1);
         node._blSyncJson(); node._blSyncOutputs(); render();
         if (disturbed && moved.length) {
-          node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.${slotNote()}`, "#e0a03c");
+          node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.${offSuffix()}${slotNote()}`, "#e0a03c");
         } else if (disturbed) {
-          node._blSetStatus(`⚠ Removed ${removed} — its socket was wired; that connection is gone.${slotNote()}`, "#e0a03c");
+          node._blSetStatus(`⚠ Removed ${removed} — its socket was wired; that connection is gone.${offSuffix()}${slotNote()}`, "#e0a03c");
         } else {
-          node._blSetStatus(`Removed ${removed}.${slotNote()}`, "#8a8a8a");
+          node._blSetStatus(`Removed ${removed}.${offSuffix()}${slotNote()}`, "#8a8a8a");
         }
       }
 
@@ -338,9 +410,23 @@ app.registerExtension({
           contentEl.appendChild(empty);
           return;
         }
+
+        // Toggle All header — reads the aggregate state of the rows below it, not its own.
+        const allOn = node._blRows.every((r) => r.enabled);
+        const header = document.createElement("div");
+        header.className = "bl-header";
+        const headerToggle = makeToggle(allOn, allOn ? "Turn all off" : "Turn all on", toggleAllRows);
+        const headerLabel = document.createElement("span");
+        headerLabel.className = "bl-toggle-all-label";
+        headerLabel.textContent = "Toggle All";
+        header.append(headerToggle, headerLabel);
+        contentEl.appendChild(header);
+
         node._blRows.forEach((f, k) => {
           const row = document.createElement("div");
-          row.className = "bl-row";
+          row.className = "bl-row" + (f.enabled ? "" : " bl-off");
+
+          const toggle = makeToggle(f.enabled, f.enabled ? "Disable this row" : "Enable this row", () => toggleRow(k));
 
           const grip = document.createElement("span");
           grip.className = "bl-grip";
@@ -373,12 +459,12 @@ app.registerExtension({
           meta.className = "bl-meta";
           if (cfg.kind === "image") {
             preview = document.createElement("img");
-            preview.className = "bl-thumb";
+            preview.className = "bl-thumb" + (f.enabled ? "" : " bl-off");
             preview.src = viewUrl(f);
             preview.addEventListener("load", () => { meta.textContent = `${preview.naturalWidth}×${preview.naturalHeight}`; });
           } else {
             preview = document.createElement("span");
-            preview.className = "bl-wave";
+            preview.className = "bl-wave" + (f.enabled ? "" : " bl-off");
             preview.textContent = "♪";
             const probe = new Audio();
             probe.preload = "metadata";
@@ -400,7 +486,7 @@ app.registerExtension({
           x.title = "Remove this file";
           x.addEventListener("click", () => removeAt(k));
 
-          row.append(grip, num, preview, name, meta, x);
+          row.append(toggle, grip, num, preview, name, meta, x);
           contentEl.appendChild(row);
         });
       }

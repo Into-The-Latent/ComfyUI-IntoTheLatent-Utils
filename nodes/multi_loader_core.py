@@ -12,7 +12,12 @@ DOWNSCALE_MODES = ("off", "keep aspect ratio", "crop to square", "stretch to squ
 
 
 def parse_files(raw):
-    """Parse the files_json widget into ``[{"name", "subfolder", "type"}, ...]``.
+    """Parse the files_json widget into ``[{"name", "subfolder", "type", "enabled"}, ...]``.
+
+    ``enabled`` is optional per entry and defaults to ``True`` (every pre-existing
+    files_json — without the key — keeps working). A row with ``enabled: false`` still
+    occupies its socket position; the loader nodes skip loading it and emit ``None`` in its
+    place instead of shifting later rows up.
 
     Raises ``ValueError`` with a human-readable message on anything malformed, on an
     empty list, and on more than ``MAX_FILES`` entries.
@@ -42,7 +47,10 @@ def parse_files(raw):
         subfolder = entry.get("subfolder") or ""
         if not isinstance(subfolder, str):
             raise ValueError(f"{where}: 'subfolder' must be a string.")
-        files.append({"name": name, "subfolder": subfolder, "type": "input"})
+        enabled = entry.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"{where}: 'enabled' must be a boolean.")
+        files.append({"name": name, "subfolder": subfolder, "type": "input", "enabled": bool(enabled)})
     return files
 
 
