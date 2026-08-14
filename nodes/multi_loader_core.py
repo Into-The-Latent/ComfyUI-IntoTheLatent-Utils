@@ -83,6 +83,28 @@ def downscale_size(width, height, mode, max_size):
     return ((max_size, max_size), None)
 
 
+def resample_frame_indices(src_count, src_fps, target_fps):
+    """Map a target-rate frame sequence back onto source frame indices, preserving duration.
+
+    Mirrors VideoHelperSuite's force_rate semantics: retiming to a lower rate drops frames,
+    retiming to a higher rate duplicates them, but the real running time (source frame count
+    / source fps) is always kept — this is not a frame-count change, it's a playback-rate
+    change.
+
+    ``target_fps <= 0`` means "off" (0 is the widget's off value) — returns ``None`` so the
+    caller passes the source through untouched instead of decoding it. ``src_fps <= 0`` is an
+    unusable source rate and raises. ``src_count == 0`` returns ``[]`` (nothing to retime).
+    """
+    if target_fps <= 0:
+        return None
+    if src_fps <= 0:
+        raise ValueError(f"Unusable source frame rate: {src_fps}")
+    if src_count == 0:
+        return []
+    n = max(1, round(src_count / src_fps * target_fps))
+    return [min(src_count - 1, int(i * src_fps / target_fps)) for i in range(n)]
+
+
 def remove_file(files, index):
     """Remove ``files[index]`` without leaving a hole.
 

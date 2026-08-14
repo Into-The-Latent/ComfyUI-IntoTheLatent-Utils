@@ -140,3 +140,46 @@ def test_remove_bad_index_raises():
     import pytest
     with pytest.raises(IndexError):
         remove_file(_files("a.png"), 5)
+
+
+from nodes.multi_loader_core import resample_frame_indices
+
+
+def test_resample_upsample_24_to_30_preserves_duration():
+    # 240 frames @ 24fps = 10s; retimed to 30fps -> 300 frames, still ending at the last
+    # source frame (duration preserved, not frame count).
+    idx = resample_frame_indices(240, 24, 30)
+    assert len(idx) == 300
+    assert idx[-1] == 239
+
+
+def test_resample_downsample_60_to_30_steps_by_two():
+    idx = resample_frame_indices(600, 60, 30)
+    assert len(idx) == 300
+    assert idx == [i * 2 for i in range(300)]
+
+
+def test_resample_upsample_24_to_48_duplicates_each_frame():
+    idx = resample_frame_indices(240, 24, 48)
+    assert len(idx) == 480
+    for i in range(240):
+        assert idx[2 * i] == i
+        assert idx[2 * i + 1] == i
+
+
+def test_resample_identity_when_rates_equal():
+    idx = resample_frame_indices(240, 24, 24)
+    assert idx == list(range(240))
+
+
+def test_resample_target_zero_means_no_resampling():
+    assert resample_frame_indices(240, 24, 0) is None
+
+
+def test_resample_src_count_zero_yields_empty():
+    assert resample_frame_indices(0, 24, 30) == []
+
+
+def test_resample_src_fps_zero_raises():
+    with pytest.raises(ValueError):
+        resample_frame_indices(240, 0, 30)
