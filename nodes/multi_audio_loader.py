@@ -100,6 +100,13 @@ def _audio_inputs():
             tooltip="Authoritative file list as JSON. Hidden in the UI and kept in sync by the "
                     "front-end — drop files onto the node instead of editing this.",
         ),
+        io.Combo.Input(
+            "output_slots", options=["auto", "1", "2", "3", "4", "5", "6", "7", "8"], default="auto",
+            tooltip="How many output sockets to show. 'auto' follows the number of loaded files, so "
+                    "sockets appear and disappear as you edit the list. Pick a fixed number to keep the "
+                    "sockets (and your wires) in place while you swap files around — extra sockets with "
+                    "no file behind them output nothing, so don't wire more than you load.",
+        ),
     ]
 
 
@@ -121,19 +128,23 @@ class AI2GoMultiAudioLoader(io.ComfyNode):
             category="AI2Go/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "wav", "mp3"],
             description="Drop up to 8 audio files onto the node; each gets its own audio_N "
-                        "output socket (sockets appear/disappear with the list). Audio is never "
-                        "resampled — each output keeps its file's native sample rate. count = "
-                        "number of files loaded.",
+                        "output socket (sockets appear/disappear with the list, or pin "
+                        "output_slots to a fixed count so wires survive file edits). Audio is "
+                        "never resampled — each output keeps its file's native sample rate. "
+                        "count = number of files loaded.",
             inputs=_audio_inputs(),
             outputs=_audio_outputs(advanced=False),
         )
 
     @classmethod
-    def execute(cls, files_json="[]") -> io.NodeOutput:
+    def execute(cls, files_json="[]", output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_audio(files_json, advanced=False))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]"):
+    def fingerprint_inputs(cls, files_json="[]", output_slots="auto"):
         return _fingerprint(files_json)
 
 
@@ -151,9 +162,12 @@ class AI2GoMultiAudioLoaderAdvanced(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, files_json="[]") -> io.NodeOutput:
+    def execute(cls, files_json="[]", output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_audio(files_json, advanced=True))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]"):
+    def fingerprint_inputs(cls, files_json="[]", output_slots="auto"):
         return _fingerprint(files_json)

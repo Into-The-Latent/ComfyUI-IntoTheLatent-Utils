@@ -200,9 +200,14 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
 | **Multi Audio Loader** | `audio_N` | `count` |
 | **Multi Audio Loader Advanced** | `audio_N` + `filename_N` | `count` |
 
-- **Up to 8 files per node.** Sockets appear as you add files and disappear as you remove them.
-  Files are uploaded into ComfyUI's `input/` folder (like the stock Load Image), so saved
-  workflows survive restarts.
+- **Up to 8 files per node.** By default (`output_slots = auto`) sockets appear as you add files
+  and disappear as you remove them. Files are uploaded into ComfyUI's `input/` folder (like the
+  stock Load Image), so saved workflows survive restarts.
+- **`output_slots`:** pin a fixed socket count (1-8) instead of `auto` to keep the sockets — and
+  your wires — in place while you swap files around. Extra sockets with no file behind them
+  output nothing, so don't wire more than you actually load.
+- **Drop the files onto the field, or click it to browse** — same field does both; no separate
+  add button.
 - **Rows** show a thumbnail + pixel size (images) or a duration (audio). Drag the ⠿ grip to
   reorder, ✕ to remove, **Sort by name** for folder order. Row order = socket order.
 - **Removing or reordering files shifts what each socket carries** — the node warns you in its

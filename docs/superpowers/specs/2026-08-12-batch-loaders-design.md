@@ -176,3 +176,18 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
 2. **Upload route for audio** — assumed `/upload/image` (generic); confirmed in the spike.
 3. **Reordering rows rewires meaning** just like deletion does; the same status-line warning
    covers drag-reorder of rows whose sockets are already connected.
+
+## Amendments (2026-08-14)
+
+- **Batch → Multi rename**: `AI2GoBatch*Loader*` node_ids/files became `AI2GoMulti*Loader*` /
+  `multi_*` — "Batch" already means the Prompt Batch index-walk pattern in this pack, and these
+  nodes do something different (parallel sockets), so the old name was misleading.
+- **Downscale mode labels** became plain words (`keep aspect ratio` / `crop to square` /
+  `stretch to square`) instead of `fit`/`crop`/`stretch`, per pack rule to lead with plain
+  language over jargon.
+- **`output_slots` added** (Combo: `auto`/1-8, front-end only): the Python side always returns a
+  fully padded output list regardless of file count, so socket count was purely a display
+  decision — pinning it lets sockets, and the wires on them, survive file-list edits instead of
+  shrinking (and destroying a wire) whenever a file is removed.
+- **Drop zone doubles as the file picker**: the separate ＋ Add button was removed; clicking the
+  drop zone now opens the same file picker, so there is one field for both gestures.

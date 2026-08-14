@@ -111,6 +111,13 @@ def _image_inputs():
             "max_size", default=1200, min=8, max=8192, step=8,
             tooltip="Size threshold/target in pixels for downscaling. Ignored while downscale_mode is off.",
         ),
+        io.Combo.Input(
+            "output_slots", options=["auto", "1", "2", "3", "4", "5", "6", "7", "8"], default="auto",
+            tooltip="How many output sockets to show. 'auto' follows the number of loaded files, so "
+                    "sockets appear and disappear as you edit the list. Pick a fixed number to keep the "
+                    "sockets (and your wires) in place while you swap files around — extra sockets with "
+                    "no file behind them output nothing, so don't wire more than you load.",
+        ),
     ]
 
 
@@ -133,19 +140,23 @@ class AI2GoMultiImageLoader(io.ComfyNode):
             category="AI2Go/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload"],
             description="Drop up to 8 images onto the node; each gets its own image_N output "
-                        "socket (sockets appear/disappear with the list). Optional downscaling: "
-                        "set downscale_mode to keep aspect ratio/crop to square/stretch to square "
-                        "and images larger than max_size shrink on load. count = number of files loaded.",
+                        "socket (sockets appear/disappear with the list, or pin output_slots to a "
+                        "fixed count so wires survive file edits). Optional downscaling: set "
+                        "downscale_mode to keep aspect ratio/crop to square/stretch to square and "
+                        "images larger than max_size shrink on load. count = number of files loaded.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=False),
         )
 
     @classmethod
-    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200) -> io.NodeOutput:
+    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_image(files_json, downscale_mode, max_size, advanced=False))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200):
+    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto"):
         return _fingerprint(files_json, downscale_mode, max_size)
 
 
@@ -164,9 +175,12 @@ class AI2GoMultiImageLoaderAdvanced(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200) -> io.NodeOutput:
+    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_image(files_json, downscale_mode, max_size, advanced=True))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200):
+    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto"):
         return _fingerprint(files_json, downscale_mode, max_size)

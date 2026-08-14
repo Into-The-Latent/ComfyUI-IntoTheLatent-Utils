@@ -6,9 +6,11 @@
  * Files dropped/picked are uploaded once to ComfyUI's input/ folder; the hidden `files_json`
  * widget (a JSON array of {name, subfolder, type}) is the single source of truth for save,
  * restore and execution — the Prompt Batch pattern. The Python schema declares MAX_FILES
- * output groups; syncOutputs() trims node.outputs to `count` + the loaded groups and re-adds
- * up to the ceiling when files come back. Trimming only ever cuts from the end — ComfyUI
- * validates output types by slot position, so used slots must stay contiguous from slot 0.
+ * output groups; syncOutputs() trims node.outputs to `count` + a slot count and re-adds up to
+ * the ceiling when the slot count grows. That slot count is `output_slots` in "auto" mode (it
+ * tracks the file count) or a pinned number, so wires on fixed sockets survive file-list edits.
+ * Trimming only ever cuts from the end — ComfyUI validates output types by slot position, so
+ * used slots must stay contiguous from slot 0.
  * parseFiles mirrors parse_files in nodes/multi_loader_core.py — keep the two in sync.
  */
 import { chainCallback } from "./utility.js";
@@ -60,7 +62,8 @@ function ensureStyles() {
   s.textContent = `
   .ai2go-bl-drop{box-sizing:border-box;width:100%;padding:10px;margin:2px 0;text-align:center;
     font:11.5px -apple-system,"Segoe UI",Roboto,sans-serif;color:#7ab8e6;background:#1d2733;
-    border:1px dashed #46b4e6;border-radius:8px;cursor:copy}
+    border:1px dashed #46b4e6;border-radius:8px;cursor:pointer}
+  .ai2go-bl-drop:hover{background:#24384c}
   .ai2go-bl-drop.over{background:#24384c;border-style:solid}
   .ai2go-bl{width:100%;box-sizing:border-box;
     font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0}
@@ -84,10 +87,12 @@ function ensureStyles() {
   document.head.appendChild(s);
 }
 
-// Trim node.outputs to count + fileCount groups; re-add (in schema order) up to the ceiling.
+// Trim node.outputs to count + slotCount groups; re-add (in schema order) up to the ceiling.
+// slotCount is the number of sockets to *show* — in "auto" mode that's the file count, but a
+// pinned output_slots value overrides it so sockets (and wires) survive file-list edits.
 // removeOutput disconnects any links on the removed slot — that is the intended behavior.
-function syncOutputs(node, cfg, fileCount) {
-  const want = 1 + Math.min(fileCount, MAX_FILES) * cfg.group.length;
+function syncOutputs(node, cfg, slotCount) {
+  const want = 1 + Math.min(slotCount, MAX_FILES) * cfg.group.length;
   while (node.outputs.length > want) node.removeOutput(node.outputs.length - 1);
   while (node.outputs.length < want) {
     const slot = node.outputs.length;                     // next slot index to create
@@ -122,7 +127,7 @@ app.registerExtension({
     if (!cfg) return;
     ensureStyles();
 
-    const MIRRORED = ["downscale_mode", "max_size"];   // present on image nodes only; findWidget just misses on audio
+    const MIRRORED = ["downscale_mode", "max_size", "output_slots"];   // downscale_mode/max_size are image-only; findWidget just misses on audio
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;
@@ -149,7 +154,43 @@ app.registerExtension({
         if (jsonW) jsonW.value = JSON.stringify(node._blRows);
       }
       node._blSyncJson = syncJson;
-      node._blSyncOutputs = () => syncOutputs(node, cfg, node._blRows.length);
+
+      // Resolve how many sockets to show: "auto" (or a missing/unparsable value — e.g. a
+      // restored workflow handing back null) follows the file count; otherwise the pinned
+      // number, clamped to 1..MAX_FILES.
+      function slotCount() {
+        const w = findWidget(node, "output_slots");
+        const raw = w?.value;
+        if (!raw || raw === "auto") return node._blRows.length;
+        const n = parseInt(raw, 10);
+        return Number.isFinite(n) ? Math.max(1, Math.min(MAX_FILES, n)) : node._blRows.length;
+      }
+      node._blSyncOutputs = () => syncOutputs(node, cfg, slotCount());
+
+      // In manual mode the socket count no longer tracks the file count; say so plainly, because a
+      // wired-but-empty socket outputs nothing and fails at run time.
+      function slotNote() {
+        const w = findWidget(node, "output_slots");
+        const raw = w?.value;
+        if (!raw || raw === "auto") return "";
+        const slots = Math.max(1, Math.min(MAX_FILES, parseInt(raw, 10) || 0));
+        const n = node._blRows.length;
+        if (n < slots) return ` — sockets ${n + 1}-${slots} have no file yet; leave them unwired until you add more.`;
+        if (n > slots) return ` — only ${slots} socket${slots === 1 ? "" : "s"} shown, so file${n - slots === 1 ? "" : "s"} ${slots + 1}-${n} can't be reached.`;
+        return "";
+      }
+      node._blSlotNote = slotNote;
+
+      // Changing the pinned slot count re-syncs sockets immediately and reports the new
+      // file/socket mismatch (if any) in the status line.
+      const slotsW = findWidget(node, "output_slots");
+      if (slotsW) {
+        slotsW.callback = () => {
+          node._blSyncOutputs();
+          node._blRender?.();
+          setStatus(`Output slots: ${slotsW.value}.${slotNote()}`, "#8a8a8a");
+        };
+      }
 
       // Audio containers often self-report as video/* (e.g. .ogg) or with no MIME at all on
       // Windows for unregistered extensions; the backend decoder handles both fine, so accept
@@ -193,16 +234,18 @@ app.registerExtension({
           const parts = [`${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded`];
           if (skipped) parts.push(`only ${MAX_FILES} fit — ${skipped} skipped`);
           if (rejected) parts.push(`${rejected} not ${cfg.kind} — ignored`);
-          setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; "), skipped || rejected ? "#e0a03c" : "#46b4e6");
+          setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; ") + slotNote(), skipped || rejected ? "#e0a03c" : "#46b4e6");
         }
       }
       node._blAddFiles = addFiles;
 
-      // ── Drop zone (DOM widget). stopPropagation beats ComfyUI's global drop handler,
-      // which would otherwise try to load the files as a workflow. ──
+      // ── Drop zone (DOM widget): also doubles as the file picker (click to browse), so there is
+      // one field for both gestures instead of a drop zone plus a separate ＋ Add button.
+      // stopPropagation beats ComfyUI's global drop handler, which would otherwise try to load
+      // the files as a workflow. ──
       const dropEl = document.createElement("div");
       dropEl.className = "ai2go-bl-drop";
-      dropEl.textContent = cfg.kind === "image" ? "Drop images here" : "Drop audio here";
+      dropEl.textContent = cfg.kind === "image" ? "Drop images here — or click to browse" : "Drop audio here — or click to browse";
       for (const ev of ["dragenter", "dragover"]) {
         dropEl.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropEl.classList.add("over"); });
       }
@@ -211,6 +254,14 @@ app.registerExtension({
         e.preventDefault(); e.stopPropagation();
         dropEl.classList.remove("over");
         if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+      });
+      dropEl.addEventListener("click", () => {
+        const picker = document.createElement("input");
+        picker.type = "file";
+        picker.multiple = true;
+        picker.accept = cfg.kind === "audio" ? "audio/*,video/*" : "image/*";
+        picker.onchange = () => picker.files?.length && addFiles(picker.files);
+        picker.click();
       });
       node._blDropEl = dropEl;
       node.addDOMWidget("multi_loader_drop", "drop", dropEl, { serialize: false });
@@ -261,11 +312,11 @@ app.registerExtension({
         node._blRows.splice(k, 1);
         node._blSyncJson(); node._blSyncOutputs(); render();
         if (disturbed && moved.length) {
-          node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.`, "#e0a03c");
+          node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.${slotNote()}`, "#e0a03c");
         } else if (disturbed) {
-          node._blSetStatus(`⚠ Removed ${removed} — its socket was wired; that connection is gone.`, "#e0a03c");
+          node._blSetStatus(`⚠ Removed ${removed} — its socket was wired; that connection is gone.${slotNote()}`, "#e0a03c");
         } else {
-          node._blSetStatus(`Removed ${removed}.`, "#8a8a8a");
+          node._blSetStatus(`Removed ${removed}.${slotNote()}`, "#8a8a8a");
         }
       }
 
@@ -357,18 +408,8 @@ app.registerExtension({
 
       render();
 
-      const addBtn = node.addWidget("button", cfg.kind === "image" ? "＋ Add images" : "＋ Add audio", null, () => {
-        const picker = document.createElement("input");
-        picker.type = "file";
-        picker.multiple = true;
-        picker.accept = cfg.kind === "audio" ? "audio/*,video/*" : "image/*";
-        picker.onchange = () => picker.files?.length && addFiles(picker.files);
-        picker.click();
-      });
-      addBtn.serialize = false;
-
       node.addDOMWidget("multi_loader_status", "info", statusEl, { serialize: false });
-      setStatus(`Drop ${cfg.kind} files here or press ＋ Add.`, "#8a8a8a");
+      setStatus(`Drop ${cfg.kind} files here, or click the field to browse.`, "#8a8a8a");
 
       // Fresh node: no files yet -> trim the declared ceiling down to just `count`.
       node._blSyncOutputs();
