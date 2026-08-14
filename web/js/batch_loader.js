@@ -24,7 +24,10 @@ const NODES = {
   AI2GoBatchAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
-// ── Mirror of parse_files in nodes/batch_loader_core.py ──
+// ── Mirror of parse_files in nodes/batch_loader_core.py — two intentional deviations:
+// (1) empty files_json is OK here (Python raises "No files loaded" only at run time), and
+// (2) entries beyond MAX_FILES are silently ignored here instead of raising (Python rejects
+// the whole list with a "too many files" error). ──
 function parseFiles(raw) {
   const text = (raw || "").trim();
   if (!text) return { ok: true, files: [] }; // empty is fine in the UI; Python rejects at run time
@@ -147,20 +150,38 @@ app.registerExtension({
       node._blSyncJson = syncJson;
       node._blSyncOutputs = () => syncOutputs(node, cfg, node._blRows.length);
 
+      // Audio containers often self-report as video/* (e.g. .ogg) or with no MIME at all on
+      // Windows for unregistered extensions; the backend decoder handles both fine, so accept
+      // them here too. Images: only the empty-MIME case needs the same allowance.
+      const acceptFile = cfg.kind === "audio"
+        ? (f) => f.type.startsWith("audio/") || f.type.startsWith("video/") || f.type === ""
+        : (f) => f.type.startsWith("image/") || f.type === "";
+
       async function addFiles(fileList) {
-        const files = [...fileList].filter((f) => f.type.startsWith(cfg.kind + "/"));
+        const files = [...fileList].filter(acceptFile);
         const rejected = fileList.length - files.length;
         const free = MAX_FILES - node._blRows.length;
         const taking = files.slice(0, free);
-        const skipped = files.length - taking.length;
+        let skipped = files.length - taking.length;
         let failed = null;
-        for (const f of taking) {
+        // taking.length is capped against a snapshot of node._blRows.length taken above; if
+        // another drop is uploading concurrently (interleaved awaits), that snapshot goes
+        // stale. Re-check right before each push so two overlapping drops can't push the
+        // node past MAX_FILES between them.
+        for (let idx = 0; idx < taking.length; idx++) {
+          const f = taking[idx];
+          let uploaded;
           try {
-            node._blRows.push(await uploadFile(f));
+            uploaded = await uploadFile(f);
           } catch (e) {
             failed = e.message;
             break;
           }
+          if (node._blRows.length >= MAX_FILES) {
+            skipped += taking.length - idx; // safety net: a concurrent drop filled the node while this file was uploading
+            break;
+          }
+          node._blRows.push(uploaded);
         }
         syncJson();
         node._blSyncOutputs();
@@ -231,6 +252,8 @@ app.registerExtension({
         node._blSyncJson(); node._blSyncOutputs(); render();
         if (disturbed && moved.length) {
           node._blSetStatus(`⚠ Removed ${removed} — ${moved.join(", ")} moved up a slot. Check your wires.`, "#e0a03c");
+        } else if (disturbed) {
+          node._blSetStatus(`⚠ Removed ${removed} — its socket was wired; that connection is gone.`, "#e0a03c");
         } else {
           node._blSetStatus(`Removed ${removed}.`, "#8a8a8a");
         }
@@ -328,7 +351,7 @@ app.registerExtension({
         const picker = document.createElement("input");
         picker.type = "file";
         picker.multiple = true;
-        picker.accept = cfg.kind + "/*";
+        picker.accept = cfg.kind === "audio" ? "audio/*,video/*" : "image/*";
         picker.onchange = () => picker.files?.length && addFiles(picker.files);
         picker.click();
       });
@@ -356,7 +379,13 @@ app.registerExtension({
         }
         const res = parseFiles(findWidget(node, "files_json")?.value);
         node._blRows = res.ok ? res.files : [];
-        node._blSyncJson?.();
+        if (res.ok) {
+          node._blSyncJson?.();
+        } else {
+          // Don't overwrite a possibly hand-edited files_json with "[]" — leave the widget
+          // value alone so the user can see and fix what's actually there.
+          node._blSetStatus?.(`❌ ${res.error}`, "#e0555a");
+        }
         node._blSyncOutputs?.();
         node._blRender?.();
       });

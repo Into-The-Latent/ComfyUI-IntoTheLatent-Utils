@@ -27,13 +27,17 @@ def _input_path(f):
     return path
 
 
-def _load_image(path, mode, max_size):
-    """Load one image -> (IMAGE [1,H,W,3], MASK). Applies downscale geometry to both."""
+def _load_image(path, mode, max_size, pos):
+    """Load one image -> (IMAGE [1,H,W,3], MASK). Applies downscale geometry to both.
+
+    ``pos`` is the file's 1-based position in files_json, included in error messages so a
+    failure can be traced back to a specific row in the UI.
+    """
     try:
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
     except Exception as e:
-        raise ValueError(f"Could not read image {os.path.basename(path)!r}: {e}") from e
+        raise ValueError(f"File #{pos}: Could not read image {os.path.basename(path)!r}: {e}") from e
 
     alpha = img.getchannel("A") if "A" in img.getbands() else None
     rgb = img.convert("RGB")
@@ -63,8 +67,8 @@ def _run_image(files_json, downscale_mode, max_size, advanced):
     for i, f in enumerate(files):
         path = _input_path(f)
         if not os.path.isfile(path):
-            raise ValueError(f"File not found in the input folder: {f['name']!r} — re-add it to the node.")
-        image, mask = _load_image(path, downscale_mode, max_size)
+            raise ValueError(f"File #{i + 1} ({f['name']!r}): not found in the input folder — re-add it to the node.")
+        image, mask = _load_image(path, downscale_mode, max_size, i + 1)
         base = 1 + i * group
         outputs[base] = image
         if advanced:

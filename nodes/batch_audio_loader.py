@@ -35,8 +35,12 @@ def _f32_pcm(wav):
     raise ValueError(f"Unsupported wav dtype: {wav.dtype}")
 
 
-def _load_audio(path):
-    """Decode one file -> {"waveform": Tensor[1,C,S], "sample_rate": native_rate}."""
+def _load_audio(path, pos):
+    """Decode one file -> {"waveform": Tensor[1,C,S], "sample_rate": native_rate}.
+
+    ``pos`` is the file's 1-based position in files_json, included in error messages so a
+    failure can be traced back to a specific row in the UI.
+    """
     try:
         with av.open(path) as af:
             if not af.streams.audio:
@@ -53,7 +57,7 @@ def _load_audio(path):
                 raise ValueError("file decoded to zero samples")
             wav = _f32_pcm(torch.cat(frames, dim=1))
     except Exception as e:
-        raise ValueError(f"Could not read audio {os.path.basename(path)!r}: {e}") from e
+        raise ValueError(f"File #{pos}: Could not read audio {os.path.basename(path)!r}: {e}") from e
     return {"waveform": wav.unsqueeze(0), "sample_rate": sr}
 
 
@@ -66,9 +70,9 @@ def _run_audio(files_json, advanced):
     for i, f in enumerate(files):
         path = _input_path(f)
         if not os.path.isfile(path):
-            raise ValueError(f"File not found in the input folder: {f['name']!r} — re-add it to the node.")
+            raise ValueError(f"File #{i + 1} ({f['name']!r}): not found in the input folder — re-add it to the node.")
         base = 1 + i * group
-        outputs[base] = _load_audio(path)
+        outputs[base] = _load_audio(path, i + 1)
         if advanced:
             outputs[base + 1] = f["name"]
     return outputs
