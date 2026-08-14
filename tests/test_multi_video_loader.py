@@ -14,17 +14,31 @@ def input_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _write_video(path, fps=24, seconds=1, color=(200, 100, 50)):
-    """Write a tiny synthetic solid-color video (no audio track) with PyAV."""
+def _write_video(path, fps=24, seconds=1, color=(200, 100, 50), audio_hz=None, audio_rate=44100):
+    """Write a tiny synthetic solid-color video with PyAV.
+
+    ``audio_hz`` is optional: when given, a mono ``audio_rate``-Hz sine tone of the same
+    duration is muxed in as an AAC track (the whole waveform is handed to
+    ``AudioStream.encode()`` in one call — it internally chunks to the codec's frame size, same
+    pattern ComfyUI's own VideoFromComponents.save_to uses). Left ``None``, the file has no
+    audio track at all, as before.
+    """
     import av
     import numpy as np
 
     n_frames = int(round(fps * seconds))
     container = av.open(str(path), mode="w")
+    # Both streams must be registered before any packet is muxed — the container writes its
+    # header on the first mux() call, so an audio stream added only after the video track is
+    # fully flushed produces a broken/undersized header ("Cannot rebase to zero time" on mux).
     stream = container.add_stream("libx264", rate=fps)
     stream.width = 32
     stream.height = 32
     stream.pix_fmt = "yuv420p"
+    audio_stream = None
+    if audio_hz is not None:
+        audio_stream = container.add_stream("aac", rate=audio_rate, layout="mono")
+
     frame_data = np.full((32, 32, 3), color, dtype=np.uint8)
     for _ in range(n_frames):
         frame = av.VideoFrame.from_ndarray(frame_data, format="rgb24")
@@ -32,6 +46,19 @@ def _write_video(path, fps=24, seconds=1, color=(200, 100, 50)):
             container.mux(packet)
     for packet in stream.encode():
         container.mux(packet)
+
+    if audio_stream is not None:
+        n_samples = int(round(audio_rate * seconds))
+        t = np.arange(n_samples, dtype=np.float32) / audio_rate
+        tone = (0.2 * np.sin(2 * np.pi * audio_hz * t)).reshape(1, n_samples)
+        aframe = av.AudioFrame.from_ndarray(np.ascontiguousarray(tone), format="fltp", layout="mono")
+        aframe.sample_rate = audio_rate
+        aframe.pts = 0
+        for packet in audio_stream.encode(aframe):
+            container.mux(packet)
+        for packet in audio_stream.encode():
+            container.mux(packet)
+
     container.close()
 
 
@@ -100,6 +127,26 @@ def test_force_rate_retimes_and_halves_frames(input_dir):
     components = video.get_components()
     assert components.images.shape[0] == 12          # half the frames
     assert float(components.frame_rate) == 12.0
+
+
+def test_audio_track_decoded_on_both_rate_paths(input_dir):
+    # force_rate=0 exercises _decode_audio_track's success path directly; force_rate=12.0 (half
+    # the clip's native 24fps) forces get_components() and proves audio_N still comes through —
+    # reused from components.audio rather than decoded a second time.
+    from nodes.multi_video_loader import _run_video
+    _write_video(input_dir / "clip.mp4", fps=24, seconds=1, audio_hz=440)
+
+    out_cheap = _run_video(json.dumps([{"name": "clip.mp4"}]), force_rate=0.0, advanced=False)
+    audio_cheap = out_cheap[2]
+    assert isinstance(audio_cheap, dict)
+    assert audio_cheap["waveform"].numel() > 0
+    assert audio_cheap["sample_rate"] > 0
+
+    out_forced = _run_video(json.dumps([{"name": "clip.mp4"}]), force_rate=12.0, advanced=False)
+    audio_forced = out_forced[2]
+    assert isinstance(audio_forced, dict)
+    assert audio_forced["waveform"].numel() > 0
+    assert audio_forced["sample_rate"] > 0
 
 
 def test_missing_file_raises(input_dir):

@@ -5,10 +5,10 @@
 # count; Advanced adds filename_N. video_N is lazy (VideoFromFile — decodes nothing) unless
 # force_rate retimes the clip, which requires decoding its frames. audio_N is decoded
 # separately with PyAV so audio is available even on the cheap (force_rate == 0) path; a clip
-# with no audio track yields None there, same as an unplugged OPTIONAL input. The audio
-# decoder mirrors nodes/multi_audio_loader.py's _load_audio (ComfyUI, GPL-3.0 — same license
-# as this pack); it is duplicated here rather than imported for the same comfy-free reason
-# _input_path is duplicated across the loaders.
+# with no (decodable) audio track yields None there, same as an unplugged OPTIONAL input. The
+# audio decoder mirrors nodes/multi_audio_loader.py's _load_audio (ComfyUI, GPL-3.0 — same
+# license as this pack); it is duplicated here rather than imported for the same comfy-free
+# reason _input_path is duplicated across the loaders.
 import os
 from fractions import Fraction
 
@@ -42,12 +42,24 @@ def _f32_pcm(wav):
 
 def _decode_audio_track(path):
     """Decode only the audio stream -> {"waveform": Tensor[1,C,S], "sample_rate": native_rate},
-    or None if the file has no audio track. Raises only if the file itself can't be opened.
+    or None if the file has no (decodable) audio track. Raises only if the file itself can't
+    be opened.
+
+    Stream selection mirrors ComfyUI's own last_decodable_audio_stream
+    (comfy_api.latest._input_impl.video_types): pick the LAST audio stream FFmpeg can actually
+    decode, not just streams.audio[0]. A stream FFmpeg has no decoder for (e.g. an iPhone APAC
+    spatial-audio track) has codec_context = None; forcing index 0 on such a file used to make
+    this node fail even though the force_rate>0 path — which goes through ComfyUI's own
+    get_components() and applies this same selection — tolerated it fine.
     """
     with av.open(path) as af:
-        if not af.streams.audio:
+        stream = next(
+            (s for s in reversed(af.streams.audio)
+             if s.codec_context is not None and s.codec_context.sample_rate),
+            None,
+        )
+        if stream is None:
             return None
-        stream = af.streams.audio[0]
         sr = stream.codec_context.sample_rate
         frames = []
         for frame in af.decode(streams=stream.index):
@@ -67,12 +79,23 @@ def _load_video(path, force_rate, pos):
     ``pos`` is the file's 1-based position in files_json, included in error messages so a
     failure can be traced back to a specific row in the UI. ``force_rate == 0`` is the cheap
     path: video_N is a lazy VideoFromFile (decodes nothing) and audio_N is decoded on its own
-    via PyAV. ``force_rate > 0`` decodes the video's components once, resamples the frames,
-    and reuses the already-decoded audio instead of decoding it a second time.
+    via PyAV. ``force_rate > 0`` normally decodes the video's components once, resamples the
+    frames, and reuses the already-decoded audio instead of decoding it a second time — unless
+    the clip is already at the requested rate, in which case it takes the same cheap path as
+    force_rate == 0 (see the get_frame_rate() check below).
     """
     try:
         video = InputImpl.VideoFromFile(path)
         if force_rate <= 0:
+            audio = _decode_audio_track(path)
+            return video, audio
+
+        if abs(float(video.get_frame_rate()) - force_rate) < 1e-6:
+            # Cheap metadata-only check (get_frame_rate() reads container metadata, no frame
+            # decoding): the clip is already at the requested rate, so take the same free path
+            # as force_rate == 0 instead of paying for get_components() just to discard the
+            # result. audio_N still has to come from _decode_audio_track — nothing above filled
+            # it in on this branch.
             audio = _decode_audio_track(path)
             return video, audio
 
@@ -87,7 +110,10 @@ def _load_video(path, force_rate, pos):
             Types.VideoComponents(
                 images=resampled_images,
                 audio=components.audio,
-                frame_rate=Fraction(force_rate),
+                # limit_denominator(1001) turns NTSC-style rates (e.g. 29.97) into the clean
+                # 2997/100 rational instead of Fraction(force_rate)'s exact binary-float
+                # fraction (8437190785180631/281474976710656).
+                frame_rate=Fraction(force_rate).limit_denominator(1001),
             ),
             bit_depth=video.get_bit_depth(),
         )
