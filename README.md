@@ -188,10 +188,10 @@ error at run time.
 If the index ever overshoots the list (more runs than prompts), it clamps to the last prompt instead of
 erroring.
 
-### AI2Go Multi Loaders (Image & Audio)
+### AI2Go Multi Loaders (Image, Audio & Video)
 
 Drop **multiple files onto one node** and every file gets its **own output socket** — wire each
-image or clip somewhere different in the same run. Four nodes, two flavors each:
+image, clip or video somewhere different in the same run. Six nodes, two flavors each:
 
 | Node | Per file | Always |
 |---|---|---|
@@ -199,6 +199,8 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
 | **Multi Image Loader Advanced** | `image_N` + `mask_N` + `filename_N` | `count` |
 | **Multi Audio Loader** | `audio_N` | `count` |
 | **Multi Audio Loader Advanced** | `audio_N` + `filename_N` | `count` |
+| **Multi Video Loader** | `video_N` + `audio_N` | `count` |
+| **Multi Video Loader Advanced** | `video_N` + `audio_N` + `filename_N` | `count` |
 
 - **Up to 8 files per node.** By default (`output_slots = auto`) sockets appear as you add files
   and disappear as you remove them. Files are uploaded into ComfyUI's `input/` folder (like the
@@ -228,6 +230,14 @@ image or clip somewhere different in the same run. Four nodes, two flavors each:
 - **Masks** (Advanced): inverted alpha, exactly like stock Load Image — files without an alpha
   channel yield the stock 64×64 empty mask.
 - **Audio is never resampled** — each `audio_N` keeps its file's native sample rate.
+- **`force_rate` (video nodes):** `0` (the default) leaves every clip at its own native frame
+  rate, and `video_N` is handed back lazily without decoding a single frame — the free path. Any
+  other value drops or duplicates frames so every clip runs at that rate while keeping its real
+  running time (a 10s clip stays 10s), the same convention as VideoHelperSuite — but forcing a
+  rate has to decode the clip's frames to do it, so it costs time and memory.
+- **Video clips with no audio track** yield nothing on that file's `audio_N` socket — same as
+  leaving an unplugged **OPTIONAL** input, so it's safe unless that socket feeds a **REQUIRED**
+  input downstream.
 
 ### AI2Go Resolution Selector
 

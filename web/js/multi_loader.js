@@ -1,7 +1,8 @@
 /*
  * Part of ComfyUI-AI2Go-Utils.
  *
- * Shared front-end for the four Multi Loader nodes. GPL-3.0, like the rest of the pack.
+ * Shared front-end for the six Multi Loader nodes (image/audio/video, each simple + Advanced).
+ * GPL-3.0, like the rest of the pack.
  *
  * Files dropped/picked are uploaded once to ComfyUI's input/ folder; the hidden `files_json`
  * widget (a JSON array of {name, subfolder, type, enabled}) is the single source of truth for
@@ -28,6 +29,8 @@ const NODES = {
   AI2GoMultiImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
   AI2GoMultiAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
   AI2GoMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
+  AI2GoMultiVideoLoader:         { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"]] },
+  AI2GoMultiVideoLoaderAdvanced: { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
 // ── Mirror of parse_files in nodes/multi_loader_core.py — three intentional deviations:
@@ -92,6 +95,9 @@ function ensureStyles() {
   .ai2go-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
     color:#46cca8;font-size:15px;line-height:34px;text-align:center}
   .ai2go-bl .bl-wave.bl-off{background:#2b2b29;color:#6d6d68}
+  .ai2go-bl .bl-clap{flex:none;width:34px;height:34px;border-radius:4px;background:#2a1f3d;
+    color:#b48ce6;font-size:15px;line-height:34px;text-align:center}
+  .ai2go-bl .bl-clap.bl-off{background:#2b2b29;color:#6d6d68}
   .ai2go-bl .bl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
   .ai2go-bl .bl-meta{flex:none;color:#8b8b86;font:10px ui-monospace,Consolas,monospace}
   .ai2go-bl .bl-x{flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
@@ -150,7 +156,7 @@ app.registerExtension({
     if (!cfg) return;
     ensureStyles();
 
-    const MIRRORED = ["downscale_mode", "max_size", "output_slots"];   // downscale_mode/max_size are image-only; findWidget just misses on audio
+    const MIRRORED = ["downscale_mode", "max_size", "output_slots", "force_rate"];   // downscale_mode/max_size are image-only, force_rate is video-only; findWidget just misses on the other kinds
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;
@@ -164,6 +170,17 @@ app.registerExtension({
         maxSizeW.serializeValue = () => {
           const v = parseInt(maxSizeW.value, 10);
           return Number.isFinite(v) && v >= 8 ? v : 1200;
+        };
+      }
+
+      // FLOAT guard (video nodes): same '' -> validation-failure trap as max_size above, but
+      // for a FLOAT widget; 0 is the sentinel meaning "off" so a bad value coerces to 0, not
+      // some non-zero default.
+      const forceRateW = findWidget(node, "force_rate");
+      if (forceRateW) {
+        forceRateW.serializeValue = () => {
+          const v = parseFloat(forceRateW.value);
+          return Number.isFinite(v) && v >= 0 ? v : 0.0;
         };
       }
 
@@ -234,9 +251,12 @@ app.registerExtension({
 
       // Audio containers often self-report as video/* (e.g. .ogg) or with no MIME at all on
       // Windows for unregistered extensions; the backend decoder handles both fine, so accept
-      // them here too. Images: only the empty-MIME case needs the same allowance.
+      // them here too. Video containers can likewise report no MIME on Windows for
+      // unregistered extensions. Images: only the empty-MIME case needs the same allowance.
       const acceptFile = cfg.kind === "audio"
         ? (f) => f.type.startsWith("audio/") || f.type.startsWith("video/") || f.type === ""
+        : cfg.kind === "video"
+        ? (f) => f.type.startsWith("video/") || f.type === ""
         : (f) => f.type.startsWith("image/") || f.type === "";
 
       async function addFiles(fileList) {
@@ -285,7 +305,9 @@ app.registerExtension({
       // the files as a workflow. ──
       const dropEl = document.createElement("div");
       dropEl.className = "ai2go-bl-drop";
-      dropEl.textContent = cfg.kind === "image" ? "Drop images here — or click to browse" : "Drop audio here — or click to browse";
+      dropEl.textContent = cfg.kind === "image" ? "Drop images here — or click to browse"
+        : cfg.kind === "audio" ? "Drop audio here — or click to browse"
+        : "Drop videos here — or click to browse";
       for (const ev of ["dragenter", "dragover"]) {
         dropEl.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); dropEl.classList.add("over"); });
       }
@@ -299,7 +321,7 @@ app.registerExtension({
         const picker = document.createElement("input");
         picker.type = "file";
         picker.multiple = true;
-        picker.accept = cfg.kind === "audio" ? "audio/*,video/*" : "image/*";
+        picker.accept = cfg.kind === "audio" ? "audio/*,video/*" : cfg.kind === "video" ? "video/*" : "image/*";
         picker.onchange = () => picker.files?.length && addFiles(picker.files);
         picker.click();
       });
@@ -462,6 +484,20 @@ app.registerExtension({
             preview.className = "bl-thumb" + (f.enabled ? "" : " bl-off");
             preview.src = viewUrl(f);
             preview.addEventListener("load", () => { meta.textContent = `${preview.naturalWidth}×${preview.naturalHeight}`; });
+          } else if (cfg.kind === "video") {
+            preview = document.createElement("span");
+            preview.className = "bl-clap" + (f.enabled ? "" : " bl-off");
+            preview.textContent = "🎬";
+            // Like the Audio() probe below, this element is never appended to the DOM —
+            // loadedmetadata fires from the network fetch alone, no layout needed.
+            const probe = document.createElement("video");
+            probe.preload = "metadata";
+            probe.src = viewUrl(f);
+            probe.addEventListener("loadedmetadata", () => {
+              const s = Math.round(probe.duration);
+              const time = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+              meta.textContent = `${time} · ${probe.videoWidth}×${probe.videoHeight}`;
+            });
           } else {
             preview = document.createElement("span");
             preview.className = "bl-wave" + (f.enabled ? "" : " bl-off");

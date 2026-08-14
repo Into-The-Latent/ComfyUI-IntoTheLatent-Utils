@@ -198,3 +198,14 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
   unconnected OPTIONAL input is never passed and the node falls back to its `=None` default.
   Feeding `None` to a connected OPTIONAL input therefore reproduces exactly that unplugged state —
   it does **not** hold for REQUIRED inputs, so a row feeding one must not be switched off.
+- **Multi Video Loader pair added** (`video_N` + `audio_N`, Advanced adds `filename_N`): same
+  drop/row/toggle/reorder front-end, extended to a third `kind` in `web/js/multi_loader.js`
+  instead of a parallel implementation.
+- **`force_rate` (FLOAT, default 0.0)**: `0` is the free path — `video_N` comes back as a lazy
+  `VideoFromFile` with no frames decoded, and `audio_N` is decoded independently via PyAV. Any
+  other value forces every clip to that frame rate (dropping/duplicating frames, real running
+  time preserved — the VideoHelperSuite convention), which requires decoding the clip's frames
+  and so costs time and memory that the `0` path avoids.
+- **No audio track → `None`, not an error**: a video file without an audio stream yields `None`
+  on that file's `audio_N`, following the same "unplugged OPTIONAL input" rule as a switched-off
+  row — safe unless that socket feeds a REQUIRED input.
