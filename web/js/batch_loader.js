@@ -62,8 +62,9 @@ function ensureStyles() {
     font:11.5px -apple-system,"Segoe UI",Roboto,sans-serif;color:#7ab8e6;background:#1d2733;
     border:1px dashed #46b4e6;border-radius:8px;cursor:copy}
   .ai2go-bl-drop.over{background:#24384c;border-style:solid}
-  .ai2go-bl{display:flex;flex-direction:column;gap:5px;width:100%;box-sizing:border-box;
+  .ai2go-bl{width:100%;box-sizing:border-box;
     font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0}
+  .ai2go-bl-content{display:flex;flex-direction:column;gap:5px;width:100%}
   .ai2go-bl .bl-row{display:flex;align-items:center;gap:7px;background:#262625;
     border:1px solid #3a3a38;border-radius:8px;padding:5px 7px}
   .ai2go-bl .bl-row.bl-drag{opacity:.45}
@@ -214,15 +215,24 @@ app.registerExtension({
       node._blDropEl = dropEl;
       node.addDOMWidget("batch_loader_drop", "drop", dropEl, { serialize: false });
 
-      // ── Rows list (DOM widget): one row per file, in socket order. ──
+      // ── Rows list (DOM widget): one row per file, in socket order. listEl is the widget root
+      // (ComfyUI pins its height each frame); the rows live in contentEl, whose *natural* height
+      // we measure so the node can both grow and shrink. Measuring listEl instead would report
+      // the pinned height back to itself, so the node could never learn it needs to grow (or
+      // shrink) — the prompt_batch.js editor/content split, applied here. ──
       const listEl = document.createElement("div");
       listEl.className = "ai2go-bl";
+      const contentEl = document.createElement("div");
+      contentEl.className = "ai2go-bl-content";
+      listEl.append(contentEl);
       const rowsWidget = node.addDOMWidget("batch_loader_rows", "rows", listEl, { serialize: false });
       let dragIndex = -1;
 
-      // Auto-fit node height to the rows (measured; the prompt_batch pattern).
+      // Auto-fit node height to the rows (measured; the prompt_batch pattern). Measure contentEl
+      // (natural height), NOT listEl (height pinned by ComfyUI) — otherwise a removed row
+      // couldn't shrink the node, because the pinned element keeps its old, larger height.
       function fitToContent() {
-        const h = Math.max(listEl.scrollHeight, 8);
+        const h = Math.max(contentEl.scrollHeight, 8);
         rowsWidget.computeSize = () => [node.size?.[0] || 300, h + 8];
         const want = node.computeSize?.();
         if (want) node.setSize([node.size[0], want[1]]);
@@ -230,10 +240,10 @@ app.registerExtension({
       }
       let lastFitH = 0;
       const ro = new ResizeObserver(() => {
-        const h = listEl.scrollHeight;
+        const h = contentEl.scrollHeight;
         if (h && h !== lastFitH) { lastFitH = h; fitToContent(); }
       });
-      ro.observe(listEl);
+      ro.observe(contentEl);
       chainCallback(node, "onRemoved", () => ro.disconnect());
 
       const viewUrl = (f) =>
@@ -260,12 +270,12 @@ app.registerExtension({
       }
 
       function render() {
-        listEl.replaceChildren();
+        contentEl.replaceChildren();
         if (!node._blRows.length) {
           const empty = document.createElement("div");
           empty.className = "bl-empty";
           empty.textContent = "No files loaded.";
-          listEl.appendChild(empty);
+          contentEl.appendChild(empty);
           return;
         }
         node._blRows.forEach((f, k) => {
@@ -279,7 +289,7 @@ app.registerExtension({
           grip.addEventListener("mousedown", () => { row.draggable = true; });
           row.addEventListener("mouseup", () => { row.draggable = false; });
           row.addEventListener("dragstart", (e) => { dragIndex = k; e.dataTransfer.effectAllowed = "move"; row.classList.add("bl-drag"); });
-          row.addEventListener("dragend", () => { row.draggable = false; dragIndex = -1; row.classList.remove("bl-drag"); listEl.querySelectorAll(".bl-over").forEach((n) => n.classList.remove("bl-over")); });
+          row.addEventListener("dragend", () => { row.draggable = false; dragIndex = -1; row.classList.remove("bl-drag"); contentEl.querySelectorAll(".bl-over").forEach((n) => n.classList.remove("bl-over")); });
           row.addEventListener("dragover", (e) => { e.preventDefault(); if (dragIndex > -1 && dragIndex !== k) row.classList.add("bl-over"); });
           row.addEventListener("dragleave", () => row.classList.remove("bl-over"));
           row.addEventListener("drop", (e) => {
@@ -331,7 +341,7 @@ app.registerExtension({
           x.addEventListener("click", () => removeAt(k));
 
           row.append(grip, num, preview, name, meta, x);
-          listEl.appendChild(row);
+          contentEl.appendChild(row);
         });
       }
       node._blRender = render;
