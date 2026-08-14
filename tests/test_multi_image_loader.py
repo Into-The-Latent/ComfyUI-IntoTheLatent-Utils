@@ -73,3 +73,17 @@ def test_disabled_row_holds_position(input_dir):
     assert out[4] is None and out[5] is None and out[6] is None   # image_2/mask_2/filename_2 all None
     img3, mask3, name3 = out[7], out[8], out[9]       # image_3/mask_3/filename_3 — its own slots, not moved up
     assert img3 is not None and mask3 is not None and name3 == "c.png"
+
+
+def test_all_disabled_yields_count_zero(input_dir):
+    # All rows disabled (Toggle All off): count == 0, all output slots are None, no exception.
+    from nodes.multi_image_loader import _run_image
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(input_dir / "a.png")
+    Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "b.png")
+    out = _run_image(json.dumps([
+        {"name": "a.png", "enabled": False},
+        {"name": "b.png", "enabled": False},
+    ]), "off", 1200, advanced=True)
+
+    assert out[0] == 0                              # count == 0, not > 0 (no exception)
+    assert all(v is None for v in out[1:])          # all output slots None

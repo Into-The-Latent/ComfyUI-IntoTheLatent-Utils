@@ -81,3 +81,17 @@ def test_disabled_row_holds_position(input_dir):
     assert out[3] is None and out[4] is None      # audio_2/filename_2 both None
     audio3, name3 = out[5], out[6]                # audio_3/filename_3 — its own slots, not moved up
     assert audio3 is not None and name3 == "c.wav"
+
+
+def test_all_disabled_yields_count_zero(input_dir):
+    # All rows disabled (Toggle All off): count == 0, all output slots are None, no exception.
+    from nodes.multi_audio_loader import _run_audio
+    _write_wav(input_dir / "a.wav")
+    _write_wav(input_dir / "b.wav")
+    out = _run_audio(json.dumps([
+        {"name": "a.wav", "enabled": False},
+        {"name": "b.wav", "enabled": False},
+    ]), advanced=True)
+
+    assert out[0] == 0                          # count == 0, not > 0 (no exception)
+    assert all(v is None for v in out[1:])      # all output slots None
