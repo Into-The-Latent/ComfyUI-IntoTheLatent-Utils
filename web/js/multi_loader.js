@@ -179,7 +179,8 @@ app.registerExtension({
         const formatRange = (start, end) => (start === end ? String(start) : `${start}-${end}`);
         if (n < slots) {
           const range = formatRange(n + 1, slots);
-          return ` — socket${n + 1 === slots ? "" : "s"} ${range} have${n + 1 === slots ? "s" : ""} no file yet; leave them unwired until you add more.`;
+          const one = n + 1 === slots;
+          return ` — socket${one ? "" : "s"} ${range} ${one ? "has" : "have"} no file yet; leave ${one ? "it" : "them"} unwired until you add more.`;
         }
         if (n > slots) {
           const range = formatRange(slots + 1, n);
