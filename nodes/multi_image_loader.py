@@ -1,9 +1,9 @@
-# Batch Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = image_N + count;
 # Advanced adds mask_N + filename_N. Outputs are declared at the MAX_FILES ceiling and the
-# front-end (web/js/batch_loader.js) trims the unused tail — slot order is count first, then
+# front-end (web/js/multi_loader.js) trims the unused tail — slot order is count first, then
 # grouped per file, so used slots stay contiguous (ComfyUI validates output types by position).
 # Mask quirks copied from stock LoadImage: mask = 1.0 - alpha; no alpha -> 64x64 zeros.
 import os
@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 import folder_paths
 from comfy_api.latest import io
 
-from .batch_loader_core import DOWNSCALE_MODES, MAX_FILES, downscale_size, parse_files
+from .multi_loader_core import DOWNSCALE_MODES, MAX_FILES, downscale_size, parse_files
 
 
 def _input_path(f):
@@ -102,9 +102,10 @@ def _image_inputs():
         ),
         io.Combo.Input(
             "downscale_mode", options=list(DOWNSCALE_MODES), default="off",
-            tooltip="off = images pass through untouched. fit = shrink keeping shape so the longest "
-                    "edge is max_size. crop = centered square, at most max_size. stretch = force a "
-                    "max_size square (ignores shape). Never upscales (fit/crop); masks follow their image.",
+            tooltip="off = images pass through untouched. keep aspect ratio = shrink keeping shape so "
+                    "the longest edge is max_size. crop to square = centered square, at most max_size. "
+                    "stretch to square = force a max_size square (ignores shape). Never upscales (keep "
+                    "aspect ratio/crop to square); masks follow their image.",
         ),
         io.Int.Input(
             "max_size", default=1200, min=8, max=8192, step=8,
@@ -123,18 +124,18 @@ def _image_outputs(advanced):
     return outs
 
 
-class AI2GoBatchImageLoader(io.ComfyNode):
+class AI2GoMultiImageLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchImageLoader",
-            display_name="AI2Go Batch Image Loader",
+            node_id="AI2GoMultiImageLoader",
+            display_name="AI2Go Multi Image Loader",
             category="AI2Go/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload"],
             description="Drop up to 8 images onto the node; each gets its own image_N output "
                         "socket (sockets appear/disappear with the list). Optional downscaling: "
-                        "set downscale_mode to fit/crop/stretch and images larger than max_size "
-                        "shrink on load. count = number of files loaded.",
+                        "set downscale_mode to keep aspect ratio/crop to square/stretch to square "
+                        "and images larger than max_size shrink on load. count = number of files loaded.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=False),
         )
@@ -148,15 +149,15 @@ class AI2GoBatchImageLoader(io.ComfyNode):
         return _fingerprint(files_json, downscale_mode, max_size)
 
 
-class AI2GoBatchImageLoaderAdvanced(io.ComfyNode):
+class AI2GoMultiImageLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchImageLoaderAdvanced",
-            display_name="AI2Go Batch Image Loader Advanced",
+            node_id="AI2GoMultiImageLoaderAdvanced",
+            display_name="AI2Go Multi Image Loader Advanced",
             category="AI2Go/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload", "mask", "filename"],
-            description="Batch Image Loader plus a mask_N (inverted alpha, stock LoadImage "
+            description="Multi Image Loader plus a mask_N (inverted alpha, stock LoadImage "
                         "behavior) and filename_N output per file.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=True),

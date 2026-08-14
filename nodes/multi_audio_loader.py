@@ -1,4 +1,4 @@
-# Batch Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = audio_N + count;
@@ -13,7 +13,7 @@ import torch
 import folder_paths
 from comfy_api.latest import io
 
-from .batch_loader_core import MAX_FILES, parse_files
+from .multi_loader_core import MAX_FILES, parse_files
 
 
 def _input_path(f):
@@ -112,12 +112,12 @@ def _audio_outputs(advanced):
     return outs
 
 
-class AI2GoBatchAudioLoader(io.ComfyNode):
+class AI2GoMultiAudioLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchAudioLoader",
-            display_name="AI2Go Batch Audio Loader",
+            node_id="AI2GoMultiAudioLoader",
+            display_name="AI2Go Multi Audio Loader",
             category="AI2Go/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "wav", "mp3"],
             description="Drop up to 8 audio files onto the node; each gets its own audio_N "
@@ -137,15 +137,15 @@ class AI2GoBatchAudioLoader(io.ComfyNode):
         return _fingerprint(files_json)
 
 
-class AI2GoBatchAudioLoaderAdvanced(io.ComfyNode):
+class AI2GoMultiAudioLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchAudioLoaderAdvanced",
-            display_name="AI2Go Batch Audio Loader Advanced",
+            node_id="AI2GoMultiAudioLoaderAdvanced",
+            display_name="AI2Go Multi Audio Loader Advanced",
             category="AI2Go/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "filename"],
-            description="Batch Audio Loader plus a filename_N output per file.",
+            description="Multi Audio Loader plus a filename_N output per file.",
             inputs=_audio_inputs(),
             outputs=_audio_outputs(advanced=True),
         )

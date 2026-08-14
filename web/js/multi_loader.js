@@ -1,7 +1,7 @@
 /*
  * Part of ComfyUI-AI2Go-Utils.
  *
- * Shared front-end for the four Batch Loader nodes. GPL-3.0, like the rest of the pack.
+ * Shared front-end for the four Multi Loader nodes. GPL-3.0, like the rest of the pack.
  *
  * Files dropped/picked are uploaded once to ComfyUI's input/ folder; the hidden `files_json`
  * widget (a JSON array of {name, subfolder, type}) is the single source of truth for save,
@@ -9,7 +9,7 @@
  * output groups; syncOutputs() trims node.outputs to `count` + the loaded groups and re-adds
  * up to the ceiling when files come back. Trimming only ever cuts from the end — ComfyUI
  * validates output types by slot position, so used slots must stay contiguous from slot 0.
- * parseFiles mirrors parse_files in nodes/batch_loader_core.py — keep the two in sync.
+ * parseFiles mirrors parse_files in nodes/multi_loader_core.py — keep the two in sync.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
@@ -18,13 +18,13 @@ const MAX_FILES = 8;
 
 // group: [prefix, TYPE] per output within one file's group, in schema order.
 const NODES = {
-  AI2GoBatchImageLoader:         { kind: "image", group: [["image_", "IMAGE"]] },
-  AI2GoBatchImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
-  AI2GoBatchAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
-  AI2GoBatchAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
+  AI2GoMultiImageLoader:         { kind: "image", group: [["image_", "IMAGE"]] },
+  AI2GoMultiImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
+  AI2GoMultiAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
+  AI2GoMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
-// ── Mirror of parse_files in nodes/batch_loader_core.py — two intentional deviations:
+// ── Mirror of parse_files in nodes/multi_loader_core.py — two intentional deviations:
 // (1) empty files_json is OK here (Python raises "No files loaded" only at run time), and
 // (2) entries beyond MAX_FILES are silently ignored here instead of raising (Python rejects
 // the whole list with a "too many files" error). ──
@@ -115,7 +115,7 @@ async function uploadFile(file) {
 }
 
 app.registerExtension({
-  name: "AI2Go.BatchLoader",
+  name: "AI2Go.MultiLoader",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     const cfg = NODES[nodeData?.name];
@@ -213,7 +213,7 @@ app.registerExtension({
         if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
       });
       node._blDropEl = dropEl;
-      node.addDOMWidget("batch_loader_drop", "drop", dropEl, { serialize: false });
+      node.addDOMWidget("multi_loader_drop", "drop", dropEl, { serialize: false });
 
       // ── Rows list (DOM widget): one row per file, in socket order. listEl is the widget root
       // (ComfyUI pins its height each frame); the rows live in contentEl, whose *natural* height
@@ -225,7 +225,7 @@ app.registerExtension({
       const contentEl = document.createElement("div");
       contentEl.className = "ai2go-bl-content";
       listEl.append(contentEl);
-      const rowsWidget = node.addDOMWidget("batch_loader_rows", "rows", listEl, { serialize: false });
+      const rowsWidget = node.addDOMWidget("multi_loader_rows", "rows", listEl, { serialize: false });
       let dragIndex = -1;
 
       // Auto-fit node height to the rows (measured; the prompt_batch pattern). Measure contentEl
@@ -367,7 +367,7 @@ app.registerExtension({
       });
       addBtn.serialize = false;
 
-      node.addDOMWidget("batch_loader_status", "info", statusEl, { serialize: false });
+      node.addDOMWidget("multi_loader_status", "info", statusEl, { serialize: false });
       setStatus(`Drop ${cfg.kind} files here or press ＋ Add.`, "#8a8a8a");
 
       // Fresh node: no files yet -> trim the declared ceiling down to just `count`.

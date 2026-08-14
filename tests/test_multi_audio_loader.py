@@ -1,4 +1,4 @@
-# Integration test for the Batch Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Integration test for the Multi Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
 import json
 import wave
 
@@ -25,7 +25,7 @@ def _write_wav(path, sample_rate=22050, n=2205):
 
 def test_advanced_audio_and_filenames(input_dir):
     import torch
-    from nodes.batch_audio_loader import _run_audio
+    from nodes.multi_audio_loader import _run_audio
     _write_wav(input_dir / "vo.wav", sample_rate=22050)
     _write_wav(input_dir / "bed.wav", sample_rate=44100)
     out = _run_audio(json.dumps([{"name": "vo.wav"}, {"name": "bed.wav"}]), advanced=True)
@@ -41,7 +41,7 @@ def test_advanced_audio_and_filenames(input_dir):
 
 
 def test_simple_layout(input_dir):
-    from nodes.batch_audio_loader import _run_audio
+    from nodes.multi_audio_loader import _run_audio
     _write_wav(input_dir / "one.wav")
     out = _run_audio(json.dumps([{"name": "one.wav"}]), advanced=False)
     assert len(out) == 9 and out[0] == 1
@@ -49,13 +49,13 @@ def test_simple_layout(input_dir):
 
 
 def test_missing_file_raises(input_dir):
-    from nodes.batch_audio_loader import _run_audio
+    from nodes.multi_audio_loader import _run_audio
     with pytest.raises(ValueError, match="gone.wav"):
         _run_audio(json.dumps([{"name": "gone.wav"}]), advanced=False)
 
 
 def test_corrupt_file_raises(input_dir):
-    from nodes.batch_audio_loader import _run_audio
+    from nodes.multi_audio_loader import _run_audio
     # Write a text file with .wav extension
     (input_dir / "bad.wav").write_text("not audio data")
     with pytest.raises(ValueError, match="bad.wav"):

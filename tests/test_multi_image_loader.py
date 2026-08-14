@@ -1,4 +1,4 @@
-# Integration test for the Batch Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Integration test for the Multi Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
 import json
 
 import pytest
@@ -16,7 +16,7 @@ def input_dir(tmp_path, monkeypatch):
 
 
 def test_advanced_images_masks_filenames(input_dir):
-    from nodes.batch_image_loader import _run_image
+    from nodes.multi_image_loader import _run_image
     Image.new("RGBA", (32, 16), (255, 0, 0, 128)).save(input_dir / "a.png")
     Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "b.png")
     out = _run_image(json.dumps([{"name": "a.png"}, {"name": "b.png"}]), "off", 1200, advanced=True)
@@ -34,7 +34,7 @@ def test_advanced_images_masks_filenames(input_dir):
 
 
 def test_simple_layout(input_dir):
-    from nodes.batch_image_loader import _run_image
+    from nodes.multi_image_loader import _run_image
     Image.new("RGB", (8, 8), (0, 0, 255)).save(input_dir / "c.png")
     out = _run_image(json.dumps([{"name": "c.png"}]), "off", 1200, advanced=False)
     assert len(out) == 9 and out[0] == 1
@@ -42,13 +42,13 @@ def test_simple_layout(input_dir):
 
 
 def test_downscale_fit_applies(input_dir):
-    from nodes.batch_image_loader import _run_image
+    from nodes.multi_image_loader import _run_image
     Image.new("RGB", (2400, 1200), (9, 9, 9)).save(input_dir / "big.png")
-    out = _run_image(json.dumps([{"name": "big.png"}]), "fit", 1200, advanced=False)
+    out = _run_image(json.dumps([{"name": "big.png"}]), "keep aspect ratio", 1200, advanced=False)
     assert out[1].shape == (1, 600, 1200, 3)
 
 
 def test_missing_file_raises(input_dir):
-    from nodes.batch_image_loader import _run_image
+    from nodes.multi_image_loader import _run_image
     with pytest.raises(ValueError, match="gone.png"):
         _run_image(json.dumps([{"name": "gone.png"}]), "off", 1200, advanced=False)
