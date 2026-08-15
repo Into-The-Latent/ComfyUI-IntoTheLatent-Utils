@@ -176,3 +176,36 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
 2. **Upload route for audio** — assumed `/upload/image` (generic); confirmed in the spike.
 3. **Reordering rows rewires meaning** just like deletion does; the same status-line warning
    covers drag-reorder of rows whose sockets are already connected.
+
+## Amendments (2026-08-14)
+
+- **Batch → Multi rename**: `AI2GoBatch*Loader*` node_ids/files became `AI2GoMulti*Loader*` /
+  `multi_*` — "Batch" already means the Prompt Batch index-walk pattern in this pack, and these
+  nodes do something different (parallel sockets), so the old name was misleading.
+- **Downscale mode labels** became plain words (`keep aspect ratio` / `crop to square` /
+  `stretch to square`) instead of `fit`/`crop`/`stretch`, per pack rule to lead with plain
+  language over jargon.
+- **`output_slots` added** (Combo: `auto`/1-8, front-end only): the Python side always returns a
+  fully padded output list regardless of file count, so socket count was purely a display
+  decision — pinning it lets sockets, and the wires on them, survive file-list edits instead of
+  shrinking (and destroying a wire) whenever a file is removed.
+- **Drop zone doubles as the file picker**: the separate ＋ Add button was removed; clicking the
+  drop zone now opens the same file picker, so there is one field for both gestures.
+- **Per-row on/off toggles + Toggle All** (rgthree Power Lora Loader styling): switching a row off
+  is not the same as removing it — the row keeps its socket position (no shift) and that group's
+  outputs become `None` on the next run; `count` reports only the enabled files actually emitted.
+- **Why `None` is safe here**: `get_input_data` only passes inputs present in the prompt, so an
+  unconnected OPTIONAL input is never passed and the node falls back to its `=None` default.
+  Feeding `None` to a connected OPTIONAL input therefore reproduces exactly that unplugged state —
+  it does **not** hold for REQUIRED inputs, so a row feeding one must not be switched off.
+- **Multi Video Loader pair added** (`video_N` + `audio_N`, Advanced adds `filename_N`): same
+  drop/row/toggle/reorder front-end, extended to a third `kind` in `web/js/multi_loader.js`
+  instead of a parallel implementation.
+- **`force_rate` (FLOAT, default 0.0)**: `0` is the free path — `video_N` comes back as a lazy
+  `VideoFromFile` with no frames decoded, and `audio_N` is decoded independently via PyAV. Any
+  other value forces every clip to that frame rate (dropping/duplicating frames, real running
+  time preserved — the VideoHelperSuite convention), which requires decoding the clip's frames
+  and so costs time and memory that the `0` path avoids.
+- **No audio track → `None`, not an error**: a video file without an audio stream yields `None`
+  on that file's `audio_N`, following the same "unplugged OPTIONAL input" rule as a switched-off
+  row — safe unless that socket feeds a REQUIRED input.

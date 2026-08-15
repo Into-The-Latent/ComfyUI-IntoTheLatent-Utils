@@ -1,9 +1,9 @@
-# Batch Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = image_N + count;
 # Advanced adds mask_N + filename_N. Outputs are declared at the MAX_FILES ceiling and the
-# front-end (web/js/batch_loader.js) trims the unused tail — slot order is count first, then
+# front-end (web/js/multi_loader.js) trims the unused tail — slot order is count first, then
 # grouped per file, so used slots stay contiguous (ComfyUI validates output types by position).
 # Mask quirks copied from stock LoadImage: mask = 1.0 - alpha; no alpha -> 64x64 zeros.
 import os
@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 import folder_paths
 from comfy_api.latest import io
 
-from .batch_loader_core import DOWNSCALE_MODES, MAX_FILES, downscale_size, parse_files
+from .multi_loader_core import DOWNSCALE_MODES, MAX_FILES, downscale_size, parse_files
 
 
 def _input_path(f):
@@ -27,13 +27,17 @@ def _input_path(f):
     return path
 
 
-def _load_image(path, mode, max_size):
-    """Load one image -> (IMAGE [1,H,W,3], MASK). Applies downscale geometry to both."""
+def _load_image(path, mode, max_size, pos):
+    """Load one image -> (IMAGE [1,H,W,3], MASK). Applies downscale geometry to both.
+
+    ``pos`` is the file's 1-based position in files_json, included in error messages so a
+    failure can be traced back to a specific row in the UI.
+    """
     try:
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
     except Exception as e:
-        raise ValueError(f"Could not read image {os.path.basename(path)!r}: {e}") from e
+        raise ValueError(f"File #{pos}: Could not read image {os.path.basename(path)!r}: {e}") from e
 
     alpha = img.getchannel("A") if "A" in img.getbands() else None
     rgb = img.convert("RGB")
@@ -55,21 +59,30 @@ def _load_image(path, mode, max_size):
 
 
 def _run_image(files_json, downscale_mode, max_size, advanced):
-    """Shared engine for both nodes. Returns the padded output list (count first)."""
+    """Shared engine for both nodes. Returns the padded output list (count first).
+
+    A row with ``enabled: False`` keeps its socket position — its group's slots stay
+    None — and is not counted; it is never opened/loaded. ``count`` is the number of
+    files actually emitted (enabled rows), not the number of rows.
+    """
     files = parse_files(files_json)
     group = 3 if advanced else 1
     outputs = [None] * (1 + MAX_FILES * group)
-    outputs[0] = len(files)
+    emitted = 0
     for i, f in enumerate(files):
+        base = 1 + i * group  # slot base stays tied to the loop index — disabled rows don't shift later ones
+        if not f["enabled"]:
+            continue
         path = _input_path(f)
         if not os.path.isfile(path):
-            raise ValueError(f"File not found in the input folder: {f['name']!r} — re-add it to the node.")
-        image, mask = _load_image(path, downscale_mode, max_size)
-        base = 1 + i * group
+            raise ValueError(f"File #{i + 1} ({f['name']!r}): not found in the input folder — re-add it to the node.")
+        image, mask = _load_image(path, downscale_mode, max_size, i + 1)
         outputs[base] = image
         if advanced:
             outputs[base + 1] = mask
             outputs[base + 2] = f["name"]
+        emitted += 1
+    outputs[0] = emitted
     return outputs
 
 
@@ -83,9 +96,9 @@ def _fingerprint(files_json, downscale_mode, max_size):
     for f in files:
         try:
             st = os.stat(_input_path(f))
-            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}")
+            sig.append(f"{f['subfolder']}/{f['name']}:{st.st_size}:{st.st_mtime_ns}:{f['enabled']}")
         except (OSError, ValueError):
-            sig.append(f"{f['subfolder']}/{f['name']}:missing")
+            sig.append(f"{f['subfolder']}/{f['name']}:missing:{f['enabled']}")
     return "|".join(sig)
 
 
@@ -98,13 +111,21 @@ def _image_inputs():
         ),
         io.Combo.Input(
             "downscale_mode", options=list(DOWNSCALE_MODES), default="off",
-            tooltip="off = images pass through untouched. fit = shrink keeping shape so the longest "
-                    "edge is max_size. crop = centered square, at most max_size. stretch = force a "
-                    "max_size square (ignores shape). Never upscales (fit/crop); masks follow their image.",
+            tooltip="off = images pass through untouched. keep aspect ratio = shrink keeping shape so "
+                    "the longest edge is max_size. crop to square = centered square, at most max_size. "
+                    "stretch to square = force a max_size square (ignores shape). Never upscales (keep "
+                    "aspect ratio/crop to square); masks follow their image.",
         ),
         io.Int.Input(
             "max_size", default=1200, min=8, max=8192, step=8,
             tooltip="Size threshold/target in pixels for downscaling. Ignored while downscale_mode is off.",
+        ),
+        io.Combo.Input(
+            "output_slots", options=["auto", "1", "2", "3", "4", "5", "6", "7", "8"], default="auto",
+            tooltip="How many output sockets to show. 'auto' follows the number of loaded files, so "
+                    "sockets appear and disappear as you edit the list. Pick a fixed number to keep the "
+                    "sockets (and your wires) in place while you swap files around — extra sockets with "
+                    "no file behind them output nothing, so don't wire more than you load.",
         ),
     ]
 
@@ -119,49 +140,60 @@ def _image_outputs(advanced):
     return outs
 
 
-class AI2GoBatchImageLoader(io.ComfyNode):
+class AI2GoMultiImageLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchImageLoader",
-            display_name="AI2Go Batch Image Loader",
+            node_id="AI2GoMultiImageLoader",
+            display_name="AI2Go Multi Image Loader",
             category="AI2Go/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload"],
             description="Drop up to 8 images onto the node; each gets its own image_N output "
-                        "socket (sockets appear/disappear with the list). Optional downscaling: "
-                        "set downscale_mode to fit/crop/stretch and images larger than max_size "
-                        "shrink on load. count = number of files loaded.",
+                        "socket (sockets appear/disappear with the list, or pin output_slots to a "
+                        "fixed count so wires survive file edits). Each row has an on/off toggle: a "
+                        "switched-off row keeps its socket position but outputs None for image_N "
+                        "(and mask_N/filename_N on Advanced) — equivalent to leaving an unplugged "
+                        "OPTIONAL input, so don't switch off a row feeding a REQUIRED input. "
+                        "Optional downscaling: set downscale_mode to keep aspect ratio/crop to "
+                        "square/stretch to square and images larger than max_size shrink on load. "
+                        "count = number of files actually emitted (enabled rows), not the row count.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=False),
         )
 
     @classmethod
-    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200) -> io.NodeOutput:
+    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_image(files_json, downscale_mode, max_size, advanced=False))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200):
+    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto"):
         return _fingerprint(files_json, downscale_mode, max_size)
 
 
-class AI2GoBatchImageLoaderAdvanced(io.ComfyNode):
+class AI2GoMultiImageLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoBatchImageLoaderAdvanced",
-            display_name="AI2Go Batch Image Loader Advanced",
+            node_id="AI2GoMultiImageLoaderAdvanced",
+            display_name="AI2Go Multi Image Loader Advanced",
             category="AI2Go/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload", "mask", "filename"],
-            description="Batch Image Loader plus a mask_N (inverted alpha, stock LoadImage "
+            description="Multi Image Loader plus a mask_N (inverted alpha, stock LoadImage "
                         "behavior) and filename_N output per file.",
             inputs=_image_inputs(),
             outputs=_image_outputs(advanced=True),
         )
 
     @classmethod
-    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200) -> io.NodeOutput:
+    def execute(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto") -> io.NodeOutput:
+        # output_slots is front-end-only (see web/js/multi_loader.js): it only picks how many
+        # sockets are shown, not what the sockets carry. Accepted here only so it serializes /
+        # the socket exists.
         return io.NodeOutput(*_run_image(files_json, downscale_mode, max_size, advanced=True))
 
     @classmethod
-    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200):
+    def fingerprint_inputs(cls, files_json="[]", downscale_mode="off", max_size=1200, output_slots="auto"):
         return _fingerprint(files_json, downscale_mode, max_size)

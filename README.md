@@ -188,6 +188,57 @@ error at run time.
 If the index ever overshoots the list (more runs than prompts), it clamps to the last prompt instead of
 erroring.
 
+### AI2Go Multi Loaders (Image, Audio & Video)
+
+Drop **multiple files onto one node** and every file gets its **own output socket** — wire each
+image, clip or video somewhere different in the same run. Six nodes, two flavors each:
+
+| Node | Per file | Always |
+|---|---|---|
+| **Multi Image Loader** | `image_N` | `count` |
+| **Multi Image Loader Advanced** | `image_N` + `mask_N` + `filename_N` | `count` |
+| **Multi Audio Loader** | `audio_N` | `count` |
+| **Multi Audio Loader Advanced** | `audio_N` + `filename_N` | `count` |
+| **Multi Video Loader** | `video_N` + `audio_N` | `count` |
+| **Multi Video Loader Advanced** | `video_N` + `audio_N` + `filename_N` | `count` |
+
+- **Up to 8 files per node.** By default (`output_slots = auto`) sockets appear as you add files
+  and disappear as you remove them. Files are uploaded into ComfyUI's `input/` folder (like the
+  stock Load Image), so saved workflows survive restarts.
+- **`output_slots`:** pin a fixed socket count (1-8) instead of `auto` to keep the sockets — and
+  your wires — in place while you swap files around. Extra sockets with no file behind them
+  output nothing, so don't wire more than you actually load; when the pinned count is lower than
+  the number of loaded files, the extra files simply aren't reachable (no socket carries them).
+- **Drop the files onto the field, or click it to browse** — same field does both; no separate
+  add button.
+- **Rows** show a thumbnail + pixel size (images) or a duration (audio). Drag the ⠿ grip to
+  reorder, ✕ to remove, **Sort by name** for folder order. Row order = socket order.
+- **Removing or reordering files shifts what each socket carries** — the node warns you in its
+  status line whenever a change touches a socket that has a wire, so check your connections.
+- **Per-row on/off toggle**, plus a **Toggle All** control above the list. Switching a row off is
+  different from removing it: the row **keeps its socket position** — nothing shifts — and that
+  socket simply outputs nothing (`None`) on the next run; `count` only counts the enabled files
+  actually emitted. That's equivalent to leaving an **OPTIONAL** input unplugged, so it's safe for
+  wires feeding optional inputs downstream. Don't switch off a row whose socket feeds a
+  **REQUIRED** input — that node will fail on `None`.
+- **Downscaling (image nodes):** set `downscale_mode` to `keep aspect ratio` (shrink keeping
+  shape), `crop to square` (centered square) or `stretch to square` (forced square) and any image
+  whose longest edge exceeds `max_size` is shrunk on load — `off` (the default) passes images
+  through untouched. `keep aspect ratio` and `crop to square` never upscale; `stretch to square`
+  may enlarge the shorter side (forcing a square does that). Masks are resized with their image;
+  originals in `input/` are never modified.
+- **Masks** (Advanced): inverted alpha, exactly like stock Load Image — files without an alpha
+  channel yield the stock 64×64 empty mask.
+- **Audio is never resampled** — each `audio_N` keeps its file's native sample rate.
+- **`force_rate` (video nodes):** `0` (the default) leaves every clip at its own native frame
+  rate, and `video_N` is handed back lazily without decoding a single frame — the free path. Any
+  other value drops or duplicates frames so every clip runs at that rate while keeping its real
+  running time (a 10s clip stays 10s), the same convention as VideoHelperSuite — but forcing a
+  rate has to decode the clip's frames to do it, so it costs time and memory.
+- **Video clips with no audio track** yield nothing on that file's `audio_N` socket — same as
+  leaving an unplugged **OPTIONAL** input, so it's safe unless that socket feeds a **REQUIRED**
+  input downstream.
+
 ### AI2Go Resolution Selector
 
 Pick a model-valid **width/height** by aspect ratio and mode, and (optionally) push it straight into
