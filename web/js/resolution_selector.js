@@ -1,13 +1,13 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
- * Front-end for the AI2Go Resolution Selector node. GPL-3.0, like the rest of the pack.
+ * Front-end for the ITL Resolution Selector node. GPL-3.0, like the rest of the pack.
  *
  * Three modes (raw / auto / megapixel) compute a profile-valid width/height. The math mirrors
  * nodes/resolution_core.py so the readout/UI and the INT outputs always agree. A landscape-only
  * aspect list + a "⟷" flip button (orientation) cover both orientations without duplicate entries.
  * Edits auto-push the dims into any connected node's width/height widgets and fire their callbacks —
- * which, for the AI2Go Ideogram 4 Prompt Builder, refreshes its editor canvas.
+ * which, for the ITL Ideogram 4 Prompt Builder, refreshes its editor canvas.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
@@ -50,10 +50,10 @@ function fitW(tw, ar, p) {
 }
 
 app.registerExtension({
-  name: "AI2Go.ResolutionSelector",
+  name: "ITL.ResolutionSelector",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "AI2GoResolutionSelector") return;
+    if (nodeData?.name !== "ITLResolutionSelector") return;
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;

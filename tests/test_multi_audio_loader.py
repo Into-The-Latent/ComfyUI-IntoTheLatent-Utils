@@ -1,4 +1,4 @@
-# Integration test for the Multi Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Integration test for the Multi Audio Loader nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import json
 import wave
 

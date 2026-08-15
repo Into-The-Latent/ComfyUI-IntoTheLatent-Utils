@@ -1,4 +1,4 @@
-# ComfyUI -> A1111 sampler-label mapping — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# ComfyUI -> A1111 sampler-label mapping — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Civitai/A1111 read a sampler *label* (e.g. "DPM++ 2M Karras"). ComfyUI stores a (sampler_name,
 # scheduler) pair. Map the common pairs; fall back to a readable rendering so nothing is lost.

@@ -1,4 +1,4 @@
-# AutoV2 file hashing + cache — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# AutoV2 file hashing + cache — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Civitai matches a checkpoint/LoRA by AutoV2 = first 10 hex of the file's full SHA-256. Hashing a
 # multi-GB checkpoint is slow, so results are cached to JSON keyed by abspath+size+mtime.

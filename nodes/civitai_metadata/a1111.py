@@ -1,4 +1,4 @@
-# A1111 `parameters` chunk formatter — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# A1111 `parameters` chunk formatter — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Produces the flat text Civitai parses: positive (+ appended <lora:...> tags), a "Negative prompt:"
 # line, then a comma-separated settings line. Unknown/None fields are omitted, never guessed.

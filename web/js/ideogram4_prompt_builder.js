@@ -1,5 +1,5 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
  * Derived from ComfyUI-KJNodes (web/js/ideogram4_prompt_builder.js, web/js/utility.js)
  * by Kijai, licensed under GPL-3.0; this file and pack remain GPL-3.0.
@@ -11,7 +11,7 @@ const { app } = window.comfyAPI.app;
 const HANDLE = 8;            // hit radius (canvas px) for corners/edges
 const MAX_ELEM_COLORS = 5;   // Ideogram 4 per-element palette cap
 const MAX_STYLE_COLORS = 16; // Ideogram 4 style palette cap
-const DOCK_MINW = 300, DOCK_MINH = 240;   // dock min size — kept in sync with the .ai2go-ideo-dock CSS below
+const DOCK_MINW = 300, DOCK_MINH = 240;   // dock min size — kept in sync with the .itl-ideo-dock CSS below
 let copiedBoxes = null;      // internal clipboard for copy/paste of regions (array; shared across nodes)
 
 // Track the most recent generated image so it can be grabbed as a background.
@@ -77,7 +77,7 @@ try {
 
 // Named caption-JSON templates, each stored as its own file server-side via ComfyUI's userdata
 // API (under the ComfyUI user dir) so they persist across browsers/machines and survive clears.
-const TPL_DIR = "ai2go/ideogram4/templates";
+const TPL_DIR = "itl/ideogram4/templates";
 const tplSafe = (s) => (s || "").replace(/[\/\\:*?"<>|]+/g, "_").trim();   // filesystem-safe name
 const tplFile = (name) => `${TPL_DIR}/${name}.json`;
 async function listTemplateNames() {
@@ -338,9 +338,9 @@ function applyDockTheme(n) {
   if (n._dockTheme === sig) return;
   n._dockTheme = sig;
   const set = (k, v) => (v ? fl.style.setProperty(k, v) : fl.style.removeProperty(k));
-  set("--ai2go-dock-bg", n.bgcolor);
-  set("--ai2go-dock-head", n.color);
-  set("--ai2go-dock-border", n.color || n.bgcolor);
+  set("--itl-dock-bg", n.bgcolor);
+  set("--itl-dock-head", n.color);
+  set("--itl-dock-border", n.color || n.bgcolor);
   fl.classList.toggle("pinned", pinned);
 }
 // Event-driven loop: woken by canvas redraws (dirty-gated) + resize, self-stops when settled.
@@ -416,109 +416,109 @@ function outsideDismiss(menu, onDismiss, anchor) {
 }
 
 function injectStyle() {
-  if (document.getElementById("ai2go-ideo-style")) return;
+  if (document.getElementById("itl-ideo-style")) return;
   const s = document.createElement("style");
-  s.id = "ai2go-ideo-style";
+  s.id = "itl-ideo-style";
   s.textContent = `
-    .ai2go-ideo-wrap { display:flex; flex-direction:column; overflow:hidden; position:relative; pointer-events:auto; gap:4px; }
-    .ai2go-ideo-cv { flex:1 1 auto; min-width:0; min-height:60px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-    .ai2go-ideo-canvas { cursor:crosshair; display:block; flex:0 0 auto; background:#1a1a1a; border-radius:4px; outline:none; touch-action:none; }
-    .ai2go-ideo-bar { display:flex; align-items:center; gap:6px; font:11px sans-serif; color:#aaa; user-select:none; padding:0 2px; flex:0 0 auto; }
-    .ai2go-ideo-panel { display:flex; flex-direction:column; gap:5px; padding:6px; background:#262626; border-radius:4px; font:11px sans-serif; color:#bbb; flex:0 0 auto; overflow-y:auto; min-height:0; }
-    .ai2go-ideo-split { flex:0 0 auto; height:8px; cursor:ns-resize; position:relative; }
-    .ai2go-ideo-split::before { content:""; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:34px; height:3px; background:#555; border-radius:2px; }
-    .ai2go-ideo-split:hover::before { background:#46b4e6; }
-    .ai2go-ideo-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-    .ai2go-ideo-btn { background:#333; border:1px solid #555; border-radius:4px; color:#bbb; font:11px sans-serif; cursor:pointer; padding:2px 8px; line-height:16px; white-space:nowrap; flex-shrink:0; }
-    .ai2go-ideo-btn:hover { border-color:#46b4e6; color:#fff; }
-    .ai2go-ideo-btn.active { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
-    .ai2go-ideo-area { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:13px monospace; padding:4px 6px; resize:none; min-height:36px; flex:1 1 auto; }
-    .ai2go-ideo-sw { width:20px; height:20px; border:1px solid #666; border-radius:3px; cursor:pointer; flex-shrink:0; position:relative; touch-action:none; transition:transform .18s ease, box-shadow .12s ease, opacity .12s ease; }
-    .ai2go-ideo-sw:hover { transform:scale(1.2); box-shadow:0 0 0 2px #46b4e6; z-index:3; }
-    .ai2go-ideo-sw.dragging { opacity:.4; box-shadow:0 0 0 2px #46b4e6; }
-    body.ai2go-ideo-dragging, body.ai2go-ideo-dragging * { cursor:move !important; }
-    .ai2go-ideo-sw input { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
-    .ai2go-ideo-inline { position:absolute; box-sizing:border-box; background:rgba(18,18,18,0.92); border:2px solid #46b4e6; border-radius:3px; color:#fff; font:13px monospace; padding:3px 4px; resize:none; outline:none; z-index:10; }
-    .ai2go-ideo-bbox { width:128px; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#bbb; font:11px monospace; padding:2px 5px; }
-    .ai2go-ideo-bbox:focus { border-color:#46b4e6; outline:none; color:#fff; }
-    .ai2go-ideo-menu { position:fixed; z-index:10000; background:#262626; border:1px solid #555; border-radius:6px; padding:4px; box-shadow:0 6px 20px rgba(0,0,0,0.55); font:12px sans-serif; color:#ddd; max-height:60vh; overflow-y:auto; min-width:210px; max-width:340px; }
-    .ai2go-ideo-mhdr { font:11px sans-serif; color:#888; padding:2px 6px 4px; user-select:none; }
-    .ai2go-ideo-lrow { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:4px; cursor:move; user-select:none; touch-action:none; transition:transform .18s ease, box-shadow .12s ease, opacity .12s ease, background .12s; }
-    .ai2go-ideo-lrow:hover { background:#333; }
-    .ai2go-ideo-lrow.active { background:#2a3a42; box-shadow:inset 0 0 0 1px #46b4e6; }
-    .ai2go-ideo-lrow.dragging { opacity:.4; box-shadow:0 0 0 2px #46b4e6; background:#333; }
-    .ai2go-ideo-lsw { width:16px; height:16px; border-radius:3px; border:1px solid #666; flex:0 0 auto; }
-    .ai2go-ideo-lnum { font:bold 11px monospace; color:#888; flex:0 0 auto; width:18px; }
-    .ai2go-ideo-ltext { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ai2go-ideo-ltext.empty { color:#777; font-style:italic; }
-    .ai2go-ideo-lbtn { background:none; border:none; color:#999; cursor:pointer; font:13px sans-serif; line-height:1; padding:2px 5px; border-radius:3px; flex:0 0 auto; }
-    .ai2go-ideo-lbtn:hover { color:#fff; background:#444; }
-    .ai2go-ideo-lbtn.del:hover { color:#fff; background:#a33; }
-    .ai2go-ideo-lbtn.on { background:#3a3320; }
-    .ai2go-ideo-lock { filter:grayscale(1); opacity:0.4; }                 /* unlocked: faded grey */
-    .ai2go-ideo-lock.on, .ai2go-ideo-lock:hover { filter:none; opacity:1; }    /* locked / hover: full colour */
-    .ai2go-ideo-lbtn:disabled { opacity:0.25; cursor:default; background:none; }
-    .ai2go-ideo-fs { position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.72); display:flex; align-items:center; justify-content:center; }
-    .ai2go-ideo-fs-inner { position:relative; width:88vw; height:90vh; background:#1a1a1a; border:1px solid #444; border-radius:8px; box-shadow:0 12px 48px rgba(0,0,0,0.6); padding:12px; box-sizing:border-box; }
-    .ai2go-ideo-fs-inner .ai2go-ideo-wrap { height:100%; }
-    .ai2go-ideo-fs-close { position:absolute; top:14px; right:18px; z-index:5; padding:4px 12px; font-size:14px; }
-    .ai2go-ideo-dock { position:fixed; z-index:8500; pointer-events:auto; display:flex; flex-direction:column; background:var(--ai2go-dock-bg,#1a1a1a); border:1px solid var(--ai2go-dock-border,#555); border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.55); min-width:${DOCK_MINW}px; min-height:${DOCK_MINH}px; overflow:hidden; }
-    .ai2go-ideo-rsz { position:absolute; z-index:20; touch-action:none; }
-    .ai2go-ideo-rsz.n { top:0; left:11px; right:11px; height:6px; cursor:ns-resize; }
-    .ai2go-ideo-rsz.s { bottom:0; left:11px; right:11px; height:6px; cursor:ns-resize; }
-    .ai2go-ideo-rsz.e { right:0; top:11px; bottom:11px; width:6px; cursor:ew-resize; }
-    .ai2go-ideo-rsz.w { left:0; top:11px; bottom:11px; width:6px; cursor:ew-resize; }
-    .ai2go-ideo-rsz.ne { top:0; right:0; width:12px; height:12px; cursor:nesw-resize; }
-    .ai2go-ideo-rsz.nw { top:0; left:0; width:12px; height:12px; cursor:nwse-resize; }
-    .ai2go-ideo-rsz.se { bottom:0; right:0; width:12px; height:12px; cursor:nwse-resize; }
-    .ai2go-ideo-rsz.sw { bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize; }
-    .ai2go-ideo-dock.minimized { min-height:0 !important; height:auto !important; }
-    .ai2go-ideo-dock.minimized .ai2go-ideo-dock-body { display:none; }
-    .ai2go-ideo-dock.minimized .ai2go-ideo-rsz { display:none; }
-    .ai2go-ideo-dock.pinned .ai2go-ideo-rsz { display:none; }          /* node pinned → locked, like the node */
-    .ai2go-ideo-dock.pinned .ai2go-ideo-dock-head { cursor:default; }
-    .ai2go-ideo-dock.snap-ready { box-shadow:0 -3px 0 0 #46b4e6, 0 8px 30px rgba(0,0,0,0.55); }   /* upper border lit = release to snap */
-    .ai2go-ideo-dock-head { display:flex; align-items:center; gap:6px; padding:4px 8px; background:var(--ai2go-dock-head,#262626); cursor:move; font:12px sans-serif; color:#ccc; user-select:none; border-bottom:1px solid rgba(0,0,0,0.25); flex:0 0 auto; }
-    .ai2go-ideo-dock-head .ai2go-ideo-btn { padding:1px 7px; }
-    .ai2go-ideo-dock-body { flex:1 1 auto; min-height:0; padding:8px; box-sizing:border-box; overflow:hidden; }
-    .ai2go-ideo-dock-body .ai2go-ideo-wrap { height:100%; }
-    .ai2go-ideo-bgmenu { padding:7px; display:flex; flex-direction:column; gap:7px; min-width:170px; }
-    .ai2go-ideo-bgrow { display:flex; align-items:center; gap:8px; }
-    .ai2go-ideo-bglbl { color:#888; font:11px sans-serif; flex:0 0 auto; min-width:62px; }
-    .ai2go-ideo-trow { padding:2px 4px; border-radius:4px; }
-    .ai2go-ideo-trow:hover { background:#333; }
-    .ai2go-ideo-tplthumb { width:72px; height:72px; flex:0 0 auto; border-radius:4px; border:1px solid #555; background:#1a1a1a; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-    .ai2go-ideo-tplthumb img { width:100%; height:100%; object-fit:cover; display:block; }
-    .ai2go-ideo-tplthumb.empty { border-style:dashed; border-color:#444; }
-    .ai2go-ideo-tplthumb.empty::after { content:"🖼"; opacity:.25; font-size:30px; }
-    .ai2go-ideo-dragpill { position:fixed; z-index:11000; pointer-events:none; background:#2a3a42; color:#cfe8f5; border:1px solid #46b4e6; border-radius:5px; padding:2px 8px; font:11px sans-serif; box-shadow:0 4px 14px rgba(0,0,0,0.5); white-space:nowrap; }
-    .ai2go-ideo-cvrow { display:flex; flex:1 1 auto; min-height:60px; gap:4px; overflow:hidden; }
-    .ai2go-ideo-explorer { flex:0 0 auto; display:flex; flex-direction:column; background:#202020; border:1px solid #333; border-radius:4px; overflow:hidden; min-width:0; }
-    .ai2go-ideo-explorer.collapsed { width:26px !important; }
-    .ai2go-ideo-exhead { display:flex; align-items:center; gap:4px; padding:3px 4px; background:#2a2a2a; font:11px sans-serif; color:#aaa; user-select:none; flex:0 0 auto; }
-    .ai2go-ideo-extitle { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ai2go-ideo-explorer.collapsed .ai2go-ideo-extitle, .ai2go-ideo-explorer.collapsed .ai2go-ideo-exlist { display:none; }
-    .ai2go-ideo-exlist { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; min-height:0; padding:3px; display:flex; flex-direction:column; gap:1px; }
-    .ai2go-ideo-exrsz { flex:0 0 auto; width:5px; cursor:ew-resize; align-self:stretch; border-radius:2px; }
-    .ai2go-ideo-exrsz:hover { background:#46b4e6; }
-    .ai2go-ideo-extoggle { background:none; border:none; color:#aaa; cursor:pointer; font:12px sans-serif; line-height:1; padding:2px 4px; flex:0 0 auto; }
-    .ai2go-ideo-extoggle:hover { color:#fff; }
-    .ai2go-ideo-exptri { flex:0 0 auto; width:13px; text-align:center; color:#888; cursor:pointer; font:9px monospace; user-select:none; }
-    .ai2go-ideo-exptri:hover { color:#fff; }
-    .ai2go-ideo-exptri.leaf { cursor:default; color:#444; }
-    .ai2go-ideo-lrow.drop-into { box-shadow:inset 0 0 0 2px #46b4e6; background:#2a3a42; }
-    .ai2go-ideo-lrow.disabled { opacity:0.5; }                 /* whole row dims when hidden (own or via its group) */
-    .ai2go-ideo-en { padding:2px 4px; }
-    .ai2go-ideo-exhead.drop-root { box-shadow:inset 0 0 0 2px #46b4e6; }
+    .itl-ideo-wrap { display:flex; flex-direction:column; overflow:hidden; position:relative; pointer-events:auto; gap:4px; }
+    .itl-ideo-cv { flex:1 1 auto; min-width:0; min-height:60px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .itl-ideo-canvas { cursor:crosshair; display:block; flex:0 0 auto; background:#1a1a1a; border-radius:4px; outline:none; touch-action:none; }
+    .itl-ideo-bar { display:flex; align-items:center; gap:6px; font:11px sans-serif; color:#aaa; user-select:none; padding:0 2px; flex:0 0 auto; }
+    .itl-ideo-panel { display:flex; flex-direction:column; gap:5px; padding:6px; background:#262626; border-radius:4px; font:11px sans-serif; color:#bbb; flex:0 0 auto; overflow-y:auto; min-height:0; }
+    .itl-ideo-split { flex:0 0 auto; height:8px; cursor:ns-resize; position:relative; }
+    .itl-ideo-split::before { content:""; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:34px; height:3px; background:#555; border-radius:2px; }
+    .itl-ideo-split:hover::before { background:#46b4e6; }
+    .itl-ideo-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .itl-ideo-btn { background:#333; border:1px solid #555; border-radius:4px; color:#bbb; font:11px sans-serif; cursor:pointer; padding:2px 8px; line-height:16px; white-space:nowrap; flex-shrink:0; }
+    .itl-ideo-btn:hover { border-color:#46b4e6; color:#fff; }
+    .itl-ideo-btn.active { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
+    .itl-ideo-area { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:13px monospace; padding:4px 6px; resize:none; min-height:36px; flex:1 1 auto; }
+    .itl-ideo-sw { width:20px; height:20px; border:1px solid #666; border-radius:3px; cursor:pointer; flex-shrink:0; position:relative; touch-action:none; transition:transform .18s ease, box-shadow .12s ease, opacity .12s ease; }
+    .itl-ideo-sw:hover { transform:scale(1.2); box-shadow:0 0 0 2px #46b4e6; z-index:3; }
+    .itl-ideo-sw.dragging { opacity:.4; box-shadow:0 0 0 2px #46b4e6; }
+    body.itl-ideo-dragging, body.itl-ideo-dragging * { cursor:move !important; }
+    .itl-ideo-sw input { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
+    .itl-ideo-inline { position:absolute; box-sizing:border-box; background:rgba(18,18,18,0.92); border:2px solid #46b4e6; border-radius:3px; color:#fff; font:13px monospace; padding:3px 4px; resize:none; outline:none; z-index:10; }
+    .itl-ideo-bbox { width:128px; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#bbb; font:11px monospace; padding:2px 5px; }
+    .itl-ideo-bbox:focus { border-color:#46b4e6; outline:none; color:#fff; }
+    .itl-ideo-menu { position:fixed; z-index:10000; background:#262626; border:1px solid #555; border-radius:6px; padding:4px; box-shadow:0 6px 20px rgba(0,0,0,0.55); font:12px sans-serif; color:#ddd; max-height:60vh; overflow-y:auto; min-width:210px; max-width:340px; }
+    .itl-ideo-mhdr { font:11px sans-serif; color:#888; padding:2px 6px 4px; user-select:none; }
+    .itl-ideo-lrow { display:flex; align-items:center; gap:6px; padding:3px 5px; border-radius:4px; cursor:move; user-select:none; touch-action:none; transition:transform .18s ease, box-shadow .12s ease, opacity .12s ease, background .12s; }
+    .itl-ideo-lrow:hover { background:#333; }
+    .itl-ideo-lrow.active { background:#2a3a42; box-shadow:inset 0 0 0 1px #46b4e6; }
+    .itl-ideo-lrow.dragging { opacity:.4; box-shadow:0 0 0 2px #46b4e6; background:#333; }
+    .itl-ideo-lsw { width:16px; height:16px; border-radius:3px; border:1px solid #666; flex:0 0 auto; }
+    .itl-ideo-lnum { font:bold 11px monospace; color:#888; flex:0 0 auto; width:18px; }
+    .itl-ideo-ltext { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .itl-ideo-ltext.empty { color:#777; font-style:italic; }
+    .itl-ideo-lbtn { background:none; border:none; color:#999; cursor:pointer; font:13px sans-serif; line-height:1; padding:2px 5px; border-radius:3px; flex:0 0 auto; }
+    .itl-ideo-lbtn:hover { color:#fff; background:#444; }
+    .itl-ideo-lbtn.del:hover { color:#fff; background:#a33; }
+    .itl-ideo-lbtn.on { background:#3a3320; }
+    .itl-ideo-lock { filter:grayscale(1); opacity:0.4; }                 /* unlocked: faded grey */
+    .itl-ideo-lock.on, .itl-ideo-lock:hover { filter:none; opacity:1; }    /* locked / hover: full colour */
+    .itl-ideo-lbtn:disabled { opacity:0.25; cursor:default; background:none; }
+    .itl-ideo-fs { position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.72); display:flex; align-items:center; justify-content:center; }
+    .itl-ideo-fs-inner { position:relative; width:88vw; height:90vh; background:#1a1a1a; border:1px solid #444; border-radius:8px; box-shadow:0 12px 48px rgba(0,0,0,0.6); padding:12px; box-sizing:border-box; }
+    .itl-ideo-fs-inner .itl-ideo-wrap { height:100%; }
+    .itl-ideo-fs-close { position:absolute; top:14px; right:18px; z-index:5; padding:4px 12px; font-size:14px; }
+    .itl-ideo-dock { position:fixed; z-index:8500; pointer-events:auto; display:flex; flex-direction:column; background:var(--itl-dock-bg,#1a1a1a); border:1px solid var(--itl-dock-border,#555); border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.55); min-width:${DOCK_MINW}px; min-height:${DOCK_MINH}px; overflow:hidden; }
+    .itl-ideo-rsz { position:absolute; z-index:20; touch-action:none; }
+    .itl-ideo-rsz.n { top:0; left:11px; right:11px; height:6px; cursor:ns-resize; }
+    .itl-ideo-rsz.s { bottom:0; left:11px; right:11px; height:6px; cursor:ns-resize; }
+    .itl-ideo-rsz.e { right:0; top:11px; bottom:11px; width:6px; cursor:ew-resize; }
+    .itl-ideo-rsz.w { left:0; top:11px; bottom:11px; width:6px; cursor:ew-resize; }
+    .itl-ideo-rsz.ne { top:0; right:0; width:12px; height:12px; cursor:nesw-resize; }
+    .itl-ideo-rsz.nw { top:0; left:0; width:12px; height:12px; cursor:nwse-resize; }
+    .itl-ideo-rsz.se { bottom:0; right:0; width:12px; height:12px; cursor:nwse-resize; }
+    .itl-ideo-rsz.sw { bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize; }
+    .itl-ideo-dock.minimized { min-height:0 !important; height:auto !important; }
+    .itl-ideo-dock.minimized .itl-ideo-dock-body { display:none; }
+    .itl-ideo-dock.minimized .itl-ideo-rsz { display:none; }
+    .itl-ideo-dock.pinned .itl-ideo-rsz { display:none; }          /* node pinned → locked, like the node */
+    .itl-ideo-dock.pinned .itl-ideo-dock-head { cursor:default; }
+    .itl-ideo-dock.snap-ready { box-shadow:0 -3px 0 0 #46b4e6, 0 8px 30px rgba(0,0,0,0.55); }   /* upper border lit = release to snap */
+    .itl-ideo-dock-head { display:flex; align-items:center; gap:6px; padding:4px 8px; background:var(--itl-dock-head,#262626); cursor:move; font:12px sans-serif; color:#ccc; user-select:none; border-bottom:1px solid rgba(0,0,0,0.25); flex:0 0 auto; }
+    .itl-ideo-dock-head .itl-ideo-btn { padding:1px 7px; }
+    .itl-ideo-dock-body { flex:1 1 auto; min-height:0; padding:8px; box-sizing:border-box; overflow:hidden; }
+    .itl-ideo-dock-body .itl-ideo-wrap { height:100%; }
+    .itl-ideo-bgmenu { padding:7px; display:flex; flex-direction:column; gap:7px; min-width:170px; }
+    .itl-ideo-bgrow { display:flex; align-items:center; gap:8px; }
+    .itl-ideo-bglbl { color:#888; font:11px sans-serif; flex:0 0 auto; min-width:62px; }
+    .itl-ideo-trow { padding:2px 4px; border-radius:4px; }
+    .itl-ideo-trow:hover { background:#333; }
+    .itl-ideo-tplthumb { width:72px; height:72px; flex:0 0 auto; border-radius:4px; border:1px solid #555; background:#1a1a1a; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .itl-ideo-tplthumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .itl-ideo-tplthumb.empty { border-style:dashed; border-color:#444; }
+    .itl-ideo-tplthumb.empty::after { content:"🖼"; opacity:.25; font-size:30px; }
+    .itl-ideo-dragpill { position:fixed; z-index:11000; pointer-events:none; background:#2a3a42; color:#cfe8f5; border:1px solid #46b4e6; border-radius:5px; padding:2px 8px; font:11px sans-serif; box-shadow:0 4px 14px rgba(0,0,0,0.5); white-space:nowrap; }
+    .itl-ideo-cvrow { display:flex; flex:1 1 auto; min-height:60px; gap:4px; overflow:hidden; }
+    .itl-ideo-explorer { flex:0 0 auto; display:flex; flex-direction:column; background:#202020; border:1px solid #333; border-radius:4px; overflow:hidden; min-width:0; }
+    .itl-ideo-explorer.collapsed { width:26px !important; }
+    .itl-ideo-exhead { display:flex; align-items:center; gap:4px; padding:3px 4px; background:#2a2a2a; font:11px sans-serif; color:#aaa; user-select:none; flex:0 0 auto; }
+    .itl-ideo-extitle { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .itl-ideo-explorer.collapsed .itl-ideo-extitle, .itl-ideo-explorer.collapsed .itl-ideo-exlist { display:none; }
+    .itl-ideo-exlist { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; min-height:0; padding:3px; display:flex; flex-direction:column; gap:1px; }
+    .itl-ideo-exrsz { flex:0 0 auto; width:5px; cursor:ew-resize; align-self:stretch; border-radius:2px; }
+    .itl-ideo-exrsz:hover { background:#46b4e6; }
+    .itl-ideo-extoggle { background:none; border:none; color:#aaa; cursor:pointer; font:12px sans-serif; line-height:1; padding:2px 4px; flex:0 0 auto; }
+    .itl-ideo-extoggle:hover { color:#fff; }
+    .itl-ideo-exptri { flex:0 0 auto; width:13px; text-align:center; color:#888; cursor:pointer; font:9px monospace; user-select:none; }
+    .itl-ideo-exptri:hover { color:#fff; }
+    .itl-ideo-exptri.leaf { cursor:default; color:#444; }
+    .itl-ideo-lrow.drop-into { box-shadow:inset 0 0 0 2px #46b4e6; background:#2a3a42; }
+    .itl-ideo-lrow.disabled { opacity:0.5; }                 /* whole row dims when hidden (own or via its group) */
+    .itl-ideo-en { padding:2px 4px; }
+    .itl-ideo-exhead.drop-root { box-shadow:inset 0 0 0 2px #46b4e6; }
   `;
   document.head.appendChild(s);
 }
 
 app.registerExtension({
-  name: "AI2Go.Ideogram4PromptBuilder",
+  name: "ITL.Ideogram4PromptBuilder",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "AI2GoIdeogram4PromptBuilder") return;
+    if (nodeData?.name !== "ITLIdeogram4PromptBuilder") return;
     injectStyle();
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
@@ -569,25 +569,25 @@ app.registerExtension({
 
       // ── DOM ──
       const wrap = document.createElement("div");
-      wrap.className = "ai2go-ideo-wrap";
+      wrap.className = "itl-ideo-wrap";
       const bar = document.createElement("div");
-      bar.className = "ai2go-ideo-bar";
+      bar.className = "itl-ideo-bar";
       const hint = document.createElement("span");
       hint.style.flex = "1";
       const copyBtn = document.createElement("button");
-      copyBtn.className = "ai2go-ideo-btn";
+      copyBtn.className = "itl-ideo-btn";
       copyBtn.textContent = "Copy";
       copyBtn.title = "Copy the current caption JSON to the clipboard";
       const importBtn = document.createElement("button");
-      importBtn.className = "ai2go-ideo-btn";
+      importBtn.className = "itl-ideo-btn";
       importBtn.textContent = "Paste";
       importBtn.title = "Parse a caption JSON (clipboard, else paste prompt) and populate the node";
       const clearCanvasBtn = document.createElement("button");
-      clearCanvasBtn.className = "ai2go-ideo-btn";
+      clearCanvasBtn.className = "itl-ideo-btn";
       clearCanvasBtn.textContent = "Clear canvas";
       clearCanvasBtn.title = "Remove all boxes from the canvas — leaves the caption text fields and style palette untouched";
       const clearBtn = document.createElement("button");
-      clearBtn.className = "ai2go-ideo-btn";
+      clearBtn.className = "itl-ideo-btn";
       clearBtn.textContent = "Clear all";
       clearBtn.title = "Reset the whole node — boxes, style palette, and every caption text field";
       const tokenSpan = document.createElement("span");
@@ -595,7 +595,7 @@ app.registerExtension({
       tokenSpan.title = "Rough token estimate (~chars/4). Grey <256, green healthy, orange nearing, red ≥2048 (model cap — will error)";
       // Output-settings dropdown (formatting + bbox coordinate space/order) — writes the hidden widgets.
       const outBtn = document.createElement("button");
-      outBtn.className = "ai2go-ideo-btn"; outBtn.textContent = "Output ▾";
+      outBtn.className = "itl-ideo-btn"; outBtn.textContent = "Output ▾";
       outBtn.title = "Output JSON settings: compact/pretty, bbox coordinate space and axis order";
       stopProp(outBtn);
       const outToggle = (get, set, label, title) => {                 // checkbox row bound to a hidden widget
@@ -620,9 +620,9 @@ app.registerExtension({
         (on) => { if (orderWidget) orderWidget.value = on ? "xy" : "yx"; },
         "xy order (Qwen)", "bbox axis order [xmin,ymin,xmax,ymax] (x1,y1,x2,y2, as Qwen-VL uses) instead of Ideogram's [ymin,xmin,ymax,xmax].");
       const outMenu = document.createElement("div");
-      outMenu.className = "ai2go-ideo-menu ai2go-ideo-bgmenu";
+      outMenu.className = "itl-ideo-menu itl-ideo-bgmenu";
       outMenu.style.display = "none";
-      for (const l of [compactLbl, absLbl, xyLbl]) { const r = document.createElement("div"); r.className = "ai2go-ideo-bgrow"; r.appendChild(l); outMenu.appendChild(r); }
+      for (const l of [compactLbl, absLbl, xyLbl]) { const r = document.createElement("div"); r.className = "itl-ideo-bgrow"; r.appendChild(l); outMenu.appendChild(r); }
       document.body.appendChild(outMenu);
       node._outMenu = outMenu;
       const outDismiss = outsideDismiss(outMenu, () => closeOutMenu(), outBtn);
@@ -636,7 +636,7 @@ app.registerExtension({
         outDismiss.arm();
       });
       const grabBtn = document.createElement("button");
-      grabBtn.className = "ai2go-ideo-btn";
+      grabBtn.className = "itl-ideo-btn";
       grabBtn.addEventListener("mousedown", (e) => e.stopPropagation());
       grabBtn.addEventListener("click", () => { (node._bgManual && node._bgImg) ? node._clearBg() : node._grabResultBg(); });
       function updateGrabBtn() {
@@ -666,7 +666,7 @@ app.registerExtension({
       stopProp(bgSlider);
       bgSlider.addEventListener("input", () => { if (bgBrightnessWidget) bgBrightnessWidget.value = parseInt(bgSlider.value, 10); drawCanvas(); });
       const guideSel = document.createElement("select");
-      guideSel.className = "ai2go-ideo-btn"; guideSel.style.cssText = "flex:0 0 auto;";
+      guideSel.className = "itl-ideo-btn"; guideSel.style.cssText = "flex:0 0 auto;";
       guideSel.title = "Composition guide overlay (editor view only)";
       for (const [val, label] of [["none", "no guide"], ["thirds", "thirds"], ["grid", "grid"], ["golden", "golden ratio"], ["spiral", "golden spiral"]]) {
         const o = document.createElement("option"); o.value = val; o.textContent = label; guideSel.appendChild(o);
@@ -676,7 +676,7 @@ app.registerExtension({
       guideSel.addEventListener("change", () => { node.properties.guide = guideSel.value; drawCanvas(); });
       // Group the background/guide controls into one popup to keep the toolbar tidy.
       const bgBtn = document.createElement("button");
-      bgBtn.className = "ai2go-ideo-btn"; bgBtn.textContent = "Background ▾";
+      bgBtn.className = "itl-ideo-btn"; bgBtn.textContent = "Background ▾";
       bgBtn.title = "Background & guides: live preview, grab/clear, brightness, composition guide";
       stopProp(bgBtn);
       const GRID_INV = 130;       // slider shows cell SIZE: position = GRID_INV - divisions (right = larger cells)
@@ -706,11 +706,11 @@ app.registerExtension({
       stopProp(opacitySlider);
       opacitySlider.addEventListener("input", () => { node.properties.guideOpacity = parseInt(opacitySlider.value, 10); drawCanvas(); });
       const bgMenu = document.createElement("div");
-      bgMenu.className = "ai2go-ideo-menu ai2go-ideo-bgmenu";
+      bgMenu.className = "itl-ideo-menu itl-ideo-bgmenu";
       bgMenu.style.display = "none";
       const bgRow = (labelText, el) => {
-        const r = document.createElement("div"); r.className = "ai2go-ideo-bgrow";
-        if (labelText) { const l = document.createElement("span"); l.className = "ai2go-ideo-bglbl"; l.textContent = labelText; r.appendChild(l); }
+        const r = document.createElement("div"); r.className = "itl-ideo-bgrow";
+        if (labelText) { const l = document.createElement("span"); l.className = "itl-ideo-bglbl"; l.textContent = labelText; r.appendChild(l); }
         r.appendChild(el); bgMenu.appendChild(r);
       };
       bgRow("", liveLabel); bgRow("", grabBtn); bgRow("Brightness", bgSlider);
@@ -730,7 +730,7 @@ app.registerExtension({
       });
       // ── Text style popup: show/hide, outline, font size, auto-placement ──
       const txtBtn = document.createElement("button");
-      txtBtn.className = "ai2go-ideo-btn"; txtBtn.textContent = "Text ▾";
+      txtBtn.className = "itl-ideo-btn"; txtBtn.textContent = "Text ▾";
       txtBtn.title = "Region text: show/hide, outline, font size, overlap-avoiding placement";
       stopProp(txtBtn);
       const txtToggle = (prop, label, title) => {
@@ -759,11 +759,11 @@ app.registerExtension({
       stopProp(boxOpacSlider);
       boxOpacSlider.addEventListener("input", () => { node.properties.boxOpacity = parseInt(boxOpacSlider.value, 10); drawCanvas(); });
       const txtMenu = document.createElement("div");
-      txtMenu.className = "ai2go-ideo-menu ai2go-ideo-bgmenu";
+      txtMenu.className = "itl-ideo-menu itl-ideo-bgmenu";
       txtMenu.style.display = "none";
       const txtRow = (labelText, el) => {
-        const r = document.createElement("div"); r.className = "ai2go-ideo-bgrow";
-        if (labelText) { const l = document.createElement("span"); l.className = "ai2go-ideo-bglbl"; l.textContent = labelText; r.appendChild(l); }
+        const r = document.createElement("div"); r.className = "itl-ideo-bgrow";
+        if (labelText) { const l = document.createElement("span"); l.className = "itl-ideo-bglbl"; l.textContent = labelText; r.appendChild(l); }
         r.appendChild(el); txtMenu.appendChild(r);
       };
       txtRow("", showLbl); txtRow("Font size", sizeSlider); txtRow("Box opacity", boxOpacSlider); txtRow("", strokeLbl); txtRow("", autoLbl);
@@ -781,11 +781,11 @@ app.registerExtension({
       });
       // ── Templates popup: save/load named caption JSONs (server-side userdata) ──
       const tplBtn = document.createElement("button");
-      tplBtn.className = "ai2go-ideo-btn"; tplBtn.textContent = "Templates ▾";
-      tplBtn.title = "Save / load the caption JSON as templates, each with an optional preview image (stored on the server ComfyUI\\user\\default\\ai2go\\ideogram4)";
+      tplBtn.className = "itl-ideo-btn"; tplBtn.textContent = "Templates ▾";
+      tplBtn.title = "Save / load the caption JSON as templates, each with an optional preview image (stored on the server ComfyUI\\user\\default\\itl\\ideogram4)";
       stopProp(tplBtn);
       const tplMenu = document.createElement("div");
-      tplMenu.className = "ai2go-ideo-menu ai2go-ideo-bgmenu";
+      tplMenu.className = "itl-ideo-menu itl-ideo-bgmenu";
       tplMenu.style.display = "none";
       document.body.appendChild(tplMenu);
       node._tplMenu = tplMenu;
@@ -809,8 +809,8 @@ app.registerExtension({
         tplMenu._urls = [];
         const gen = (tplMenu._gen = (tplMenu._gen || 0) + 1);           // cancels async preview loads from an older build
         tplMenu.innerHTML = "";
-        const saveRow = document.createElement("div"); saveRow.className = "ai2go-ideo-bgrow";
-        const saveBtn = document.createElement("button"); saveBtn.className = "ai2go-ideo-btn"; saveBtn.textContent = "+ Save as…";
+        const saveRow = document.createElement("div"); saveRow.className = "itl-ideo-bgrow";
+        const saveBtn = document.createElement("button"); saveBtn.className = "itl-ideo-btn"; saveBtn.textContent = "+ Save as…";
         saveBtn.addEventListener("click", async () => {
           const name = tplSafe(window.prompt("Save template as:", "") || "");
           if (!name) return;
@@ -822,14 +822,14 @@ app.registerExtension({
         const { names, previews } = await listTemplateInfo();
         if (gen !== tplMenu._gen) return;                 // a newer build started while we awaited the listing
         if (!names.length) {
-          const empty = document.createElement("div"); empty.className = "ai2go-ideo-mhdr"; empty.textContent = "No templates saved.";
+          const empty = document.createElement("div"); empty.className = "itl-ideo-mhdr"; empty.textContent = "No templates saved.";
           tplMenu.appendChild(empty);
         }
         for (const name of names) {
-          const row = document.createElement("div"); row.className = "ai2go-ideo-bgrow ai2go-ideo-trow";
+          const row = document.createElement("div"); row.className = "itl-ideo-bgrow itl-ideo-trow";
           const hasPreview = !!previews[name];
           const thumb = document.createElement("div");
-          thumb.className = "ai2go-ideo-tplthumb" + (hasPreview ? "" : " empty");
+          thumb.className = "itl-ideo-tplthumb" + (hasPreview ? "" : " empty");
           thumb.title = hasPreview ? "Load " + name + " (replaces everything)" : "No preview — click 📷 to add one";
           if (hasPreview) {
             const img = document.createElement("img");
@@ -841,12 +841,12 @@ app.registerExtension({
             });
           }
           const txt = document.createElement("span");
-          txt.className = "ai2go-ideo-ltext"; txt.style.cssText = "flex:1 1 auto;cursor:pointer;"; txt.textContent = name; txt.title = "Load " + name + " (replaces everything)";
-          const pic = document.createElement("button"); pic.className = "ai2go-ideo-lbtn"; pic.textContent = "📷";
+          txt.className = "itl-ideo-ltext"; txt.style.cssText = "flex:1 1 auto;cursor:pointer;"; txt.textContent = name; txt.title = "Load " + name + " (replaces everything)";
+          const pic = document.createElement("button"); pic.className = "itl-ideo-lbtn"; pic.textContent = "📷";
           pic.title = (hasPreview ? "Replace" : "Add a") + ` preview image (cropped to ${PREVIEW_PX}×${PREVIEW_PX})`;
-          const ins = document.createElement("button"); ins.className = "ai2go-ideo-lbtn"; ins.textContent = "⊞"; ins.title = "Insert this template's boxes only into the current canvas";
-          const upd = document.createElement("button"); upd.className = "ai2go-ideo-lbtn"; upd.textContent = "⤓"; upd.title = "Save current (overwrite)";
-          const del = document.createElement("button"); del.className = "ai2go-ideo-lbtn del"; del.textContent = "✕"; del.title = "Delete template";
+          const ins = document.createElement("button"); ins.className = "itl-ideo-lbtn"; ins.textContent = "⊞"; ins.title = "Insert this template's boxes only into the current canvas";
+          const upd = document.createElement("button"); upd.className = "itl-ideo-lbtn"; upd.textContent = "⤓"; upd.title = "Save current (overwrite)";
+          const del = document.createElement("button"); del.className = "itl-ideo-lbtn del"; del.textContent = "✕"; del.title = "Delete template";
           row.append(thumb, txt, pic, ins, upd, del); tplMenu.appendChild(row);
           const loadIt = async () => {
             const cap = tryParseCaption(await loadTemplate(name));
@@ -884,7 +884,7 @@ app.registerExtension({
       });
       // Toggle on-canvas visibility of group frames (the Overview tree always shows them).
       const groupsBtn = document.createElement("button");
-      groupsBtn.className = "ai2go-ideo-btn"; groupsBtn.textContent = "👁️";
+      groupsBtn.className = "itl-ideo-btn"; groupsBtn.textContent = "👁️";
       stopProp(groupsBtn);
       function syncGroupsBtn() {
         const shown = node.properties.showGroups !== false;    // shown by default; only an explicit `false` hides the frames
@@ -899,13 +899,13 @@ app.registerExtension({
 
       // Persistent global style-palette row
       const styleBar = document.createElement("div");
-      styleBar.className = "ai2go-ideo-bar";
+      styleBar.className = "itl-ideo-bar";
       const styleLbl = document.createElement("span");
       styleLbl.textContent = "Style colors:";
       styleBar.appendChild(styleLbl);
 
       const canvasEl = document.createElement("canvas");
-      canvasEl.className = "ai2go-ideo-canvas";
+      canvasEl.className = "itl-ideo-canvas";
       canvasEl.tabIndex = 0;                                  // focusable, so it can receive key events
       canvasEl.title = "Drag to draw · Ctrl-drag force-draw over a box · click to select · shift-drag marquee-select · " +
         "shift-click toggle · drag a group to move all · alt-click overlap · dbl-click edit · right-click region list · " +
@@ -914,36 +914,36 @@ app.registerExtension({
       addWheelPassthrough(wrap);   // middle-click pan is wired on the whole dock (fl) in undock()
 
       const panel = document.createElement("div");
-      panel.className = "ai2go-ideo-panel";
+      panel.className = "itl-ideo-panel";
       node._panelH = node._panelH || 150;                    // height of the prompt panel (set by the splitter)
       panel.style.height = node._panelH + "px";
 
       // Canvas letterbox-fits into a flex container (cvBox), so node resize never aspect-locks the height.
       const cvBox = document.createElement("div");
-      cvBox.className = "ai2go-ideo-cv";
+      cvBox.className = "itl-ideo-cv";
       cvBox.appendChild(canvasEl);
 
       // ── Object Explorer: a persistent, collapsible list of every region (Unity-style scene panel).
       // Lives left of the canvas; click a row to select (two-way with the canvas) so you can pick/edit
       // a region without dragging it by accident. renderExplorer() (defined below) fills exList.
       const explorerEl = document.createElement("div");
-      explorerEl.className = "ai2go-ideo-explorer";
+      explorerEl.className = "itl-ideo-explorer";
       explorerEl.style.width = (node.properties.explorerW || 190) + "px";
       const exHead = document.createElement("div");
-      exHead.className = "ai2go-ideo-exhead";
+      exHead.className = "itl-ideo-exhead";
       const exToggle = document.createElement("button");
-      exToggle.className = "ai2go-ideo-extoggle";
+      exToggle.className = "itl-ideo-extoggle";
       stopProp(exToggle);
       const exTitle = document.createElement("span");
-      exTitle.className = "ai2go-ideo-extitle";
+      exTitle.className = "itl-ideo-extitle";
       exTitle.textContent = "Overview";
       exTitle.title = "Click a region to select · Ctrl/Cmd-click to multi-select · Shift-click for a range · drag a row onto another to nest";
       const exList = document.createElement("div");
-      exList.className = "ai2go-ideo-exlist";
+      exList.className = "itl-ideo-exlist";
       stopProp(exList);
       exList.addEventListener("contextmenu", (e) => {
         e.preventDefault(); e.stopPropagation();
-        const row = e.target.closest ? e.target.closest(".ai2go-ideo-lrow") : null;
+        const row = e.target.closest ? e.target.closest(".itl-ideo-lrow") : null;
         openOverviewMenu(e.clientX, e.clientY, row ? row._box : null);
       });
       function applyExplorerCollapsed(on) {
@@ -959,7 +959,7 @@ app.registerExtension({
       explorerEl.append(exHead, exList);
       // Drag the divider to resize the explorer; the width persists in node.properties.
       const exRsz = document.createElement("div");
-      exRsz.className = "ai2go-ideo-exrsz";
+      exRsz.className = "itl-ideo-exrsz";
       exRsz.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
@@ -974,12 +974,12 @@ app.registerExtension({
       applyExplorerCollapsed(!!node.properties.explorerCollapsed);   // initial state (exRsz now exists, so the resizer toggles too)
       // Canvas + explorer share a horizontal row; cvBox stays flex:1 so fitCanvas() adapts to the rail width.
       const cvRow = document.createElement("div");
-      cvRow.className = "ai2go-ideo-cvrow";
+      cvRow.className = "itl-ideo-cvrow";
       cvRow.append(explorerEl, exRsz, cvBox);
 
       // Draggable separator between the canvas and the prompt panel — drag up for more prompt, down for more canvas.
       const splitter = document.createElement("div");
-      splitter.className = "ai2go-ideo-split";
+      splitter.className = "itl-ideo-split";
       splitter.title = "Drag to resize the description area";
       splitter.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
@@ -1040,15 +1040,15 @@ app.registerExtension({
       function enterFs() {
         if (node._fullscreen) return;
         node._fullscreen = true;
-        const ov = document.createElement("div"); ov.className = "ai2go-ideo-fs";
-        const inner = document.createElement("div"); inner.className = "ai2go-ideo-fs-inner";
+        const ov = document.createElement("div"); ov.className = "itl-ideo-fs";
+        const inner = document.createElement("div"); inner.className = "itl-ideo-fs-inner";
         ov.appendChild(inner);
         ov.addEventListener("mousedown", (e) => { if (e.target === ov) exitFs(); });  // backdrop closes
         document.body.appendChild(ov);
         node._fsOverlay = ov;
         detachInto(inner);
         const closeBtn = document.createElement("button");                            // visible exit (⛶ in the dock header is hidden here)
-        closeBtn.className = "ai2go-ideo-btn ai2go-ideo-fs-close"; closeBtn.textContent = "✕"; closeBtn.title = "Close (Esc)";
+        closeBtn.className = "itl-ideo-btn itl-ideo-fs-close"; closeBtn.textContent = "✕"; closeBtn.title = "Close (Esc)";
         stopProp(closeBtn); closeBtn.addEventListener("click", exitFs);
         ov.appendChild(closeBtn);                                                     // on the backdrop corner, clear of the editor
         document.addEventListener("keydown", onFsEsc, true);
@@ -1151,7 +1151,7 @@ app.registerExtension({
       function addDockResizeHandles(fl) {
         for (const dir of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
           const h = document.createElement("div");
-          h.className = "ai2go-ideo-rsz " + dir;
+          h.className = "itl-ideo-rsz " + dir;
           h.addEventListener("pointerdown", (e) => startDockResize(e, dir, fl));
           fl.appendChild(h);
         }
@@ -1160,14 +1160,14 @@ app.registerExtension({
         if (node._docked) return;
         if (node._fullscreen) exitFs();
         node._docked = true; node.properties.docked = true;
-        const fl = document.createElement("div"); fl.className = "ai2go-ideo-dock";
+        const fl = document.createElement("div"); fl.className = "itl-ideo-dock";
         fl.dataset.captureWheel = "true";   // 2.0: let focused inputs in the dock scroll instead of zooming the graph
         stopProp(fl);   // hosted inside the node element — don't let dock interactions drag/zoom the node
         addMiddleClickPan(fl);   // middle-click pans the graph from anywhere in the dock (bubbles up from inner elements)
         fl.addEventListener("mousedown", (e) => { if (e.button === 1) e.stopPropagation(); });   // ...but don't let it reach the node behind
-        const head = document.createElement("div"); head.className = "ai2go-ideo-dock-head";
+        const head = document.createElement("div"); head.className = "itl-ideo-dock-head";
         const title = document.createElement("span"); title.textContent = "Ideogram 4 editor"; title.style.flex = "1";
-        const minBtn = document.createElement("button"); minBtn.className = "ai2go-ideo-btn";
+        const minBtn = document.createElement("button"); minBtn.className = "itl-ideo-btn";
         stopProp(minBtn);
         const applyMin = (on) => {                            // collapse the editor to just the header bar
           node.properties.dockMin = !!on;
@@ -1177,13 +1177,13 @@ app.registerExtension({
           if (!on) requestAnimationFrame(fitFsCanvas);        // re-letterbox the canvas after it's visible again
         };
         minBtn.addEventListener("click", () => { applyMin(!node.properties.dockMin); flushChange(); });
-        const fsBtn = document.createElement("button"); fsBtn.className = "ai2go-ideo-btn"; fsBtn.textContent = "⛶";
+        const fsBtn = document.createElement("button"); fsBtn.className = "itl-ideo-btn"; fsBtn.textContent = "⛶";
         fsBtn.title = "Open in a larger window (Esc to close)";
         stopProp(fsBtn); fsBtn.addEventListener("click", () => node._fullscreen ? exitFs() : enterFs());
-        const pinBtn = document.createElement("button"); pinBtn.className = "ai2go-ideo-btn"; pinBtn.textContent = "📌";
+        const pinBtn = document.createElement("button"); pinBtn.className = "itl-ideo-btn"; pinBtn.textContent = "📌";
         stopProp(pinBtn); pinBtn.addEventListener("click", () => setPinned(!node.properties.dockPinned, pinBtn));
         // Opt-in: also show this canvas at the parent (subgraph) level (tickDocks hides this button at root).
-        const exBtn = document.createElement("button"); exBtn.className = "ai2go-ideo-btn"; exBtn.textContent = "⤴";
+        const exBtn = document.createElement("button"); exBtn.className = "itl-ideo-btn"; exBtn.textContent = "⤴";
         exBtn.style.display = (node.graph && !node.graph.isRootGraph) ? "" : "none";
         const syncExBtn = () => {
           exBtn.classList.toggle("active", !!node.properties.exposeToParent);
@@ -1194,7 +1194,7 @@ app.registerExtension({
         syncExBtn();
         node._syncExBtn = syncExBtn; node._exBtn = exBtn;     // onConfigure refreshes state; tickDocks toggles visibility
         head.append(title, fsBtn, minBtn, exBtn, pinBtn);
-        const body = document.createElement("div"); body.className = "ai2go-ideo-dock-body";
+        const body = document.createElement("div"); body.className = "itl-ideo-dock-body";
         fl.append(head, body);
         addDockResizeHandles(fl);
         document.body.appendChild(fl);
@@ -1916,10 +1916,10 @@ app.registerExtension({
       function openOverviewMenu(clientX, clientY, ctxBox) {
         closeOverviewMenu();
         const menu = document.createElement("div");
-        menu.className = "ai2go-ideo-menu";
+        menu.className = "itl-ideo-menu";
         const addItem = (label, enabled, onClick) => {
           const it = document.createElement("div");
-          it.className = "ai2go-ideo-trow";
+          it.className = "itl-ideo-trow";
           it.style.cssText = "padding:5px 10px;cursor:" + (enabled ? "pointer" : "default") + (enabled ? "" : ";opacity:0.5");
           it.textContent = label;
           if (enabled) it.addEventListener("click", () => { closeOverviewMenu(); onClick(); });
@@ -2079,7 +2079,7 @@ app.registerExtension({
         const left = Math.max(ox, Math.min(ox + b.x * dw, ox + dw - w));
         const top = Math.max(oy, Math.min(oy + b.y * dh, oy + dh - h));
         const ta = document.createElement("textarea");
-        ta.className = "ai2go-ideo-inline";
+        ta.className = "itl-ideo-inline";
         ta.value = b.desc || "";
         ta.style.left = left + "px";
         ta.style.top = top + "px";
@@ -2350,9 +2350,9 @@ app.registerExtension({
       function openLayersMenu(clientX, clientY) {
         closeLayersMenu();
         const menu = document.createElement("div");
-        menu.className = "ai2go-ideo-menu";
+        menu.className = "itl-ideo-menu";
         const hdr = document.createElement("div");
-        hdr.className = "ai2go-ideo-mhdr";
+        hdr.className = "itl-ideo-mhdr";
         hdr.textContent = "Regions — top = front · click select · drag reorder";
         // 01 at the top of the list = front-most (drawn on top); see _draw / boxesAt.
         menu.appendChild(hdr);
@@ -2360,40 +2360,40 @@ app.registerExtension({
         menu.appendChild(list);
         node._layerMenu = menu;
 
-        const renumber = () => Array.from(list.querySelectorAll(".ai2go-ideo-lrow")).forEach((row, k) => {
-          row.querySelector(".ai2go-ideo-lnum").textContent = String(k + 1).padStart(2, "0");
+        const renumber = () => Array.from(list.querySelectorAll(".itl-ideo-lrow")).forEach((row, k) => {
+          row.querySelector(".itl-ideo-lnum").textContent = String(k + 1).padStart(2, "0");
         });
         function buildRows() {
           list.innerHTML = "";
           if (!node._boxes.length) {
             const empty = document.createElement("div");
-            empty.className = "ai2go-ideo-mhdr"; empty.textContent = "No regions yet.";
+            empty.className = "itl-ideo-mhdr"; empty.textContent = "No regions yet.";
             list.appendChild(empty);
             return;
           }
           node._boxes.forEach((b, i) => {
             const row = document.createElement("div");
-            row.className = "ai2go-ideo-lrow" + (i === node._activeIdx ? " active" : "");
+            row.className = "itl-ideo-lrow" + (i === node._activeIdx ? " active" : "");
             row._box = b;
             const sw = document.createElement("div");
-            sw.className = "ai2go-ideo-lsw";
+            sw.className = "itl-ideo-lsw";
             sw.style.background = (b.palette || []).find(Boolean) || "#8c8c8c";
             const num = document.createElement("span");
-            num.className = "ai2go-ideo-lnum"; num.textContent = String(i + 1).padStart(2, "0");
+            num.className = "itl-ideo-lnum"; num.textContent = String(i + 1).padStart(2, "0");
             const txt = document.createElement("span");
             const label = rowLabel(b);
-            txt.className = "ai2go-ideo-ltext" + (label ? "" : " empty");
+            txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
             txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
             txt.title = label;
             const lock = document.createElement("button");
-            lock.className = "ai2go-ideo-lbtn ai2go-ideo-lock" + (b.locked ? " on" : "");
+            lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
             lock.textContent = b.locked ? "🔒" : "🔓";
             lock.title = b.locked ? "Unlock (allow moving/resizing)" : "Lock (freeze on the canvas)";
             const dup = document.createElement("button");
-            dup.className = "ai2go-ideo-lbtn"; dup.textContent = "⧉";
+            dup.className = "itl-ideo-lbtn"; dup.textContent = "⧉";
             dup.title = "Duplicate, then click on the canvas to place";
             const del = document.createElement("button");
-            del.className = "ai2go-ideo-lbtn del"; del.textContent = "✕";
+            del.className = "itl-ideo-lbtn del"; del.textContent = "✕";
             del.title = b.locked ? "Unlock to delete" : "Delete region";
             del.disabled = !!b.locked;
             row.append(sw, num, txt, lock, dup, del);
@@ -2414,7 +2414,7 @@ app.registerExtension({
               if (row._dragged) { row._dragged = false; return; }
               selectOnly(node._boxes.indexOf(b));
               commit();
-              for (const r of list.querySelectorAll(".ai2go-ideo-lrow")) r.classList.toggle("active", r._box === b);
+              for (const r of list.querySelectorAll(".itl-ideo-lrow")) r.classList.toggle("active", r._box === b);
             });
             dup.addEventListener("click", (e) => {
               e.stopPropagation();
@@ -2439,15 +2439,15 @@ app.registerExtension({
               const move = (me) => {
                 if (!dragging) {
                   if (Math.abs(me.clientX - sx) + Math.abs(me.clientY - sy) < 4) return;
-                  dragging = true; row.classList.add("dragging"); document.body.classList.add("ai2go-ideo-dragging");
+                  dragging = true; row.classList.add("dragging"); document.body.classList.add("itl-ideo-dragging");
                 }
-                for (const other of list.querySelectorAll(".ai2go-ideo-lrow")) {
+                for (const other of list.querySelectorAll(".itl-ideo-lrow")) {
                   if (other === row) continue;
                   const r = other.getBoundingClientRect();
                   if (me.clientY >= r.top && me.clientY <= r.bottom) {
                     const ref = me.clientY > r.top + r.height / 2 ? other.nextSibling : other;
                     if (ref === row || ref === row.nextSibling) break;
-                    const els = Array.from(list.querySelectorAll(".ai2go-ideo-lrow"));
+                    const els = Array.from(list.querySelectorAll(".itl-ideo-lrow"));
                     const prev = els.map((el) => el.getBoundingClientRect().top);
                     list.insertBefore(row, ref);
                     els.forEach((el, k) => {                        // FLIP: slide to new positions
@@ -2466,12 +2466,12 @@ app.registerExtension({
                 document.removeEventListener("pointermove", move);
                 document.removeEventListener("pointerup", up);
                 document.removeEventListener("pointercancel", up);
-                document.body.classList.remove("ai2go-ideo-dragging");
+                document.body.classList.remove("itl-ideo-dragging");
                 if (dragging) {
                   row.classList.remove("dragging");
                   row._dragged = true;                             // suppress the trailing click
                   const active = node._boxes[node._activeIdx];
-                  const order = Array.from(list.querySelectorAll(".ai2go-ideo-lrow")).map((el) => el._box);
+                  const order = Array.from(list.querySelectorAll(".itl-ideo-lrow")).map((el) => el._box);
                   if (order.length === node._boxes.length) node._boxes = order;
                   selectOnly(active ? node._boxes.indexOf(active) : -1);  // reorder invalidates multi-select indices
                   renumber();
@@ -2592,13 +2592,13 @@ app.registerExtension({
       }
       function stringifyCaption(cap) { return (formatWidget?.value) === "pretty" ? pyJson(cap) : JSON.stringify(cap); }  // compact by default; matches the node output
       function buildCaption() { return stringifyCaption(buildCaptionObject()); }   // clean caption — token estimate + Python-matching
-      // Clipboard / template form: the clean caption PLUS an "_ai2go" sidecar carrying the full editor layout
+      // Clipboard / template form: the clean caption PLUS an "_itl" sidecar carrying the full editor layout
       // (groups + parent/id/name/etc). KJNodes and the model ignore the unknown key; OUR Paste reads it to
       // restore the hierarchy losslessly. Added only when there's hierarchy/groups worth preserving, so plain
       // scenes stay clean. The Python `prompt` output never includes it.
       function buildClipboardCaption() {
         const cap = buildCaptionObject();
-        if (node._boxes.some((b) => b.group || b.parent != null)) cap._ai2go = { v: 1, boxes: node._boxes };
+        if (node._boxes.some((b) => b.group || b.parent != null)) cap._itl = { v: 1, boxes: node._boxes };
         return stringifyCaption(cap);
       }
       // Rough token estimate (~chars/4); exact count needs the Qwen tokenizer.
@@ -2609,7 +2609,7 @@ app.registerExtension({
         tokenSpan.style.color = n >= 2048 ? "#e05555" : n >= 1792 ? "#e6a23c" : n >= 256 ? "#6cc06c" : "#888";
       }
       async function doCopy() {
-        const txt = buildClipboardCaption();   // includes the _ai2go layout sidecar when there are groups/parents
+        const txt = buildClipboardCaption();   // includes the _itl layout sidecar when there are groups/parents
         try { await navigator.clipboard.writeText(txt); copyBtn.textContent = "Copied"; setTimeout(() => (copyBtn.textContent = "Copy"), 900); }
         catch (e) { window.prompt("Copy the caption JSON:", txt); }
       }
@@ -2641,9 +2641,9 @@ app.registerExtension({
       function applyCaption(cap) {
         const cd = (cap && cap.compositional_deconstruction) || {};
         const els = Array.isArray(cd.elements) ? cd.elements : [];
-        const side = cap && cap._ai2go;
+        const side = cap && cap._itl;
         if (side && Array.isArray(side.boxes) && side.boxes.some((b) => b && typeof b.x === "number")) {
-          node._boxes = side.boxes.filter((b) => b && typeof b.x === "number");   // AI2Go sidecar → full restore (groups + hierarchy)
+          node._boxes = side.boxes.filter((b) => b && typeof b.x === "number");   // ITL sidecar → full restore (groups + hierarchy)
         } else {
           node._boxes = els.map((el, i) => bboxElemToBox(el, i)).filter(Boolean);  // plain caption (KJ / Ideogram) → flat regions
         }
@@ -2759,7 +2759,7 @@ app.registerExtension({
       function buildSwatchRow(container, arr, max, onEdit, onStruct) {
         arr.forEach((hex, i) => {
           const sw = document.createElement("div");
-          sw.className = "ai2go-ideo-sw";
+          sw.className = "itl-ideo-sw";
           sw.style.background = hex;
           sw.dataset.hex = hex;
           sw.title = "Click edit · drag reorder · Ctrl+C/V copy/paste hex · right-click remove";
@@ -2782,15 +2782,15 @@ app.registerExtension({
             const move = (me) => {
               if (!dragging) {
                 if (Math.abs(me.clientX - sx) + Math.abs(me.clientY - sy) < 4) return;
-                dragging = true; sw.classList.add("dragging"); document.body.classList.add("ai2go-ideo-dragging");
+                dragging = true; sw.classList.add("dragging"); document.body.classList.add("itl-ideo-dragging");
               }
-              for (const other of container.querySelectorAll(".ai2go-ideo-sw")) {
+              for (const other of container.querySelectorAll(".itl-ideo-sw")) {
                 if (other === sw) continue;
                 const r = other.getBoundingClientRect();
                 if (me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top - 6 && me.clientY <= r.bottom + 6) {
                   const ref = me.clientX > r.left + r.width / 2 ? other.nextSibling : other;
                   if (ref === sw || ref === sw.nextSibling) break;   // already there
-                  const els = Array.from(container.querySelectorAll(".ai2go-ideo-sw"));
+                  const els = Array.from(container.querySelectorAll(".itl-ideo-sw"));
                   const prev = els.map((el) => el.getBoundingClientRect().left);
                   container.insertBefore(sw, ref);
                   els.forEach((el, k) => {                            // FLIP: slide to new positions
@@ -2809,10 +2809,10 @@ app.registerExtension({
               sw.removeEventListener("pointermove", move);
               sw.removeEventListener("pointerup", up);
               sw.removeEventListener("pointercancel", up);
-              document.body.classList.remove("ai2go-ideo-dragging");
+              document.body.classList.remove("itl-ideo-dragging");
               if (dragging) {
                 sw.classList.remove("dragging");
-                const order = Array.from(container.querySelectorAll(".ai2go-ideo-sw")).map((el) => el.dataset.hex);
+                const order = Array.from(container.querySelectorAll(".itl-ideo-sw")).map((el) => el.dataset.hex);
                 if (order.length === arr.length) { arr.length = 0; arr.push(...order); }
                 onStruct();
               } else {
@@ -2826,7 +2826,7 @@ app.registerExtension({
         });
         if (arr.length < max) {
           const add = document.createElement("button");
-          add.className = "ai2go-ideo-btn"; add.textContent = "+";
+          add.className = "itl-ideo-btn"; add.textContent = "+";
           add.title = "Add a color (uses the clipboard color if it is one)";
           stopProp(add);
           add.addEventListener("click", async () => {
@@ -2851,7 +2851,7 @@ app.registerExtension({
       // Textarea that flexes to fill the prompt panel (whose height is set by the splitter).
       function makeArea(field, value, placeholder, onInput) {
         const ta = document.createElement("textarea");
-        ta.className = "ai2go-ideo-area";
+        ta.className = "itl-ideo-area";
         ta.placeholder = placeholder;
         ta.value = value || "";
         stopProp(ta);
@@ -2900,7 +2900,7 @@ app.registerExtension({
       }
       function makeBboxField(placeholder, title, onCommit) {
         const inp = document.createElement("input");
-        inp.type = "text"; inp.className = "ai2go-ideo-bbox";
+        inp.type = "text"; inp.className = "itl-ideo-bbox";
         inp.placeholder = placeholder; inp.title = title;
         stopProp(inp);
         inp.addEventListener("keydown", (e) => {
@@ -2933,24 +2933,24 @@ app.registerExtension({
           const note = document.createElement("div");
           note.style.color = "#888"; note.textContent = "Group (organizer) — not exported. Move it to move its members; resize its frame to scale them.";
           panel.appendChild(note);
-          const nameRow = document.createElement("div"); nameRow.className = "ai2go-ideo-row";
+          const nameRow = document.createElement("div"); nameRow.className = "itl-ideo-row";
           const nl = document.createElement("span"); nl.textContent = "name:"; nameRow.appendChild(nl);
-          const ni = document.createElement("input"); ni.type = "text"; ni.className = "ai2go-ideo-bbox"; ni.style.flex = "1 1 auto"; ni.value = b.name || "Group";
+          const ni = document.createElement("input"); ni.type = "text"; ni.className = "itl-ideo-bbox"; ni.style.flex = "1 1 auto"; ni.value = b.name || "Group";
           stopProp(ni);
           ni.addEventListener("input", () => { b.name = ni.value; touch(); });
           ni.addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Enter") ni.blur(); });
           nameRow.appendChild(ni); panel.appendChild(nameRow);
-          const palRow = document.createElement("div"); palRow.className = "ai2go-ideo-row";
+          const palRow = document.createElement("div"); palRow.className = "itl-ideo-row";
           const pl2 = document.createElement("span"); pl2.textContent = "frame:"; palRow.appendChild(pl2);
           b.palette = b.palette || [];
           buildSwatchRow(palRow, b.palette, 1, swatchEdit, commit);
           panel.appendChild(palRow);
-          const actRow = document.createElement("div"); actRow.className = "ai2go-ideo-row";
-          const dupBtn = document.createElement("button"); dupBtn.className = "ai2go-ideo-btn"; dupBtn.textContent = "Duplicate"; dupBtn.title = "Duplicate this group and all its members";
+          const actRow = document.createElement("div"); actRow.className = "itl-ideo-row";
+          const dupBtn = document.createElement("button"); dupBtn.className = "itl-ideo-btn"; dupBtn.textContent = "Duplicate"; dupBtn.title = "Duplicate this group and all its members";
           stopProp(dupBtn); dupBtn.addEventListener("click", () => duplicateGroup(b.id));
-          const mhBtn = document.createElement("button"); mhBtn.className = "ai2go-ideo-btn"; mhBtn.textContent = "Mirror ⇆"; mhBtn.title = "Flip the members left ↔ right within the group";
+          const mhBtn = document.createElement("button"); mhBtn.className = "itl-ideo-btn"; mhBtn.textContent = "Mirror ⇆"; mhBtn.title = "Flip the members left ↔ right within the group";
           stopProp(mhBtn); mhBtn.addEventListener("click", () => mirrorGroup(b.id, "h"));
-          const mvBtn = document.createElement("button"); mvBtn.className = "ai2go-ideo-btn"; mvBtn.textContent = "Mirror ⇅"; mvBtn.title = "Flip the members top ↕ bottom within the group";
+          const mvBtn = document.createElement("button"); mvBtn.className = "itl-ideo-btn"; mvBtn.textContent = "Mirror ⇅"; mvBtn.title = "Flip the members top ↕ bottom within the group";
           stopProp(mvBtn); mvBtn.addEventListener("click", () => mirrorGroup(b.id, "v"));
           actRow.append(dupBtn, mhBtn, mvBtn);
           panel.appendChild(actRow);
@@ -2972,11 +2972,11 @@ app.registerExtension({
 
         // type toggle
         const typeRow = document.createElement("div");
-        typeRow.className = "ai2go-ideo-row";
+        typeRow.className = "itl-ideo-row";
         const lbl = document.createElement("span"); lbl.textContent = "type:"; typeRow.appendChild(lbl);
         for (const t of ["obj", "text"]) {
           const btn = document.createElement("button");
-          btn.className = "ai2go-ideo-btn" + (b.type === t ? " active" : "");
+          btn.className = "itl-ideo-btn" + (b.type === t ? " active" : "");
           btn.textContent = t;
           stopProp(btn);
           btn.addEventListener("click", () => { b.type = t; commit(); });
@@ -3006,7 +3006,7 @@ app.registerExtension({
 
         // palette
         const palRow = document.createElement("div");
-        palRow.className = "ai2go-ideo-row";
+        palRow.className = "itl-ideo-row";
         const pl = document.createElement("span"); pl.textContent = "colors:"; palRow.appendChild(pl);
         b.palette = b.palette || [];
         buildSwatchRow(palRow, b.palette, MAX_ELEM_COLORS, swatchEdit, commit);
@@ -3020,7 +3020,7 @@ app.registerExtension({
         exList.innerHTML = "";
         if (!node._boxes.length) {
           const empty = document.createElement("div");
-          empty.className = "ai2go-ideo-mhdr"; empty.textContent = "No regions yet — drag on the canvas to add one.";
+          empty.className = "itl-ideo-mhdr"; empty.textContent = "No regions yet — drag on the canvas to add one.";
           exList.appendChild(empty);
           return;
         }
@@ -3038,14 +3038,14 @@ app.registerExtension({
           const hasKids = kids.has(b.id);
           const row = document.createElement("div");
           // active row solid; other selected rows also get the .active ring
-          row.className = "ai2go-ideo-lrow" + ((i === node._activeIdx || node._selection.has(i)) ? " active" : "") + (isDisabled(b) ? " disabled" : "");
+          row.className = "itl-ideo-lrow" + ((i === node._activeIdx || node._selection.has(i)) ? " active" : "") + (isDisabled(b) ? " disabled" : "");
           row.style.paddingLeft = (4 + depth * 13) + "px";    // indentation = tree depth
           row._box = b;
           const ownOff = !!b.disabled;
           const ancestorOff = b.parent != null && isDisabled(boxById(b.parent));   // a parent group (or higher) is off
           const effOff = ownOff || ancestorOff;
           const enableBtn = document.createElement("button");  // enable/disable toggle (a group is the master switch for its members)
-          enableBtn.className = "ai2go-ideo-lbtn ai2go-ideo-en" + (effOff ? " off" : "");
+          enableBtn.className = "itl-ideo-lbtn itl-ideo-en" + (effOff ? " off" : "");
           enableBtn.textContent = effOff ? "🚫" : "👁";        // EFFECTIVE visibility: a child of a disabled group reads as hidden
           if (ancestorOff) {                                    // master-switched off by its group → not individually toggleable
             enableBtn.disabled = true;                          // flip the group instead
@@ -3057,29 +3057,29 @@ app.registerExtension({
           stopProp(enableBtn);
           enableBtn.addEventListener("click", (e) => { e.stopPropagation(); b.disabled = !b.disabled; commit(); });
           const tri = document.createElement("span");
-          tri.className = "ai2go-ideo-exptri" + (hasKids ? "" : " leaf");
+          tri.className = "itl-ideo-exptri" + (hasKids ? "" : " leaf");
           tri.textContent = hasKids ? (b.collapsed ? "▶" : "▼") : "•";
           if (hasKids) tri.title = b.collapsed ? "Expand children" : "Collapse children";
           const sw = document.createElement("div");
-          sw.className = "ai2go-ideo-lsw";
+          sw.className = "itl-ideo-lsw";
           sw.style.background = (b.palette || []).find(Boolean) || "#8c8c8c";
           const num = document.createElement("span");
-          num.className = "ai2go-ideo-lnum"; num.textContent = String(i + 1).padStart(2, "0");
+          num.className = "itl-ideo-lnum"; num.textContent = String(i + 1).padStart(2, "0");
           const txt = document.createElement("span");
           const label = rowLabel(b);
-          txt.className = "ai2go-ideo-ltext" + (label ? "" : " empty");
+          txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
           txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
           txt.title = label;
           const lock = document.createElement("button");
-          lock.className = "ai2go-ideo-lbtn ai2go-ideo-lock" + (b.locked ? " on" : "");
+          lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
           lock.textContent = b.locked ? "🔒" : "🔓";
           lock.title = b.locked ? "Unlock (allow moving/resizing)" : "Lock (freeze on the canvas)";
           const dup = document.createElement("button");
-          dup.className = "ai2go-ideo-lbtn"; dup.textContent = "⧉";
+          dup.className = "itl-ideo-lbtn"; dup.textContent = "⧉";
           dup.title = "Duplicate, then click on the canvas to place";
           if (b.group) dup.style.display = "none";           // groups aren't duplicated
           const del = document.createElement("button");
-          del.className = "ai2go-ideo-lbtn del"; del.textContent = "✕";
+          del.className = "itl-ideo-lbtn del"; del.textContent = "✕";
           del.title = b.locked ? "Unlock to delete" : "Delete region (children promote to its parent)";
           del.disabled = !!b.locked;
           row.append(tri, enableBtn, sw, num, txt, lock, dup, del);
@@ -3106,7 +3106,7 @@ app.registerExtension({
             const idx = node._boxes.indexOf(b);
             if (ev.shiftKey && node._selAnchor != null && node._selAnchor !== idx) {
               // Shift = range-select from the anchor to here, in the CURRENT displayed (tree) order.
-              const order = Array.from(exList.querySelectorAll(".ai2go-ideo-lrow")).map((r) => node._boxes.indexOf(r._box));
+              const order = Array.from(exList.querySelectorAll(".itl-ideo-lrow")).map((r) => node._boxes.indexOf(r._box));
               const a = order.indexOf(node._selAnchor), c = order.indexOf(idx);
               if (a >= 0 && c >= 0) {
                 const [lo, hi] = a < c ? [a, c] : [c, a];
@@ -3154,22 +3154,22 @@ app.registerExtension({
             const draggedSet = new Set(draggedIds);
             let dragging = false, targetRow = null, toRoot = false, pill = null;
             const clearCue = () => {
-              for (const r of exList.querySelectorAll(".ai2go-ideo-lrow.drop-into")) r.classList.remove("drop-into");
+              for (const r of exList.querySelectorAll(".itl-ideo-lrow.drop-into")) r.classList.remove("drop-into");
               exHead.classList.remove("drop-root");
             };
             const move = (me) => {
               if (!dragging) {
                 if (Math.abs(me.clientX - sx) + Math.abs(me.clientY - sy) < 4) return;
-                dragging = true; document.body.classList.add("ai2go-ideo-dragging");
-                for (const r of exList.querySelectorAll(".ai2go-ideo-lrow")) if (draggedSet.has(r._box?.id)) r.classList.add("dragging");  // fade the whole dragged set
-                pill = document.createElement("div"); pill.className = "ai2go-ideo-dragpill"; document.body.appendChild(pill);  // cursor-following drag label
+                dragging = true; document.body.classList.add("itl-ideo-dragging");
+                for (const r of exList.querySelectorAll(".itl-ideo-lrow")) if (draggedSet.has(r._box?.id)) r.classList.add("dragging");  // fade the whole dragged set
+                pill = document.createElement("div"); pill.className = "itl-ideo-dragpill"; document.body.appendChild(pill);  // cursor-following drag label
               }
               clearCue(); targetRow = null; toRoot = false;
               const hr = exHead.getBoundingClientRect();
               if (me.clientX >= hr.left && me.clientX <= hr.right && me.clientY >= hr.top && me.clientY <= hr.bottom) {
                 toRoot = true; exHead.classList.add("drop-root"); return;       // header zone → unparent
               }
-              for (const other of exList.querySelectorAll(".ai2go-ideo-lrow")) {
+              for (const other of exList.querySelectorAll(".itl-ideo-lrow")) {
                 const tb = other._box;
                 if (!tb || draggedSet.has(tb.id)) continue;                    // can't drop onto a dragged row
                 const r = other.getBoundingClientRect();
@@ -3190,8 +3190,8 @@ app.registerExtension({
               document.removeEventListener("pointermove", move);
               document.removeEventListener("pointerup", up);
               document.removeEventListener("pointercancel", up);
-              document.body.classList.remove("ai2go-ideo-dragging");
-              for (const r of exList.querySelectorAll(".ai2go-ideo-lrow.dragging")) r.classList.remove("dragging");  // clear the dragged-set fade
+              document.body.classList.remove("itl-ideo-dragging");
+              for (const r of exList.querySelectorAll(".itl-ideo-lrow.dragging")) r.classList.remove("dragging");  // clear the dragged-set fade
               if (pill) { pill.remove(); pill = null; }
               node._exDragCleanup = null;
             };
@@ -3228,7 +3228,7 @@ app.registerExtension({
 
         // Scroll the active row into view only when it's actually off-screen (commit() runs on every
         // canvas edit, so an unconditional scrollIntoView would churn the dock/page scroll).
-        const activeRow = exList.querySelector(".ai2go-ideo-lrow.active");
+        const activeRow = exList.querySelector(".itl-ideo-lrow.active");
         if (activeRow && !node.properties.explorerCollapsed) {
           const lr = exList.getBoundingClientRect(), ar = activeRow.getBoundingClientRect();
           if (ar.top < lr.top || ar.bottom > lr.bottom) activeRow.scrollIntoView({ block: "nearest" });

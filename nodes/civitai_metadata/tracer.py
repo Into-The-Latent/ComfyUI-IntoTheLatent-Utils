@@ -1,11 +1,11 @@
-# Static graph tracer over the ComfyUI API prompt — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Static graph tracer over the ComfyUI API prompt — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Walks the API prompt (dict of {node_id: {class_type, inputs}}) backward from a save node's `images`
 # input to recover the real generation parameters used this run. Mirrored in
 # web/js/save_civitai_metadata.js — keep the two in sync.
 #
 # This file is built up across three concerns: (1) sampler detection + scalar fields, (2) prompt
-# resolution (incl. our AI2GoPromptBatch), (3) the model/LoRA chain.
+# resolution (incl. our ITLPromptBatch), (3) the model/LoRA chain.
 import os
 from dataclasses import dataclass, field
 
@@ -13,7 +13,7 @@ from ..prompt_batch_core import parse_prompts, select_prompt
 
 SAMPLER_CLASSES = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
 CLIP_ENCODE_CLASSES = {"CLIPTextEncode"}
-BATCH_CLASS = "AI2GoPromptBatch"
+BATCH_CLASS = "ITLPromptBatch"
 # Model-source loaders → (widget holding the filename, folder_paths folder to hash it from).
 # Covers checkpoints AND standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/
 # Krea/etc.), plus common GGUF unet loaders. Unknown loaders fall through as pass-throughs.

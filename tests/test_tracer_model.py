@@ -1,4 +1,4 @@
-# Tests for tracer model/LoRA chain — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for tracer model/LoRA chain — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.civitai_metadata.tracer import trace
 
 
@@ -11,7 +11,7 @@ def _base():
               "negative": ["3", 0], "seed": 1, "steps": 20, "cfg": 7,
               "sampler_name": "euler", "scheduler": "normal"}},
         "6": {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0]}},
-        "7": {"class_type": "AI2GoSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}},
+        "7": {"class_type": "ITLSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}},
     }
 
 

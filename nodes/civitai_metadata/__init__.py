@@ -1,1 +1,1 @@
-# Civitai metadata engine (comfy-free) — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Civitai metadata engine (comfy-free) — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.

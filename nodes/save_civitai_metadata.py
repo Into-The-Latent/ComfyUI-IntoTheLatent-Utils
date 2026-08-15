@@ -1,4 +1,4 @@
-# Save Metadata (Civitai) nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Save Metadata (Civitai) nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Two output nodes that save PNG(s) with the A1111 `parameters` chunk Civitai reads (see the design at
 # docs/superpowers/specs/2026-07-12-save-civitai-metadata-design.md). Basic auto-traces the graph;
@@ -91,7 +91,7 @@ def _save_with_metadata(cls, images, filename_prefix, save_workflow, overrides):
         counter += 1
 
     if result.unresolved:
-        msg = "AI2Go Save Metadata: unresolved fields -> %s (use the Advanced node's sockets)"
+        msg = "ITL Save Metadata: unresolved fields -> %s (use the Advanced node's sockets)"
         logger.warning(msg, ", ".join(result.unresolved))
         if PromptServer is not None and cls.hidden.unique_id is not None:
             try:
@@ -111,20 +111,20 @@ _METADATA_DESC = (
 )
 
 
-class AI2GoSaveCivitaiMetadata(io.ComfyNode):
+class ITLSaveCivitaiMetadata(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoSaveCivitaiMetadata",
-            display_name="AI2Go Save Metadata (Civitai)",
-            category="AI2Go/image",
+            node_id="ITLSaveCivitaiMetadata",
+            display_name="ITL Save Metadata (Civitai)",
+            category="Into The Latent/image",
             search_aliases=["save", "civitai", "metadata", "a1111", "parameters", "png"],
             is_output_node=True,
             is_experimental=True,
             description=_METADATA_DESC,
             inputs=[
                 io.Image.Input("images", tooltip="Images to save."),
-                io.String.Input("filename_prefix", default="AI2Go",
+                io.String.Input("filename_prefix", default="ITL",
                                 tooltip="Filename prefix (supports %date:...% tokens like Save Image)."),
                 io.Boolean.Input("save_workflow", default=False,
                                  tooltip="Also embed the ComfyUI workflow/prompt chunks (off = only the "
@@ -135,17 +135,17 @@ class AI2GoSaveCivitaiMetadata(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, images, filename_prefix="AI2Go", save_workflow=False) -> io.NodeOutput:
+    def execute(cls, images, filename_prefix="ITL", save_workflow=False) -> io.NodeOutput:
         return _save_with_metadata(cls, images, filename_prefix, save_workflow, overrides=None)
 
 
-class AI2GoSaveCivitaiMetadataAdvanced(io.ComfyNode):
+class ITLSaveCivitaiMetadataAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoSaveCivitaiMetadataAdvanced",
-            display_name="AI2Go Save Metadata (Civitai) Advanced",
-            category="AI2Go/image",
+            node_id="ITLSaveCivitaiMetadataAdvanced",
+            display_name="ITL Save Metadata (Civitai) Advanced",
+            category="Into The Latent/image",
             search_aliases=["save", "civitai", "metadata", "a1111", "parameters", "png", "advanced"],
             is_output_node=True,
             is_experimental=True,
@@ -153,7 +153,7 @@ class AI2GoSaveCivitaiMetadataAdvanced(io.ComfyNode):
                         "settings) to override the trace — the reliable path for dynamic prompts.",
             inputs=[
                 io.Image.Input("images", tooltip="Images to save."),
-                io.String.Input("filename_prefix", default="AI2Go",
+                io.String.Input("filename_prefix", default="ITL",
                                 tooltip="Filename prefix (supports %date:...% tokens like Save Image)."),
                 io.Boolean.Input("save_workflow", default=False,
                                  tooltip="Also embed the ComfyUI workflow/prompt chunks (off = only the "
@@ -173,7 +173,7 @@ class AI2GoSaveCivitaiMetadataAdvanced(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, images, filename_prefix="AI2Go", save_workflow=False, positive=None, negative=None,
+    def execute(cls, images, filename_prefix="ITL", save_workflow=False, positive=None, negative=None,
                 steps=None, cfg=None, seed=None, sampler_name=None, scheduler=None) -> io.NodeOutput:
         overrides = {"positive": positive, "negative": negative, "steps": steps, "cfg": cfg,
                      "seed": seed, "sampler_name": sampler_name, "scheduler": scheduler}

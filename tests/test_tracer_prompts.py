@@ -1,9 +1,9 @@
-# Tests for tracer prompt resolution — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for tracer prompt resolution — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import json
 from nodes.civitai_metadata.tracer import trace
 
 CKPT = {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "myCkpt.safetensors"}}
-SAVE = {"class_type": "AI2GoSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}}
+SAVE = {"class_type": "ITLSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}}
 VAE = {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0]}}
 
 
@@ -27,7 +27,7 @@ def test_static_clip_text():
 
 def test_prompt_from_batch_node_at_index():
     p = _ksampler(["10", 0], ["10", 1])  # both CLIP text inputs come from the batch node
-    p["10"] = {"class_type": "AI2GoPromptBatch", "inputs": {
+    p["10"] = {"class_type": "ITLPromptBatch", "inputs": {
         "prompts_json": json.dumps([{"positive": "fox", "negative": "blur"},
                                     {"positive": "city", "negative": ""}]),
         "index": 1}}

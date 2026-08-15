@@ -1,4 +1,4 @@
-# Multi Audio Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Audio Loader nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = audio_N + count;
@@ -128,13 +128,13 @@ def _audio_outputs(advanced):
     return outs
 
 
-class AI2GoMultiAudioLoader(io.ComfyNode):
+class ITLMultiAudioLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiAudioLoader",
-            display_name="AI2Go Multi Audio Loader",
-            category="AI2Go/audio",
+            node_id="ITLMultiAudioLoader",
+            display_name="ITL Multi Audio Loader",
+            category="Into The Latent/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "wav", "mp3"],
             description="Drop up to 8 audio files onto the node; each gets its own audio_N "
                         "output socket (sockets appear/disappear with the list, or pin "
@@ -161,13 +161,13 @@ class AI2GoMultiAudioLoader(io.ComfyNode):
         return _fingerprint(files_json)
 
 
-class AI2GoMultiAudioLoaderAdvanced(io.ComfyNode):
+class ITLMultiAudioLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiAudioLoaderAdvanced",
-            display_name="AI2Go Multi Audio Loader Advanced",
-            category="AI2Go/audio",
+            node_id="ITLMultiAudioLoaderAdvanced",
+            display_name="ITL Multi Audio Loader Advanced",
+            category="Into The Latent/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "filename"],
             description="Multi Audio Loader plus a filename_N output per file.",
             inputs=_audio_inputs(),

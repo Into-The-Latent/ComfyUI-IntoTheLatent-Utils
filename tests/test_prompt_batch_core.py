@@ -1,4 +1,4 @@
-# Tests for the Prompt Batch parse/select core — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the Prompt Batch parse/select core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import json
 import pytest
 from nodes.prompt_batch_core import parse_prompts, select_prompt, DEFAULT_PROMPTS_JSON

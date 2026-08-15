@@ -1,4 +1,4 @@
-# Prompt Batch parsing core — part of ComfyUI-AI2Go-Utils. GPL-3.0, like the rest of the pack.
+# Prompt Batch parsing core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0, like the rest of the pack.
 #
 # Pure (comfy-free) parse/select logic shared by the Prompt Batch node (nodes/prompt_batch.py) and
 # the Civitai metadata tracer (nodes/civitai_metadata/tracer.py). Mirrored in web/js/prompt_batch.js
@@ -70,13 +70,13 @@ def select_prompt(prompts, index):
     try:
         idx = int(index)
     except (TypeError, ValueError):
-        logger.warning("AI2Go Prompt Batch: index %r is not an int, using 0.", index)
+        logger.warning("ITL Prompt Batch: index %r is not an int, using 0.", index)
         idx = 0
     if idx < 0:
-        logger.warning("AI2Go Prompt Batch: index %d < 0, clamping to 0.", idx)
+        logger.warning("ITL Prompt Batch: index %d < 0, clamping to 0.", idx)
         idx = 0
     elif idx >= count:
-        logger.warning("AI2Go Prompt Batch: index %d >= count %d, clamping to last prompt.", idx, count)
+        logger.warning("ITL Prompt Batch: index %d >= count %d, clamping to last prompt.", idx, count)
         idx = count - 1
     positive, negative = prompts[idx]
     return positive, negative, idx

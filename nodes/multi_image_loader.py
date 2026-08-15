@@ -1,4 +1,4 @@
-# Multi Image Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Image Loader nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = image_N + count;
@@ -140,13 +140,13 @@ def _image_outputs(advanced):
     return outs
 
 
-class AI2GoMultiImageLoader(io.ComfyNode):
+class ITLMultiImageLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiImageLoader",
-            display_name="AI2Go Multi Image Loader",
-            category="AI2Go/image",
+            node_id="ITLMultiImageLoader",
+            display_name="ITL Multi Image Loader",
+            category="Into The Latent/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload"],
             description="Drop up to 8 images onto the node; each gets its own image_N output "
                         "socket (sockets appear/disappear with the list, or pin output_slots to a "
@@ -173,13 +173,13 @@ class AI2GoMultiImageLoader(io.ComfyNode):
         return _fingerprint(files_json, downscale_mode, max_size)
 
 
-class AI2GoMultiImageLoaderAdvanced(io.ComfyNode):
+class ITLMultiImageLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiImageLoaderAdvanced",
-            display_name="AI2Go Multi Image Loader Advanced",
-            category="AI2Go/image",
+            node_id="ITLMultiImageLoaderAdvanced",
+            display_name="ITL Multi Image Loader Advanced",
+            category="Into The Latent/image",
             search_aliases=["batch", "load", "images", "multi", "drop", "upload", "mask", "filename"],
             description="Multi Image Loader plus a mask_N (inverted alpha, stock LoadImage "
                         "behavior) and filename_N output per file.",

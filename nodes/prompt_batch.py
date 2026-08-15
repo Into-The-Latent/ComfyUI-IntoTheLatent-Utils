@@ -1,4 +1,4 @@
-# Prompt Batch node — part of ComfyUI-AI2Go-Utils.
+# Prompt Batch node — part of ComfyUI-IntoTheLatent-Utils.
 #
 # A standalone companion to the batch-upscale style of workflow. GPL-3.0, like the rest of the pack.
 #
@@ -31,13 +31,13 @@ from comfy_api.latest import io
 from .prompt_batch_core import DEFAULT_PROMPTS_JSON, parse_prompts as _parse_prompts, select_prompt as _select
 
 
-class AI2GoPromptBatch(io.ComfyNode):
+class ITLPromptBatch(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoPromptBatch",
-            display_name="AI2Go Prompt Batch",
-            category="AI2Go/text",
+            node_id="ITLPromptBatch",
+            display_name="ITL Prompt Batch",
+            category="Into The Latent/text",
             search_aliases=["batch", "prompt", "json", "queue", "index", "list", "positive", "negative"],
             is_experimental=True,
             description="""

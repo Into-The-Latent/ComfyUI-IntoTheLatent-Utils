@@ -1,4 +1,4 @@
-# PNG text-chunk builder — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# PNG text-chunk builder — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Always writes the A1111 `parameters` chunk (what Civitai reads). Optionally also writes ComfyUI's
 # native `prompt` + `workflow` chunks (when the node's save_workflow toggle is on) so the PNG stays

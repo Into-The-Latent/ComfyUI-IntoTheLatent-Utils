@@ -1,4 +1,4 @@
-# Tests for the comfy-free resolution core — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the comfy-free resolution core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.resolution_core import (
     resolve_dims, effective_ar, parse_ar, profile_clamps, aspect_options,
     clamp_snap_multiple,

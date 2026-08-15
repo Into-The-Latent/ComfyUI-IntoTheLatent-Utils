@@ -1,4 +1,4 @@
-# Tests for the tracer sampler detection — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the tracer sampler detection — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.civitai_metadata.tracer import trace
 
 
@@ -14,8 +14,8 @@ def _prompt(sampler_extra=None, images_link=("6", 0)):
     return {
         "4": sampler,
         "6": {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0], "vae": ["1", 2]}},
-        "7": {"class_type": "AI2GoSaveCivitaiMetadata",
-              "inputs": {"images": list(images_link), "filename_prefix": "AI2Go", "save_workflow": False}},
+        "7": {"class_type": "ITLSaveCivitaiMetadata",
+              "inputs": {"images": list(images_link), "filename_prefix": "ITL", "save_workflow": False}},
     }
 
 
@@ -41,5 +41,5 @@ def test_single_sampler_fallback_when_image_trace_dead_ends():
 
 
 def test_no_sampler_marks_unresolved():
-    p = {"7": {"class_type": "AI2GoSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}}}
+    p = {"7": {"class_type": "ITLSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}}}
     assert "sampler" in trace(p, "7").unresolved

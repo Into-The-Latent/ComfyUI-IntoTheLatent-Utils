@@ -1,16 +1,16 @@
 /*
- * Part of ComfyUI-AI2Go-Utils. GPL-3.0, like the rest of the pack.
+ * Part of ComfyUI-IntoTheLatent-Utils. GPL-3.0, like the rest of the pack.
  *
- * Front-end for the AI2Go Save Metadata (Civitai) nodes. Adds a "🔎 Test detection" button that runs
+ * Front-end for the ITL Save Metadata (Civitai) nodes. Adds a "🔎 Test detection" button that runs
  * the SAME backward graph trace as nodes/civitai_metadata/tracer.py (image -> sampler -> CLIPTextEncode
- * / AI2GoPromptBatch, and model -> LoraLoader* -> Checkpoint) against the LIVE graph, and shows what
+ * / ITLPromptBatch, and model -> LoraLoader* -> Checkpoint) against the LIVE graph, and shows what
  * save will write. Hashes are computed on save (no file access here). Keep this trace in sync with the
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
 
-const NODE_IDS = ["AI2GoSaveCivitaiMetadata", "AI2GoSaveCivitaiMetadataAdvanced"];
+const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
 const SAMPLER_CLASSES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]);
 const CLIP_CLASSES = new Set(["CLIPTextEncode"]);
 // class_type -> widget holding the model filename (mirror of tracer.MODEL_SOURCES; the Python side
@@ -26,7 +26,7 @@ const LORA_CLASSES = new Set(["LoraLoader", "LoraLoaderModelOnly"]);
 const POWER_LORA_CLASSES = new Set(["Power Lora Loader (rgthree)"]);
 // rgthree Lora Loader Stack: flat lora_0N / strength_0N widget pairs. Mirror of tracer.LORA_STACK_CLASSES.
 const LORA_STACK_CLASSES = new Set(["Lora Loader Stack (rgthree)"]);
-const BATCH_CLASS = "AI2GoPromptBatch";
+const BATCH_CLASS = "ITLPromptBatch";
 
 // --- Live-graph link helpers (LiteGraph). node.inputs[i].link -> graph.links[id] -> {origin_id, origin_slot}.
 function inputLink(node, name) {
@@ -94,7 +94,7 @@ function bfsBack(node, classSet) {
   return null;
 }
 
-// Current line of our AI2GoPromptBatch node at the given output slot (0=positive, 1=negative).
+// Current line of our ITLPromptBatch node at the given output slot (0=positive, 1=negative).
 function batchRow(origin, slot) {
   const idx = parseInt(widget(origin, "index"), 10) || 0;
   let rows = origin._pbRows;
@@ -204,19 +204,19 @@ function traceLive(node) {
 }
 
 function ensureStyles() {
-  if (document.getElementById("ai2go-scm-style")) return;
+  if (document.getElementById("itl-scm-style")) return;
   const s = document.createElement("style");
-  s.id = "ai2go-scm-style";
+  s.id = "itl-scm-style";
   s.textContent = `
-  .ai2go-scm{font:11.5px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0;
+  .itl-scm{font:11.5px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0;
     background:#1a1a19;border:1px solid #33332f;border-radius:6px;padding:7px 9px;white-space:pre-wrap;
     word-break:break-word}
-  .ai2go-scm .k{color:#8b8b86}.ai2go-scm .pos{color:#5cae6d}.ai2go-scm .neg{color:#c86b6b}
-  .ai2go-scm .warn{color:#e0a24e}`;
+  .itl-scm .k{color:#8b8b86}.itl-scm .pos{color:#5cae6d}.itl-scm .neg{color:#c86b6b}
+  .itl-scm .warn{color:#e0a24e}`;
   document.head.appendChild(s);
 }
 
-// positive/negative can be filled at run time (e.g. by the AI2Go Prompt Batch node walking its rows),
+// positive/negative can be filled at run time (e.g. by the ITL Prompt Batch node walking its rows),
 // so "empty in the preview" is not necessarily a problem — say so, rather than only "wire the socket".
 const RUNTIME_FIELDS = new Set(["positive", "negative"]);
 
@@ -225,7 +225,7 @@ function renderPreview(el, r) {
   const runtime = r.unresolved.filter((u) => RUNTIME_FIELDS.has(u));
   const hard = r.unresolved.filter((u) => !RUNTIME_FIELDS.has(u));
   let warn = "";
-  if (runtime.length) warn += `\n⚠ ${runtime.join(", ")}: empty in preview — resolved at run if driven by the AI2Go Prompt Batch node (or wire the Advanced socket).`;
+  if (runtime.length) warn += `\n⚠ ${runtime.join(", ")}: empty in preview — resolved at run if driven by the ITL Prompt Batch node (or wire the Advanced socket).`;
   if (hard.length) warn += `\n⚠ unresolved: ${hard.join(", ")} — wire the Advanced node's socket(s).`;
   el.innerHTML =
     `<span class="pos">positive</span>: ${escapeHtml(r.positive) || "(empty)"}\n` +
@@ -241,7 +241,7 @@ function escapeHtml(s) {
 }
 
 app.registerExtension({
-  name: "AI2Go.SaveCivitaiMetadata",
+  name: "ITL.SaveCivitaiMetadata",
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (!NODE_IDS.includes(nodeData?.name)) return;
     ensureStyles();
@@ -249,7 +249,7 @@ app.registerExtension({
       const node = this;
       const panel = document.createElement("div");        // widget root; ComfyUI pins its height each frame
       const content = document.createElement("div");      // natural-height content we measure
-      content.className = "ai2go-scm";
+      content.className = "itl-scm";
       content.textContent = 'Press "🔎 Test detection" to preview what will be saved.';
       panel.appendChild(content);
 

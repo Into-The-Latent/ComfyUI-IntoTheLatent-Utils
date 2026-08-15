@@ -1,4 +1,4 @@
-# Tests for the ComfyUI->A1111 sampler-name mapping — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the ComfyUI->A1111 sampler-name mapping — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.civitai_metadata.sampler_names import to_a1111_sampler
 
 

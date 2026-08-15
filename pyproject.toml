@@ -1,6 +1,6 @@
 [project]
-name = "comfyui-ai2go-utils"
-description = "ComfyUI utility nodes by AIKnowledge2Go."
+name = "comfyui-intothelatent-utils"
+description = "ComfyUI utility nodes by Into The Latent."
 version = "1.6.1"
 license = { file = "LICENSE" }
 dependencies = [
@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Little-God1983/ComfyUI-AI2Go-Utils"
+Repository = "https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.pytest.ini_options]
@@ -22,7 +22,6 @@ addopts = "--confcutdir=tests"
 testpaths = ["tests"]
 
 [tool.comfy]
-PublisherId = "littlegod"
-DisplayName = "ComfyUI-AI2Go-Utils"
+PublisherId = "intothelatent"
+DisplayName = "ComfyUI-IntoTheLatent-Utils"
 Icon = ""
-Banner = "https://raw.githubusercontent.com/Little-God1983/ComfyUI-AI2Go-Utils/main/assets/AI2Go-Banner.jpg"

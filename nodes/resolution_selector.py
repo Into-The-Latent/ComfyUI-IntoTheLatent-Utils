@@ -1,4 +1,4 @@
-# Resolution Selector node — part of ComfyUI-AI2Go-Utils.
+# Resolution Selector node — part of ComfyUI-IntoTheLatent-Utils.
 #
 # A standalone companion to the Ideogram 4 Prompt Builder. GPL-3.0, like the rest of the pack.
 #
@@ -26,13 +26,13 @@ from .resolution_core import (
 _DEFAULT_ASPECT = aspect_label(*ASPECT_PRESETS[0])   # "1:1 (Square)"
 
 
-class AI2GoResolutionSelector(io.ComfyNode):
+class ITLResolutionSelector(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoResolutionSelector",
-            display_name="AI2Go Resolution Selector",
-            category="AI2Go/image",
+            node_id="ITLResolutionSelector",
+            display_name="ITL Resolution Selector",
+            category="Into The Latent/image",
             search_aliases=["resolution", "aspect ratio", "megapixel", "ideogram", "width", "height", "size"],
             is_experimental=True,
             description="""
@@ -45,7 +45,7 @@ Pick a valid resolution by mode + aspect ratio, output width/height as INT.
 - aspect_ratio lists square + landscape ratios; the '⟷' flip button (orientation) makes the
   portrait versions. megapixels feeds the megapixel mode.
 
-Wire width/height into the AI2Go Ideogram 4 Prompt Builder's width/height inputs; edits push into
+Wire width/height into the ITL Ideogram 4 Prompt Builder's width/height inputs; edits push into
 the builder's canvas live (they also apply on execution).""",
             inputs=[
                 io.Combo.Input("profile", options=list(PROFILES.keys()), default=DEFAULT_PROFILE,

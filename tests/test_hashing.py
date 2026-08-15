@@ -1,4 +1,4 @@
-# Tests for AutoV2 file hashing + cache — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for AutoV2 file hashing + cache — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import hashlib
 import nodes.civitai_metadata.hashing as hashing
 from nodes.civitai_metadata.hashing import sha256_autov2, HashCache

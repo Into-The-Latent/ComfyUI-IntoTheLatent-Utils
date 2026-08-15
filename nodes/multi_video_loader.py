@@ -1,4 +1,4 @@
-# Multi Video Loader nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Video Loader nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Two loaders that emit one output socket group per dropped file (design:
 # docs/superpowers/specs/2026-08-12-batch-loaders-design.md). Simple = video_N + audio_N +
@@ -200,13 +200,13 @@ def _video_outputs(advanced):
     return outs
 
 
-class AI2GoMultiVideoLoader(io.ComfyNode):
+class ITLMultiVideoLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiVideoLoader",
-            display_name="AI2Go Multi Video Loader",
-            category="AI2Go/video",
+            node_id="ITLMultiVideoLoader",
+            display_name="ITL Multi Video Loader",
+            category="Into The Latent/video",
             search_aliases=["batch", "load", "video", "multi", "drop", "upload", "mp4", "mov"],
             description="Drop up to 8 video files onto the node; each gets its own video_N and "
                         "audio_N output socket (sockets appear/disappear with the list, or pin "
@@ -236,13 +236,13 @@ class AI2GoMultiVideoLoader(io.ComfyNode):
         return _fingerprint(files_json, force_rate)
 
 
-class AI2GoMultiVideoLoaderAdvanced(io.ComfyNode):
+class ITLMultiVideoLoaderAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoMultiVideoLoaderAdvanced",
-            display_name="AI2Go Multi Video Loader Advanced",
-            category="AI2Go/video",
+            node_id="ITLMultiVideoLoaderAdvanced",
+            display_name="ITL Multi Video Loader Advanced",
+            category="Into The Latent/video",
             search_aliases=["batch", "load", "video", "multi", "drop", "upload", "filename"],
             description="Multi Video Loader plus a filename_N output per file.",
             inputs=_video_inputs(),

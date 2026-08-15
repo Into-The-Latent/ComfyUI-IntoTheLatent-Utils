@@ -1,18 +1,18 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
  * Companion to the Ideogram 4 Prompt Builder. GPL-3.0, like the rest of the pack.
  * Upstream lineage: https://github.com/kijai/ComfyUI-KJNodes
  *
  * A "click-together" wizard for the Ideogram 4 style_description fields. A button on the node opens a
  * fullscreen chip-picker (5 categories). On close the picked values are written straight into a
- * connected AI2Go Ideogram 4 Prompt Builder's style widgets — the node's own data output stays empty
+ * connected ITL Ideogram 4 Prompt Builder's style widgets — the node's own data output stays empty
  * so it never overwrites the builder's bounding boxes / palette / high_level_description.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
 
-const BUILDER_TYPE = "AI2GoIdeogram4PromptBuilder";
+const BUILDER_TYPE = "ITLIdeogram4PromptBuilder";
 
 // Built-in chip lists (values are exactly what lands in the JSON). Sourced from the research report.
 // These are the fallback / "restore defaults" content; the live lists are read from an editable
@@ -50,14 +50,14 @@ const DEFAULT_CATEGORIES = [
 const BLANK = () => ({ aesthetics: "", lighting: "", medium: "", photo: "", art_style: "" });
 
 // ── Editable style presets, stored server-side via ComfyUI's userdata API. This path maps to
-// ComfyUI/user/default/ai2go/ideogram4/WizardStylesDefault.json. Users can edit the file to add or
+// ComfyUI/user/default/itl/ideogram4/WizardStylesDefault.json. Users can edit the file to add or
 // replace chips; if it's missing or malformed we fall back to DEFAULT_CATEGORIES and warn in the UI.
-const PRESET_FILE = "ai2go/ideogram4/WizardStylesDefault.json";
+const PRESET_FILE = "itl/ideogram4/WizardStylesDefault.json";
 const ALLOWED_KEYS = ["aesthetics", "lighting", "medium", "photo", "art_style"];
 const DEFAULT_LABELS = Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.key, c.label]));
 // File body written by "Restore defaults": a documented, hand-editable shape.
 const DEFAULT_PRESETS_FILE = {
-  _comment: "AI2Go Ideogram 4 Style Wizard presets. Edit 'chips' freely; 'key' must be one of " +
+  _comment: "ITL Ideogram 4 Style Wizard presets. Edit 'chips' freely; 'key' must be one of " +
     ALLOWED_KEYS.join(", ") + ". Delete this file or use the wizard's 'Restore defaults' to reset.",
   version: 1,
   categories: DEFAULT_CATEGORIES.map((c) => ({ key: c.key, label: c.label, chips: c.chips.slice() })),
@@ -159,53 +159,53 @@ function toggleTerm(field, term) {
 }
 
 function injectWizStyle() {
-  if (document.getElementById("ai2go-wiz-style")) return;
+  if (document.getElementById("itl-wiz-style")) return;
   const s = document.createElement("style");
-  s.id = "ai2go-wiz-style";
+  s.id = "itl-wiz-style";
   s.textContent = `
-    .ai2go-wiz-fs { position:fixed; inset:0; z-index:9200; background:rgba(0,0,0,0.72); display:flex; align-items:center; justify-content:center; }
-    .ai2go-wiz-panel { position:relative; width:min(860px,92vw); max-height:90vh; display:flex; flex-direction:column; background:#1a1a1a; border:1px solid #444; border-radius:8px; box-shadow:0 12px 48px rgba(0,0,0,0.6); }
-    .ai2go-wiz-head { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #333; font:13px sans-serif; color:#ddd; }
-    .ai2go-wiz-title { font-weight:600; flex:0 0 auto; }
-    .ai2go-wiz-tabs { display:flex; gap:4px; flex:1 1 auto; }
-    .ai2go-wiz-tab { background:none; border:1px solid transparent; border-radius:5px; color:#aaa; font:12px sans-serif; cursor:pointer; padding:3px 12px; }
-    .ai2go-wiz-tab:hover { color:#fff; }
-    .ai2go-wiz-tab.active { color:#46b4e6; border-color:#46b4e6; background:#2a3a42; }
-    .ai2go-wiz-body { flex:1 1 auto; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:14px; }
-    .ai2go-wiz-search { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:12px sans-serif; padding:5px 8px; }
-    .ai2go-wiz-search:focus { border-color:#46b4e6; outline:none; color:#fff; }
-    .ai2go-wiz-status { font:13px sans-serif; color:#8fbfd6; min-height:17px; }
-    .ai2go-wiz-status.off { color:#e05555; font-weight:600; }
-    .ai2go-wiz-edit { display:flex; flex-direction:column; gap:5px; }
-    .ai2go-wiz-editrow { display:flex; align-items:center; gap:6px; }
-    .ai2go-wiz-editrow .ai2go-wiz-input { font:12px sans-serif; }
-    .ai2go-wiz-del { background:none; border:1px solid #555; border-radius:4px; color:#c77; cursor:pointer; font:12px sans-serif; line-height:1; padding:3px 8px; flex:0 0 auto; }
-    .ai2go-wiz-del:hover { border-color:#a33; color:#fff; background:#a33; }
-    .ai2go-wiz-add { display:flex; align-items:center; gap:6px; margin-top:2px; }
-    .ai2go-wiz-dirty { color:#e6a23c; font:11px sans-serif; flex:1 1 auto; }
-    .ai2go-wiz-toast { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); background:#2a3a42; color:#cfe8f5; border:1px solid #46b4e6; border-radius:6px; padding:5px 14px; font:12px sans-serif; box-shadow:0 4px 14px rgba(0,0,0,0.5); opacity:1; transition:opacity .4s ease; pointer-events:none; z-index:5; }
-    .ai2go-wiz-toast.fade { opacity:0; }
-    .ai2go-wiz-banner { display:flex; align-items:flex-start; gap:10px; padding:8px 10px; border-radius:6px; background:#3a2f1a; border:1px solid #6b5320; color:#e6c98c; font:11px/1.5 sans-serif; }
-    .ai2go-wiz-banner code { color:#f0d9a6; font:11px monospace; }
-    .ai2go-wiz-banner .ai2go-wiz-btn { flex:0 0 auto; align-self:center; }
-    .ai2go-wiz-banner-msg { flex:1 1 auto; }
-    .ai2go-wiz-cat { display:flex; flex-direction:column; gap:6px; }
-    .ai2go-wiz-catlbl { font:11px sans-serif; color:#8fbfd6; letter-spacing:0.03em; text-transform:uppercase; }
-    .ai2go-wiz-chips { display:flex; flex-wrap:wrap; gap:5px; }
-    .ai2go-wiz-chip { background:#333; border:1px solid #555; border-radius:12px; color:#bbb; font:11px sans-serif; cursor:pointer; padding:2px 10px; line-height:17px; white-space:nowrap; }
-    .ai2go-wiz-chip:hover { border-color:#46b4e6; color:#fff; }
-    .ai2go-wiz-chip.active { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
-    .ai2go-wiz-input { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:12px monospace; padding:4px 6px; }
-    .ai2go-wiz-input:focus { border-color:#46b4e6; outline:none; color:#fff; }
-    .ai2go-wiz-foot { flex:0 0 auto; padding:10px 14px; border-top:1px solid #333; display:flex; flex-direction:column; gap:8px; }
-    .ai2go-wiz-warn { color:#e6a23c; font:11px sans-serif; min-height:14px; }
-    .ai2go-wiz-prev { background:#141414; border:1px solid #333; border-radius:4px; color:#9fd29f; font:11px/1.4 monospace; padding:8px; margin:0; max-height:150px; overflow:auto; white-space:pre; }
-    .ai2go-wiz-footrow { display:flex; align-items:center; gap:8px; }
-    .ai2go-wiz-btn { background:#333; border:1px solid #555; border-radius:4px; color:#bbb; font:12px sans-serif; cursor:pointer; padding:4px 12px; }
-    .ai2go-wiz-btn:hover { border-color:#46b4e6; color:#fff; }
-    .ai2go-wiz-btn.primary { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
-    .ai2go-wiz-x { background:none; border:none; color:#999; cursor:pointer; font:16px sans-serif; line-height:1; padding:2px 6px; }
-    .ai2go-wiz-x:hover { color:#fff; }
+    .itl-wiz-fs { position:fixed; inset:0; z-index:9200; background:rgba(0,0,0,0.72); display:flex; align-items:center; justify-content:center; }
+    .itl-wiz-panel { position:relative; width:min(860px,92vw); max-height:90vh; display:flex; flex-direction:column; background:#1a1a1a; border:1px solid #444; border-radius:8px; box-shadow:0 12px 48px rgba(0,0,0,0.6); }
+    .itl-wiz-head { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #333; font:13px sans-serif; color:#ddd; }
+    .itl-wiz-title { font-weight:600; flex:0 0 auto; }
+    .itl-wiz-tabs { display:flex; gap:4px; flex:1 1 auto; }
+    .itl-wiz-tab { background:none; border:1px solid transparent; border-radius:5px; color:#aaa; font:12px sans-serif; cursor:pointer; padding:3px 12px; }
+    .itl-wiz-tab:hover { color:#fff; }
+    .itl-wiz-tab.active { color:#46b4e6; border-color:#46b4e6; background:#2a3a42; }
+    .itl-wiz-body { flex:1 1 auto; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:14px; }
+    .itl-wiz-search { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:12px sans-serif; padding:5px 8px; }
+    .itl-wiz-search:focus { border-color:#46b4e6; outline:none; color:#fff; }
+    .itl-wiz-status { font:13px sans-serif; color:#8fbfd6; min-height:17px; }
+    .itl-wiz-status.off { color:#e05555; font-weight:600; }
+    .itl-wiz-edit { display:flex; flex-direction:column; gap:5px; }
+    .itl-wiz-editrow { display:flex; align-items:center; gap:6px; }
+    .itl-wiz-editrow .itl-wiz-input { font:12px sans-serif; }
+    .itl-wiz-del { background:none; border:1px solid #555; border-radius:4px; color:#c77; cursor:pointer; font:12px sans-serif; line-height:1; padding:3px 8px; flex:0 0 auto; }
+    .itl-wiz-del:hover { border-color:#a33; color:#fff; background:#a33; }
+    .itl-wiz-add { display:flex; align-items:center; gap:6px; margin-top:2px; }
+    .itl-wiz-dirty { color:#e6a23c; font:11px sans-serif; flex:1 1 auto; }
+    .itl-wiz-toast { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); background:#2a3a42; color:#cfe8f5; border:1px solid #46b4e6; border-radius:6px; padding:5px 14px; font:12px sans-serif; box-shadow:0 4px 14px rgba(0,0,0,0.5); opacity:1; transition:opacity .4s ease; pointer-events:none; z-index:5; }
+    .itl-wiz-toast.fade { opacity:0; }
+    .itl-wiz-banner { display:flex; align-items:flex-start; gap:10px; padding:8px 10px; border-radius:6px; background:#3a2f1a; border:1px solid #6b5320; color:#e6c98c; font:11px/1.5 sans-serif; }
+    .itl-wiz-banner code { color:#f0d9a6; font:11px monospace; }
+    .itl-wiz-banner .itl-wiz-btn { flex:0 0 auto; align-self:center; }
+    .itl-wiz-banner-msg { flex:1 1 auto; }
+    .itl-wiz-cat { display:flex; flex-direction:column; gap:6px; }
+    .itl-wiz-catlbl { font:11px sans-serif; color:#8fbfd6; letter-spacing:0.03em; text-transform:uppercase; }
+    .itl-wiz-chips { display:flex; flex-wrap:wrap; gap:5px; }
+    .itl-wiz-chip { background:#333; border:1px solid #555; border-radius:12px; color:#bbb; font:11px sans-serif; cursor:pointer; padding:2px 10px; line-height:17px; white-space:nowrap; }
+    .itl-wiz-chip:hover { border-color:#46b4e6; color:#fff; }
+    .itl-wiz-chip.active { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
+    .itl-wiz-input { width:100%; box-sizing:border-box; background:#1d1d1d; border:1px solid #444; border-radius:4px; color:#ddd; font:12px monospace; padding:4px 6px; }
+    .itl-wiz-input:focus { border-color:#46b4e6; outline:none; color:#fff; }
+    .itl-wiz-foot { flex:0 0 auto; padding:10px 14px; border-top:1px solid #333; display:flex; flex-direction:column; gap:8px; }
+    .itl-wiz-warn { color:#e6a23c; font:11px sans-serif; min-height:14px; }
+    .itl-wiz-prev { background:#141414; border:1px solid #333; border-radius:4px; color:#9fd29f; font:11px/1.4 monospace; padding:8px; margin:0; max-height:150px; overflow:auto; white-space:pre; }
+    .itl-wiz-footrow { display:flex; align-items:center; gap:8px; }
+    .itl-wiz-btn { background:#333; border:1px solid #555; border-radius:4px; color:#bbb; font:12px sans-serif; cursor:pointer; padding:4px 12px; }
+    .itl-wiz-btn:hover { border-color:#46b4e6; color:#fff; }
+    .itl-wiz-btn.primary { border-color:#46b4e6; color:#46b4e6; background:#2a3a42; }
+    .itl-wiz-x { background:none; border:none; color:#999; cursor:pointer; font:16px sans-serif; line-height:1; padding:2px 6px; }
+    .itl-wiz-x:hover { color:#fff; }
   `;
   document.head.appendChild(s);
 }
@@ -228,10 +228,10 @@ function buildStyleDescription(wiz) {
 }
 
 app.registerExtension({
-  name: "AI2Go.Ideogram4StyleWizard",
+  name: "ITL.Ideogram4StyleWizard",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "AI2GoIdeogram4StyleWizard") return;
+    if (nodeData?.name !== "ITLIdeogram4StyleWizard") return;
     injectWizStyle();
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
@@ -294,14 +294,14 @@ app.registerExtension({
           target.setDirtyCanvas?.(true, true);
         }
         if (!targets.length && notify) {
-          window.alert("Wire this node's \"style\" output into an AI2Go Ideogram 4 Prompt Builder's \"import_json\" input, then reopen the wizard.");
+          window.alert("Wire this node's \"style\" output into an ITL Ideogram 4 Prompt Builder's \"import_json\" input, then reopen the wizard.");
         }
         return targets.length;
       }
       node._wizApply = applyToBuilder;
 
       // ── modal ──
-      const PRESET_PATH_DISPLAY = "user/default/ai2go/ideogram4/WizardStylesDefault.json";
+      const PRESET_PATH_DISPLAY = "user/default/itl/ideogram4/WizardStylesDefault.json";
 
       async function openModal() {
         if (node._wizOverlay || node._wizOpening) return;
@@ -314,25 +314,25 @@ app.registerExtension({
         let categories = loaded.cats, loadState = loaded.state, loadError = loaded.error;
         let currentTab = "pick", editDirty = false;
 
-        const ov = document.createElement("div"); ov.className = "ai2go-wiz-fs";
-        const panel = document.createElement("div"); panel.className = "ai2go-wiz-panel";
+        const ov = document.createElement("div"); ov.className = "itl-wiz-fs";
+        const panel = document.createElement("div"); panel.className = "itl-wiz-panel";
         ov.appendChild(panel);
 
-        const head = document.createElement("div"); head.className = "ai2go-wiz-head";
-        const title = document.createElement("span"); title.className = "ai2go-wiz-title"; title.textContent = "Style Wizard";
-        const tabs = document.createElement("div"); tabs.className = "ai2go-wiz-tabs";
-        const pickTabBtn = document.createElement("button"); pickTabBtn.className = "ai2go-wiz-tab"; pickTabBtn.textContent = "Pick styles";
-        const editTabBtn = document.createElement("button"); editTabBtn.className = "ai2go-wiz-tab"; editTabBtn.textContent = "Edit presets";
+        const head = document.createElement("div"); head.className = "itl-wiz-head";
+        const title = document.createElement("span"); title.className = "itl-wiz-title"; title.textContent = "Style Wizard";
+        const tabs = document.createElement("div"); tabs.className = "itl-wiz-tabs";
+        const pickTabBtn = document.createElement("button"); pickTabBtn.className = "itl-wiz-tab"; pickTabBtn.textContent = "Pick styles";
+        const editTabBtn = document.createElement("button"); editTabBtn.className = "itl-wiz-tab"; editTabBtn.textContent = "Edit presets";
         tabs.append(pickTabBtn, editTabBtn);
-        const xBtn = document.createElement("button"); xBtn.className = "ai2go-wiz-x"; xBtn.textContent = "✕"; xBtn.title = "Close (applies your picks to the connected builder)";
+        const xBtn = document.createElement("button"); xBtn.className = "itl-wiz-x"; xBtn.textContent = "✕"; xBtn.title = "Close (applies your picks to the connected builder)";
         head.append(title, tabs, xBtn);
 
-        const body = document.createElement("div"); body.className = "ai2go-wiz-body";
-        const foot = document.createElement("div"); foot.className = "ai2go-wiz-foot";
+        const body = document.createElement("div"); body.className = "itl-wiz-body";
+        const foot = document.createElement("div"); foot.className = "itl-wiz-foot";
 
         // Transient confirmation pill (Applied / Saved / …).
         function toast(msg) {
-          const t = document.createElement("div"); t.className = "ai2go-wiz-toast"; t.textContent = msg;
+          const t = document.createElement("div"); t.className = "itl-wiz-toast"; t.textContent = msg;
           panel.appendChild(t);
           setTimeout(() => { t.classList.add("fade"); setTimeout(() => t.remove(), 450); }, 1300);
         }
@@ -366,15 +366,15 @@ app.registerExtension({
           const refreshers = [];      // re-sync chip highlight + field value from node._wiz
           const allChips = [];        // {term, el} across all categories, for the search filter
 
-          const status = document.createElement("div"); status.className = "ai2go-wiz-status";
-          const warn = document.createElement("div"); warn.className = "ai2go-wiz-warn";
-          const prev = document.createElement("pre"); prev.className = "ai2go-wiz-prev";
-          const footRow = document.createElement("div"); footRow.className = "ai2go-wiz-footrow";
+          const status = document.createElement("div"); status.className = "itl-wiz-status";
+          const warn = document.createElement("div"); warn.className = "itl-wiz-warn";
+          const prev = document.createElement("pre"); prev.className = "itl-wiz-prev";
+          const footRow = document.createElement("div"); footRow.className = "itl-wiz-footrow";
           const spacer = document.createElement("span"); spacer.style.flex = "1";
-          const clearBtn = document.createElement("button"); clearBtn.className = "ai2go-wiz-btn"; clearBtn.textContent = "Clear all";
-          const clearApplyBtn = document.createElement("button"); clearApplyBtn.className = "ai2go-wiz-btn"; clearApplyBtn.textContent = "Clear & apply & close";
-          const applyBtn = document.createElement("button"); applyBtn.className = "ai2go-wiz-btn"; applyBtn.textContent = "Apply";
-          const doneBtn = document.createElement("button"); doneBtn.className = "ai2go-wiz-btn primary"; doneBtn.textContent = "Apply & close";
+          const clearBtn = document.createElement("button"); clearBtn.className = "itl-wiz-btn"; clearBtn.textContent = "Clear all";
+          const clearApplyBtn = document.createElement("button"); clearApplyBtn.className = "itl-wiz-btn"; clearApplyBtn.textContent = "Clear & apply & close";
+          const applyBtn = document.createElement("button"); applyBtn.className = "itl-wiz-btn"; applyBtn.textContent = "Apply";
+          const doneBtn = document.createElement("button"); doneBtn.className = "itl-wiz-btn primary"; doneBtn.textContent = "Apply & close";
           footRow.append(spacer, clearBtn, clearApplyBtn, applyBtn, doneBtn);
           foot.append(status, warn, prev, footRow);
 
@@ -391,16 +391,16 @@ app.registerExtension({
               : "⚠ Not connected — wire the \"style\" output into a Prompt Builder's import_json.";
           }
           function buildCatBlock(cat) {
-            const block = document.createElement("div"); block.className = "ai2go-wiz-cat";
-            const lbl = document.createElement("div"); lbl.className = "ai2go-wiz-catlbl"; lbl.textContent = cat.label;
-            const chipsWrap = document.createElement("div"); chipsWrap.className = "ai2go-wiz-chips";
+            const block = document.createElement("div"); block.className = "itl-wiz-cat";
+            const lbl = document.createElement("div"); lbl.className = "itl-wiz-catlbl"; lbl.textContent = cat.label;
+            const chipsWrap = document.createElement("div"); chipsWrap.className = "itl-wiz-chips";
             const input = document.createElement("input");
-            input.className = "ai2go-wiz-input"; input.type = "text";
+            input.className = "itl-wiz-input"; input.type = "text";
             input.placeholder = "click chips above, or type your own (comma-separated)";
             input.value = node._wiz[cat.key] || "";
             const chipEls = (cat.chips || []).map((term) => {
               const c = document.createElement("button");
-              c.className = "ai2go-wiz-chip"; c.textContent = term; c.title = term;
+              c.className = "itl-wiz-chip"; c.textContent = term; c.title = term;
               c.addEventListener("click", () => {
                 node._wiz[cat.key] = toggleTerm(node._wiz[cat.key], term);
                 input.value = node._wiz[cat.key];
@@ -422,7 +422,7 @@ app.registerExtension({
           }
 
           const search = document.createElement("input");
-          search.className = "ai2go-wiz-search"; search.type = "text"; search.placeholder = "Search chips…";
+          search.className = "itl-wiz-search"; search.type = "text"; search.placeholder = "Search chips…";
           search.addEventListener("input", () => {
             const q = search.value.trim().toLowerCase();
             for (const c of allChips) c.el.style.display = (!q || c.term.toLowerCase().includes(q)) ? "" : "none";
@@ -442,8 +442,8 @@ app.registerExtension({
 
         // Warning banner (Pick tab) for a missing / malformed preset file.
         function buildPickBanner() {
-          const banner = document.createElement("div"); banner.className = "ai2go-wiz-banner";
-          const msg = document.createElement("div"); msg.className = "ai2go-wiz-banner-msg";
+          const banner = document.createElement("div"); banner.className = "itl-wiz-banner";
+          const msg = document.createElement("div"); msg.className = "itl-wiz-banner-msg";
           if (loadState === "missing") {
             msg.innerHTML = "⚠ Style preset file not found — using built-in defaults. Use <b>Edit presets → Restore defaults</b> to create it:";
           } else {
@@ -453,9 +453,9 @@ app.registerExtension({
           }
           const pathEl = document.createElement("div"); pathEl.innerHTML = "<code>" + PRESET_PATH_DISPLAY + "</code>"; msg.appendChild(pathEl);
           const btns = document.createElement("div"); btns.style.cssText = "display:flex;flex-direction:column;gap:4px;";
-          const copyBtn = document.createElement("button"); copyBtn.className = "ai2go-wiz-btn"; copyBtn.textContent = "Copy path";
+          const copyBtn = document.createElement("button"); copyBtn.className = "itl-wiz-btn"; copyBtn.textContent = "Copy path";
           copyBtn.addEventListener("click", () => { navigator.clipboard?.writeText?.(PRESET_PATH_DISPLAY).then(() => toast("Path copied")).catch(() => {}); });
-          const restoreBtn = document.createElement("button"); restoreBtn.className = "ai2go-wiz-btn"; restoreBtn.textContent = "Restore defaults";
+          const restoreBtn = document.createElement("button"); restoreBtn.className = "itl-wiz-btn"; restoreBtn.textContent = "Restore defaults";
           restoreBtn.addEventListener("click", () => doRestore());
           btns.append(copyBtn, restoreBtn);
           banner.append(msg, btns);
@@ -469,33 +469,33 @@ app.registerExtension({
           body.innerHTML = ""; foot.innerHTML = "";
           let editCats = toEditCats(categories, loadState);
 
-          const help = document.createElement("div"); help.className = "ai2go-wiz-status";
+          const help = document.createElement("div"); help.className = "itl-wiz-status";
           help.textContent = "Add, rename, or delete chips per category, then Save. New chips append to the end.";
-          const footRow = document.createElement("div"); footRow.className = "ai2go-wiz-footrow";
-          const dirtyLbl = document.createElement("div"); dirtyLbl.className = "ai2go-wiz-dirty";
-          const restoreBtn = document.createElement("button"); restoreBtn.className = "ai2go-wiz-btn"; restoreBtn.textContent = "Restore defaults";
-          const discardBtn = document.createElement("button"); discardBtn.className = "ai2go-wiz-btn"; discardBtn.textContent = "Discard";
-          const saveBtn = document.createElement("button"); saveBtn.className = "ai2go-wiz-btn primary"; saveBtn.textContent = "Save to file";
+          const footRow = document.createElement("div"); footRow.className = "itl-wiz-footrow";
+          const dirtyLbl = document.createElement("div"); dirtyLbl.className = "itl-wiz-dirty";
+          const restoreBtn = document.createElement("button"); restoreBtn.className = "itl-wiz-btn"; restoreBtn.textContent = "Restore defaults";
+          const discardBtn = document.createElement("button"); discardBtn.className = "itl-wiz-btn"; discardBtn.textContent = "Discard";
+          const saveBtn = document.createElement("button"); saveBtn.className = "itl-wiz-btn primary"; saveBtn.textContent = "Save to file";
           footRow.append(dirtyLbl, restoreBtn, discardBtn, saveBtn);
           foot.append(help, footRow);
 
           function setDirty(v) { editDirty = v; dirtyLbl.textContent = v ? "Unsaved changes" : ""; }
 
           function buildEditCat(cat) {
-            const block = document.createElement("div"); block.className = "ai2go-wiz-cat";
-            const lbl = document.createElement("div"); lbl.className = "ai2go-wiz-catlbl"; lbl.textContent = cat.label + "  (key: " + cat.key + ")";
-            const list = document.createElement("div"); list.className = "ai2go-wiz-edit";
+            const block = document.createElement("div"); block.className = "itl-wiz-cat";
+            const lbl = document.createElement("div"); lbl.className = "itl-wiz-catlbl"; lbl.textContent = cat.label + "  (key: " + cat.key + ")";
+            const list = document.createElement("div"); list.className = "itl-wiz-edit";
             cat.chips.forEach((chip, idx) => {
-              const row = document.createElement("div"); row.className = "ai2go-wiz-editrow";
-              const inp = document.createElement("input"); inp.className = "ai2go-wiz-input"; inp.type = "text"; inp.value = chip;
+              const row = document.createElement("div"); row.className = "itl-wiz-editrow";
+              const inp = document.createElement("input"); inp.className = "itl-wiz-input"; inp.type = "text"; inp.value = chip;
               inp.addEventListener("input", () => { cat.chips[idx] = inp.value; setDirty(true); });
-              const del = document.createElement("button"); del.className = "ai2go-wiz-del"; del.textContent = "✕"; del.title = "Delete chip";
+              const del = document.createElement("button"); del.className = "itl-wiz-del"; del.textContent = "✕"; del.title = "Delete chip";
               del.addEventListener("click", () => { cat.chips.splice(idx, 1); setDirty(true); renderEditor(); });
               row.append(inp, del); list.appendChild(row);
             });
-            const addWrap = document.createElement("div"); addWrap.className = "ai2go-wiz-add";
-            const addInput = document.createElement("input"); addInput.className = "ai2go-wiz-input"; addInput.type = "text"; addInput.placeholder = "add a chip…";
-            const addBtn = document.createElement("button"); addBtn.className = "ai2go-wiz-btn"; addBtn.textContent = "+ Add";
+            const addWrap = document.createElement("div"); addWrap.className = "itl-wiz-add";
+            const addInput = document.createElement("input"); addInput.className = "itl-wiz-input"; addInput.type = "text"; addInput.placeholder = "add a chip…";
+            const addBtn = document.createElement("button"); addBtn.className = "itl-wiz-btn"; addBtn.textContent = "+ Add";
             const add = () => { const v = addInput.value.trim(); if (!v) return; cat.chips.push(v); addInput.value = ""; setDirty(true); renderEditor(); };
             addBtn.addEventListener("click", add);
             addInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });

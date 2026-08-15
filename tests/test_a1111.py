@@ -1,4 +1,4 @@
-# Tests for the A1111 parameters formatter — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the A1111 parameters formatter — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.civitai_metadata.a1111 import format_parameters
 
 

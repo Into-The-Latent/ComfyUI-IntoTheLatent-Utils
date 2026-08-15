@@ -1,5 +1,5 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
  * Shared front-end for the six Multi Loader nodes (image/audio/video, each simple + Advanced).
  * GPL-3.0, like the rest of the pack.
@@ -25,12 +25,12 @@ const MAX_FILES = 8;
 
 // group: [prefix, TYPE] per output within one file's group, in schema order.
 const NODES = {
-  AI2GoMultiImageLoader:         { kind: "image", group: [["image_", "IMAGE"]] },
-  AI2GoMultiImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
-  AI2GoMultiAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
-  AI2GoMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
-  AI2GoMultiVideoLoader:         { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"]] },
-  AI2GoMultiVideoLoaderAdvanced: { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"], ["filename_", "STRING"]] },
+  ITLMultiImageLoader:         { kind: "image", group: [["image_", "IMAGE"]] },
+  ITLMultiImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
+  ITLMultiAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
+  ITLMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
+  ITLMultiVideoLoader:         { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"]] },
+  ITLMultiVideoLoaderAdvanced: { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
 // ── Mirror of parse_files in nodes/multi_loader_core.py — three intentional deviations:
@@ -70,47 +70,47 @@ function hideWidget(w) {
 }
 
 function ensureStyles() {
-  if (document.getElementById("ai2go-bl-style")) return;
+  if (document.getElementById("itl-bl-style")) return;
   const s = document.createElement("style");
-  s.id = "ai2go-bl-style";
+  s.id = "itl-bl-style";
   s.textContent = `
-  .ai2go-bl-drop{box-sizing:border-box;width:100%;padding:10px;margin:2px 0;text-align:center;
+  .itl-bl-drop{box-sizing:border-box;width:100%;padding:10px;margin:2px 0;text-align:center;
     font:11.5px -apple-system,"Segoe UI",Roboto,sans-serif;color:#7ab8e6;background:#1d2733;
     border:1px dashed #46b4e6;border-radius:8px;cursor:pointer}
-  .ai2go-bl-drop:hover{background:#24384c}
-  .ai2go-bl-drop.over{background:#24384c;border-style:solid}
-  .ai2go-bl{width:100%;box-sizing:border-box;
+  .itl-bl-drop:hover{background:#24384c}
+  .itl-bl-drop.over{background:#24384c;border-style:solid}
+  .itl-bl{width:100%;box-sizing:border-box;
     font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0}
-  .ai2go-bl-content{display:flex;flex-direction:column;gap:5px;width:100%}
-  .ai2go-bl .bl-row{display:flex;align-items:center;gap:7px;background:#262625;
+  .itl-bl-content{display:flex;flex-direction:column;gap:5px;width:100%}
+  .itl-bl .bl-row{display:flex;align-items:center;gap:7px;background:#262625;
     border:1px solid #3a3a38;border-radius:8px;padding:5px 7px}
-  .ai2go-bl .bl-row.bl-drag{opacity:.45}
-  .ai2go-bl .bl-row.bl-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
-  .ai2go-bl .bl-row.bl-off{opacity:.5}
-  .ai2go-bl .bl-grip{color:#6d6d68;font-size:14px;cursor:grab;user-select:none;flex:none}
-  .ai2go-bl .bl-num{flex:none;width:18px;height:18px;border-radius:50%;background:#333331;
+  .itl-bl .bl-row.bl-drag{opacity:.45}
+  .itl-bl .bl-row.bl-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
+  .itl-bl .bl-row.bl-off{opacity:.5}
+  .itl-bl .bl-grip{color:#6d6d68;font-size:14px;cursor:grab;user-select:none;flex:none}
+  .itl-bl .bl-num{flex:none;width:18px;height:18px;border-radius:50%;background:#333331;
     color:#8b8b86;font:600 10px/18px ui-monospace,Consolas,monospace;text-align:center}
-  .ai2go-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19}
-  .ai2go-bl .bl-thumb.bl-off{filter:grayscale(1)}
-  .ai2go-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
+  .itl-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19}
+  .itl-bl .bl-thumb.bl-off{filter:grayscale(1)}
+  .itl-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
     color:#46cca8;font-size:15px;line-height:34px;text-align:center}
-  .ai2go-bl .bl-wave.bl-off{background:#2b2b29;color:#6d6d68}
-  .ai2go-bl .bl-clap{flex:none;width:34px;height:34px;border-radius:4px;background:#2a1f3d;
+  .itl-bl .bl-wave.bl-off{background:#2b2b29;color:#6d6d68}
+  .itl-bl .bl-clap{flex:none;width:34px;height:34px;border-radius:4px;background:#2a1f3d;
     color:#b48ce6;font-size:15px;line-height:34px;text-align:center}
-  .ai2go-bl .bl-clap.bl-off{background:#2b2b29;color:#6d6d68}
-  .ai2go-bl .bl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
-  .ai2go-bl .bl-meta{flex:none;color:#8b8b86;font:10px ui-monospace,Consolas,monospace}
-  .ai2go-bl .bl-x{flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
-  .ai2go-bl .bl-x:hover{color:#c86b6b}
-  .ai2go-bl .bl-empty{padding:6px;text-align:center;color:#6d6d68;font-size:11px}
-  .ai2go-bl .bl-toggle{flex:none;width:26px;height:14px;border-radius:7px;background:#3a3a38;
+  .itl-bl .bl-clap.bl-off{background:#2b2b29;color:#6d6d68}
+  .itl-bl .bl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+  .itl-bl .bl-meta{flex:none;color:#8b8b86;font:10px ui-monospace,Consolas,monospace}
+  .itl-bl .bl-x{flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
+  .itl-bl .bl-x:hover{color:#c86b6b}
+  .itl-bl .bl-empty{padding:6px;text-align:center;color:#6d6d68;font-size:11px}
+  .itl-bl .bl-toggle{flex:none;width:26px;height:14px;border-radius:7px;background:#3a3a38;
     border:1px solid #4a4a47;cursor:pointer;position:relative;box-sizing:border-box;padding:0}
-  .ai2go-bl .bl-toggle .bl-knob{position:absolute;top:1px;left:1px;width:10px;height:10px;
+  .itl-bl .bl-toggle .bl-knob{position:absolute;top:1px;left:1px;width:10px;height:10px;
     border-radius:50%;background:#8b8b86;transition:left .12s ease,background .12s ease}
-  .ai2go-bl .bl-toggle.bl-on{background:#1d3644;border-color:#46b4e6}
-  .ai2go-bl .bl-toggle.bl-on .bl-knob{left:13px;background:#46b4e6}
-  .ai2go-bl .bl-header{display:flex;align-items:center;gap:7px;padding:2px 7px 5px}
-  .ai2go-bl .bl-header .bl-toggle-all-label{flex:1;color:#8b8b86;font:600 10.5px -apple-system,"Segoe UI",Roboto,sans-serif;
+  .itl-bl .bl-toggle.bl-on{background:#1d3644;border-color:#46b4e6}
+  .itl-bl .bl-toggle.bl-on .bl-knob{left:13px;background:#46b4e6}
+  .itl-bl .bl-header{display:flex;align-items:center;gap:7px;padding:2px 7px 5px}
+  .itl-bl .bl-header .bl-toggle-all-label{flex:1;color:#8b8b86;font:600 10.5px -apple-system,"Segoe UI",Roboto,sans-serif;
     text-transform:uppercase;letter-spacing:.03em}
   `;
   document.head.appendChild(s);
@@ -149,7 +149,7 @@ async function uploadFile(file) {
 }
 
 app.registerExtension({
-  name: "AI2Go.MultiLoader",
+  name: "ITL.MultiLoader",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     const cfg = NODES[nodeData?.name];
@@ -304,7 +304,7 @@ app.registerExtension({
       // stopPropagation beats ComfyUI's global drop handler, which would otherwise try to load
       // the files as a workflow. ──
       const dropEl = document.createElement("div");
-      dropEl.className = "ai2go-bl-drop";
+      dropEl.className = "itl-bl-drop";
       dropEl.textContent = cfg.kind === "image" ? "Drop images here — or click to browse"
         : cfg.kind === "audio" ? "Drop audio here — or click to browse"
         : "Drop videos here — or click to browse";
@@ -334,9 +334,9 @@ app.registerExtension({
       // the pinned height back to itself, so the node could never learn it needs to grow (or
       // shrink) — the prompt_batch.js editor/content split, applied here. ──
       const listEl = document.createElement("div");
-      listEl.className = "ai2go-bl";
+      listEl.className = "itl-bl";
       const contentEl = document.createElement("div");
-      contentEl.className = "ai2go-bl-content";
+      contentEl.className = "itl-bl-content";
       listEl.append(contentEl);
       const rowsWidget = node.addDOMWidget("multi_loader_rows", "rows", listEl, { serialize: false });
       let dragIndex = -1;
@@ -552,7 +552,7 @@ app.registerExtension({
     chainCallback(nodeType.prototype, "onConfigure", function (info) {
       const node = this;
       requestAnimationFrame(() => {
-        const mirror = info?.properties?.ai2go_bl;
+        const mirror = info?.properties?.itl_bl;
         if (mirror && typeof mirror === "object") {
           for (const name of MIRRORED) {
             const w = findWidget(node, name);
@@ -580,7 +580,7 @@ app.registerExtension({
         if (w) mirror[name] = w.value;
       }
       o.properties = o.properties || {};
-      o.properties.ai2go_bl = mirror;
+      o.properties.itl_bl = mirror;
     });
   },
 });

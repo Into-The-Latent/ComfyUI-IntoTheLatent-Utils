@@ -1,20 +1,16 @@
-![ComfyUI-AI2Go-Utils](assets/AI2Go-Banner.jpg)
+# ComfyUI-IntoTheLatent-Utils
 
-# ComfyUI-AI2Go-Utils
-
-ComfyUI nodepack by AIKnowledge2Go
+ComfyUI nodepack by Into The Latent
 
 > ℹ️ **Published for reference.** Issues are disabled and pull requests are closed automatically —
 > this repo doesn't accept contributions, and no support is provided. You're welcome to fork and
 > adapt it under the GPL-3.0 license.
 
-## Contact
+> 🔄 **This pack replaces `ComfyUI-AI2Go-Utils`,** which is no longer maintained. Node IDs changed
+> (`AI2Go*` → `ITL*`), so workflows saved with the old pack won't pick these nodes up — keep the old
+> pack installed if you need them, the two coexist without conflict.
 
-> **⚠️ YouTube:** My YouTube channel is dead:
-> Read a bout it here: [AIKnowledge2Go IS DEAD](https://www.patreon.com/AIKnowledgeCentral/posts/aiknowledge2go-163707956)
->
-> I'm building a new one. Please give me a little time. ❤️ 
-> I won't upload the old ❌📹 videos. They are available for patreon members.
+## Contact
 
 - **📹 YouTube:** [Into The Latent](https://www.youtube.com/@IntoTheLatent)
 - **📬 Newsletter:** [AI News](https://intothelatent.com/newsletter)
@@ -30,7 +26,7 @@ Clone into your ComfyUI `custom_nodes` directory and restart ComfyUI:
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/Little-God1983/ComfyUI-AI2Go-Utils
+git clone https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils
 ```
 
 No extra dependencies (it uses Pillow, already shipped with ComfyUI). It can coexist with
@@ -38,7 +34,7 @@ ComfyUI-KJNodes — both Ideogram 4 nodes run side by side without conflict.
 
 ## Nodes
 
-### AI2Go Ideogram 4 Prompt Builder
+### ITL Ideogram 4 Prompt Builder
 
 A visual prompt builder for **Ideogram 4's structured JSON caption** format. Draw bounding-box
 **regions** on a canvas, describe each one, and the node assembles the caption — with a full
@@ -89,12 +85,12 @@ scene-graph **Overview**, region **parenting**, and named **groups** layered on 
   Each template can carry an optional **preview image** — click 📷 in the Templates menu to pick one
   (it's center-cropped to a 200×200 webp), or just drop a matching `<template-name>.{webp,png,jpg,jpeg}`
   next to the template file and it's picked up automatically.
-- Copies carry a small `_ai2go` sidecar that preserves the full layout (groups + hierarchy) for a
-  **lossless AI2Go → AI2Go** round-trip, while staying **two-way compatible with ComfyUI-KJNodes**:
+- Copies carry a small `_itl` sidecar that preserves the full layout (groups + hierarchy) for a
+  **lossless ITL → ITL** round-trip, while staying **two-way compatible with ComfyUI-KJNodes**:
   KJNodes ignores the extra data and loads the flat scene, and KJNodes captions load here flat too.
   The sidecar never reaches the model prompt.
 
-### AI2Go Ideogram 4 Style Wizard
+### ITL Ideogram 4 Style Wizard
 
 A "click-together" helper for the **style fields** of an Ideogram 4 caption — so you don't have to type
 `aesthetics` / `lighting` / `medium` / `photo` / `art_style` by hand.
@@ -114,14 +110,14 @@ A "click-together" helper for the **style fields** of an Ideogram 4 caption — 
   `import_json` wire never overwrites the builder's regions.
 
 **Editable chip presets.** The chip lists live in
-`ComfyUI/user/default/ai2go/ideogram4/WizardStylesDefault.json`. Edit them right in the wizard on the
+`ComfyUI/user/default/itl/ideogram4/WizardStylesDefault.json`. Edit them right in the wizard on the
 **Edit presets** tab — add, rename, or delete chips per category, then **Save to file** (or **Discard** /
 **Restore defaults**). You can also hand-edit the JSON (each entry's `key` must be one of `aesthetics`,
 `lighting`, `medium`, `photo`, `art_style`). If the file is **missing or malformed**, the wizard falls
 back to the built-in defaults and shows a warning (with the exact parse error) plus a **Restore
 defaults** button that (re)creates the file.
 
-### AI2Go Prompt Batch
+### ITL Prompt Batch
 
 Run a **list of prompts one at a time** across a queued batch — the text analog of the classic
 "Load Image Batch + increment index" trick. ComfyUI has no real for-loop, so you queue N runs by hand
@@ -130,7 +126,7 @@ and this node walks the list, emitting one prompt per run.
 **Outputs:** `positive`, `negative`, `index` (the 0-based index used this run — wire it into a
 SaveImage filename so each file records *which prompt* made it).
 
-![AI2Go Prompt Batch](assets/Batch.png)
+![ITL Prompt Batch](assets/Batch.png)
 
 #### Editing prompts
 
@@ -188,7 +184,7 @@ error at run time.
 If the index ever overshoots the list (more runs than prompts), it clamps to the last prompt instead of
 erroring.
 
-### AI2Go Multi Loaders (Image, Audio & Video)
+### ITL Multi Loaders (Image, Audio & Video)
 
 Drop **multiple files onto one node** and every file gets its **own output socket** — wire each
 image, clip or video somewhere different in the same run. Six nodes, two flavors each:
@@ -239,7 +235,7 @@ image, clip or video somewhere different in the same run. Six nodes, two flavors
   leaving an unplugged **OPTIONAL** input, so it's safe unless that socket feeds a **REQUIRED**
   input downstream.
 
-### AI2Go Resolution Selector
+### ITL Resolution Selector
 
 Pick a model-valid **width/height** by aspect ratio and mode, and (optionally) push it straight into
 a connected **Ideogram 4 Prompt Builder**.
@@ -257,23 +253,23 @@ a connected **Ideogram 4 Prompt Builder**.
 - The readout shows the resulting **W × H**, megapixels, and the effective ratio + orientation. Wire
   `width`/`height` into a Prompt Builder; edits push into its canvas live and also apply on execution.
 
-### AI2Go Save Metadata (Civitai)
+### ITL Save Metadata (Civitai)
 
 Two output nodes that save PNG(s) with an **A1111-style `parameters` text chunk** — the flat,
 human-readable format Civitai actually parses to show the prompt and auto-link the checkpoint and
 LoRAs. ComfyUI's stock Save Image embeds the raw `workflow`/`prompt` graph instead, which Civitai
-can't reliably read back into a prompt — and for a dynamic workflow (our own **AI2Go Prompt Batch**
+can't reliably read back into a prompt — and for a dynamic workflow (our own **ITL Prompt Batch**
 is the worst case: one graph, N prompts, disambiguated only by a run index) it's actively
 misleading. These nodes trace the graph at save time to capture the **real prompt used on this
 specific run**.
 
-**AI2Go Save Metadata (Civitai)** (Basic) auto-traces everything — positive, negative, steps, CFG,
+**ITL Save Metadata (Civitai)** (Basic) auto-traces everything — positive, negative, steps, CFG,
 seed, sampler, scheduler, model, and LoRAs — by walking backward from the KSampler feeding the saved
 image (falling back to "the only sampler in the graph" if that walk doesn't land on one). When the
-positive/negative text comes from an **AI2Go Prompt Batch** node, the trace reads that node's
+positive/negative text comes from an **ITL Prompt Batch** node, the trace reads that node's
 current `index` and resolves the exact line that ran for this queue item, not the whole batch list.
 
-**AI2Go Save Metadata (Civitai) Advanced** adds optional override sockets — `positive`, `negative`,
+**ITL Save Metadata (Civitai) Advanced** adds optional override sockets — `positive`, `negative`,
 `steps`, `cfg`, `seed`, `sampler_name`, `scheduler` — that win over the trace when wired. Wiring a
 Prompt Batch node's `positive`/`negative` outputs straight into these sockets is the reliable path
 for dynamic/batch prompts: no static-graph guessing, just the string that actually ran. Model and
@@ -341,6 +337,6 @@ Kijai for that original work — the derived files retain their attribution.
 
 Everything else in this pack — the **Ideogram 4 Style Wizard**, the **Resolution Selector**, the
 **Prompt Batch** node, and the **Save Metadata (Civitai)** nodes — is original development by
-**AIKnowledge2Go**.
+**Into The Latent**.
 
 Because the pack includes Kijai's GPL-3.0 code, the whole pack is released under **GPL-3.0** as well.

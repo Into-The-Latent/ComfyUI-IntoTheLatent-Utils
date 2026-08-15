@@ -1,4 +1,4 @@
-# Filename token expansion — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Filename token expansion — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # ComfyUI core's folder_paths.get_save_image_path expands %year%/%month%/%day%/... and subfolders,
 # but NOT the %date:FORMAT% token the stock Save Image tooltip advertises (that lives in the web

@@ -1,5 +1,5 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
  * Derived from ComfyUI-KJNodes (web/js/ideogram4_prompt_builder.js, web/js/utility.js)
  * by Kijai, licensed under GPL-3.0; this file and pack remain GPL-3.0.

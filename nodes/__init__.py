@@ -1,1 +1,1 @@
-"""Node implementations for ComfyUI-AI2Go-Utils."""
+"""Node implementations for ComfyUI-IntoTheLatent-Utils."""

@@ -1,4 +1,4 @@
-# Multi Loader core tests — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Loader core tests — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import json
 
 import pytest

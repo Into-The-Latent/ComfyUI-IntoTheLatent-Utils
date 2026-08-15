@@ -1,4 +1,4 @@
-# Ideogram 4 Prompt Builder node — part of ComfyUI-AI2Go-Utils.
+# Ideogram 4 Prompt Builder node — part of ComfyUI-IntoTheLatent-Utils.
 #
 # Derived from ComfyUI-KJNodes (nodes/ideogram4_nodes.py) by Kijai,
 # licensed under GPL-3.0; this file and pack remain GPL-3.0.
@@ -222,7 +222,7 @@ def _loads_caption(s):
             v = json.loads(cand)
             if isinstance(v, dict):
                 if cand is not s:
-                    logging.warning("[AI2GoIdeogram4PromptBuilder] import_json had errors; recovered with lenient parse")
+                    logging.warning("[ITLIdeogram4PromptBuilder] import_json had errors; recovered with lenient parse")
                 return v
         except (json.JSONDecodeError, TypeError):
             continue
@@ -250,13 +250,13 @@ def _caption_to_boxes(cap):
     return boxes
 
 
-class AI2GoIdeogram4PromptBuilder(io.ComfyNode):
+class ITLIdeogram4PromptBuilder(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="AI2GoIdeogram4PromptBuilder",
-            display_name="AI2Go Ideogram 4 Prompt Builder",
-            category="AI2Go/text",
+            node_id="ITLIdeogram4PromptBuilder",
+            display_name="ITL Ideogram 4 Prompt Builder",
+            category="Into The Latent/text",
             search_aliases=["ideogram", "caption", "bbox", "prompt builder", "json prompt"],
             is_experimental=True,
             description="""
@@ -388,7 +388,7 @@ Toolbar:
         used_import = imported is not None and (import_mode == "always" or not boxes)
 
         if used_import:
-            caption = {k: v for k, v in imported.items() if k != "_ai2go"}   # strip the editor-only sidecar from the prompt output
+            caption = {k: v for k, v in imported.items() if k != "_itl"}   # strip the editor-only sidecar from the prompt output
             boxes = _caption_to_boxes(imported)
         else:
             caption = {}

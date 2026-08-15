@@ -1,9 +1,9 @@
-# Multi Loader core — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Multi Loader core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
 # Pure (comfy-free) logic shared by the four Multi Loader nodes (nodes/multi_image_loader.py,
 # nodes/multi_audio_loader.py). parse_files is mirrored in web/js/multi_loader.js — keep in sync.
 #
-# "Multi" here means several files emitted in a single run — distinct from AI2GoPromptBatch's
+# "Multi" here means several files emitted in a single run — distinct from ITLPromptBatch's
 # "Batch", which walks one entry per queued run.
 import json
 

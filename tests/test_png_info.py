@@ -1,4 +1,4 @@
-# Tests for the PNG metadata builder — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for the PNG metadata builder — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from PIL import Image
 from nodes.civitai_metadata.png_info import build_pnginfo
 

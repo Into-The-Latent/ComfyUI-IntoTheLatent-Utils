@@ -1,4 +1,4 @@
-# Integration test for the Save Metadata (Civitai) nodes — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Integration test for the Save Metadata (Civitai) nodes — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import pytest
 
 pytest.importorskip("comfy_api")  # only runs inside a ComfyUI environment
@@ -8,7 +8,7 @@ from PIL import Image  # noqa: E402
 
 def test_basic_node_writes_parameters_chunk(tmp_path, monkeypatch):
     import folder_paths
-    from nodes.save_civitai_metadata import AI2GoSaveCivitaiMetadata as Node
+    from nodes.save_civitai_metadata import ITLSaveCivitaiMetadata as Node
 
     monkeypatch.setattr(folder_paths, "get_output_directory", lambda: str(tmp_path))
     monkeypatch.setattr(folder_paths, "get_full_path", lambda kind, name: None)  # skip hashing
@@ -21,7 +21,7 @@ def test_basic_node_writes_parameters_chunk(tmp_path, monkeypatch):
               "negative": ["3", 0], "seed": 42, "steps": 25, "cfg": 7.0,
               "sampler_name": "euler", "scheduler": "normal"}},
         "6": {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0]}},
-        "7": {"class_type": "AI2GoSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}},
+        "7": {"class_type": "ITLSaveCivitaiMetadata", "inputs": {"images": ["6", 0]}},
     }
 
     class _Hidden:
@@ -33,9 +33,9 @@ def test_basic_node_writes_parameters_chunk(tmp_path, monkeypatch):
 
     import torch
     images = torch.zeros((1, 64, 48, 3))  # [batch, H, W, C]
-    Node.execute(images, filename_prefix="AI2GoTest", save_workflow=False)
+    Node.execute(images, filename_prefix="ITLTest", save_workflow=False)
 
-    pngs = list(tmp_path.glob("AI2GoTest_*.png"))
+    pngs = list(tmp_path.glob("ITLTest_*.png"))
     assert pngs, "no PNG written"
     text = Image.open(str(pngs[0])).text
     params = text["parameters"]

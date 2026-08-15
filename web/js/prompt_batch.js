@@ -1,7 +1,7 @@
 /*
- * Part of ComfyUI-AI2Go-Utils.
+ * Part of ComfyUI-IntoTheLatent-Utils.
  *
- * Front-end for the AI2Go Prompt Batch node. GPL-3.0, like the rest of the pack.
+ * Front-end for the ITL Prompt Batch node. GPL-3.0, like the rest of the pack.
  *
  * A dynamic row editor in the spirit of rgthree's Power Lora Loader: each prompt is a row with a
  * positive and a negative text box, drag-to-reorder (⠿) and per-row remove (🗑). Buttons:
@@ -24,7 +24,7 @@
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
 
-const NODE_ID = "AI2GoPromptBatch";
+const NODE_ID = "ITLPromptBatch";
 
 // ── Mirror of _parse_prompts in nodes/prompt_batch.py. Returns { ok, prompts } or { ok:false, error }.
 function parsePrompts(raw) {
@@ -103,49 +103,49 @@ function readConnectedJson(node) {
 
 // One shared stylesheet for every Prompt Batch editor on the graph.
 function ensureStyles() {
-  if (document.getElementById("ai2go-pb-style")) return;
+  if (document.getElementById("itl-pb-style")) return;
   const s = document.createElement("style");
-  s.id = "ai2go-pb-style";
+  s.id = "itl-pb-style";
   s.textContent = `
-  .ai2go-pb{display:flex;flex-direction:column;gap:6px;width:100%;box-sizing:border-box;
+  .itl-pb{display:flex;flex-direction:column;gap:6px;width:100%;box-sizing:border-box;
     font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;color:#d3d3d0;padding:1px 0}
-  .ai2go-pb-content{display:flex;flex-direction:column;gap:6px;width:100%}
-  .ai2go-pb .pb-head{display:flex;justify-content:space-between;padding:0 2px;font-size:10.5px;color:#8b8b86}
-  .ai2go-pb .pb-head .pos{color:#5cae6d}.ai2go-pb .pb-head .neg{color:#c86b6b}
-  .ai2go-pb .pb-empty{padding:8px;text-align:center;color:#6d6d68;font-size:11px;
+  .itl-pb-content{display:flex;flex-direction:column;gap:6px;width:100%}
+  .itl-pb .pb-head{display:flex;justify-content:space-between;padding:0 2px;font-size:10.5px;color:#8b8b86}
+  .itl-pb .pb-head .pos{color:#5cae6d}.itl-pb .pb-head .neg{color:#c86b6b}
+  .itl-pb .pb-empty{padding:8px;text-align:center;color:#6d6d68;font-size:11px;
     border:1px dashed #3a3a38;border-radius:7px}
-  .ai2go-pb .pb-row{display:flex;align-items:stretch;gap:7px;background:#262625;
+  .itl-pb .pb-row{display:flex;align-items:stretch;gap:7px;background:#262625;
     border:1px solid #3a3a38;border-radius:8px;padding:7px}
-  .ai2go-pb .pb-row.pb-drag{opacity:.45}
-  .ai2go-pb .pb-row.pb-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
-  .ai2go-pb .pb-grip{align-self:center;color:#6d6d68;font-size:15px;cursor:grab;user-select:none;line-height:1}
-  .ai2go-pb .pb-num{align-self:center;flex:none;width:20px;height:20px;border-radius:50%;
+  .itl-pb .pb-row.pb-drag{opacity:.45}
+  .itl-pb .pb-row.pb-over{border-color:#46b4e6;box-shadow:0 0 0 1px #46b4e6 inset}
+  .itl-pb .pb-grip{align-self:center;color:#6d6d68;font-size:15px;cursor:grab;user-select:none;line-height:1}
+  .itl-pb .pb-num{align-self:center;flex:none;width:20px;height:20px;border-radius:50%;
     background:#333331;color:#8b8b86;font:600 11px/20px ui-monospace,Consolas,monospace;text-align:center}
-  .ai2go-pb .pb-fields{display:flex;gap:7px;flex:1;min-width:0}
-  .ai2go-pb .pb-field{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-  .ai2go-pb .pb-lbl{font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
-  .ai2go-pb .pb-field.pos .pb-lbl{color:#5cae6d}.ai2go-pb .pb-field.neg .pb-lbl{color:#c86b6b}
-  .ai2go-pb textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:88px;
+  .itl-pb .pb-fields{display:flex;gap:7px;flex:1;min-width:0}
+  .itl-pb .pb-field{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .itl-pb .pb-lbl{font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+  .itl-pb .pb-field.pos .pb-lbl{color:#5cae6d}.itl-pb .pb-field.neg .pb-lbl{color:#c86b6b}
+  .itl-pb textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:88px;
     background:#1a1a19;border:1px solid #33332f;border-radius:5px;padding:5px 7px;
     color:#d3d3d0;font:11.5px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;outline:none}
-  .ai2go-pb textarea:focus{border-color:#46b4e6}
-  .ai2go-pb .pb-field.pos textarea{border-left:2px solid #5cae6d}
-  .ai2go-pb .pb-field.neg textarea{border-left:2px solid #c86b6b}
-  .ai2go-pb .pb-trash{align-self:center;flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
-  .ai2go-pb .pb-trash:hover{color:#c86b6b}
+  .itl-pb textarea:focus{border-color:#46b4e6}
+  .itl-pb .pb-field.pos textarea{border-left:2px solid #5cae6d}
+  .itl-pb .pb-field.neg textarea{border-left:2px solid #c86b6b}
+  .itl-pb .pb-trash{align-self:center;flex:none;color:#6d6d68;font-size:13px;cursor:pointer;padding:2px}
+  .itl-pb .pb-trash:hover{color:#c86b6b}
   `;
   document.head.appendChild(s);
 }
 
 app.registerExtension({
-  name: "AI2Go.PromptBatch",
+  name: "ITL.PromptBatch",
 
   // Wrap the queue action once: before a batch is queued, zero the index of every Prompt Batch node
   // whose "reset_index_at_batch_start" is on. The per-run afterQueued increment (wired in
   // onNodeCreated) then walks 0,1,2… across the batch.
   async setup() {
     const orig = app.queuePrompt;
-    if (typeof orig !== "function" || orig._ai2goWrapped) return;
+    if (typeof orig !== "function" || orig._itlWrapped) return;
     const wrapped = async function (...args) {
       try {
         for (const node of app.graph?._nodes || []) {
@@ -157,11 +157,11 @@ app.registerExtension({
           if (!resetW || resetW.value !== false) setIndex(node, 0);
         }
       } catch (e) {
-        console.error("[AI2Go PromptBatch] batch-start index reset failed:", e);
+        console.error("[ITL PromptBatch] batch-start index reset failed:", e);
       }
       return orig.apply(this, args);
     };
-    wrapped._ai2goWrapped = true;
+    wrapped._itlWrapped = true;
     app.queuePrompt = wrapped;
   },
 
@@ -195,9 +195,9 @@ app.registerExtension({
       // ── DOM row editor. editorEl is the widget root (ComfyUI pins its height each frame); the rows
       // live in contentEl, whose *natural* height we measure so the node can both grow and shrink. ──
       const editorEl = document.createElement("div");
-      editorEl.className = "ai2go-pb";
+      editorEl.className = "itl-pb";
       const contentEl = document.createElement("div");
-      contentEl.className = "ai2go-pb-content";
+      contentEl.className = "itl-pb-content";
       editorEl.append(contentEl);
       const rowsWidget = node.addDOMWidget("prompt_batch_rows", "rows", editorEl, { serialize: false });
 
@@ -426,7 +426,7 @@ app.registerExtension({
         if (w) mirror[name] = w.value;
       }
       o.properties = o.properties || {};
-      o.properties.ai2go_pb = mirror;
+      o.properties.itl_pb = mirror;
     });
 
     // After a saved workflow loads: prefer the by-name mirror over whatever the positional restore
@@ -435,7 +435,7 @@ app.registerExtension({
     // the rows from the restored prompts_json.
     chainCallback(nodeType.prototype, "onConfigure", function (info) {
       const node = this;
-      const mirror = info?.properties?.ai2go_pb;
+      const mirror = info?.properties?.itl_pb;
       if (mirror && typeof mirror === "object") {
         for (const name of MIRRORED) {
           const w = findWidget(node, name);

@@ -1,4 +1,4 @@
-# Comfy-free resolution math for the AI2Go Resolution Selector — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Comfy-free resolution math for the ITL Resolution Selector — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 """Pure resolution math, import-clean (no comfy_api) so it is unit-testable from the repo root.
 
 The node class in resolution_selector.py imports from here, and the editor JS

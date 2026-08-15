@@ -1,4 +1,4 @@
-# Tests for filename %date:FORMAT% token expansion — part of ComfyUI-AI2Go-Utils. GPL-3.0.
+# Tests for filename %date:FORMAT% token expansion — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from datetime import datetime
 
 from nodes.civitai_metadata.filenames import expand_date_tokens
