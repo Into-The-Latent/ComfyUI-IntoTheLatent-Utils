@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-ai2go-utils"
 description = "ComfyUI utility nodes by AIKnowledge2Go."
-version = "1.7.0"
+version = "1.6.1"
 license = { file = "LICENSE" }
 dependencies = [
     "pillow>=10.3.0",
