@@ -17,6 +17,12 @@
  * Trimming only ever cuts from the end — ComfyUI validates output types by slot position, so
  * used slots must stay contiguous from slot 0.
  * parseFiles mirrors parse_files in nodes/multi_loader_core.py — keep the two in sync.
+ *
+ * Video nodes only: each file's group is video_N/frames_N/audio_N (+ filename_N on Advanced).
+ * frames_N only carries decoded frames when the `extract_frames` widget is on; wiring a
+ * frames_N socket switches it on automatically (one-way — never auto-disabled), so a forgotten
+ * toggle can't silently leave that socket outputting None. See nodes/multi_video_loader.py for
+ * the matching decode-decision logic and the wired-but-off guard for API-built prompts.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
@@ -29,8 +35,8 @@ const NODES = {
   ITLMultiImageLoaderAdvanced: { kind: "image", group: [["image_", "IMAGE"], ["mask_", "MASK"], ["filename_", "STRING"]] },
   ITLMultiAudioLoader:         { kind: "audio", group: [["audio_", "AUDIO"]] },
   ITLMultiAudioLoaderAdvanced: { kind: "audio", group: [["audio_", "AUDIO"], ["filename_", "STRING"]] },
-  ITLMultiVideoLoader:         { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"]] },
-  ITLMultiVideoLoaderAdvanced: { kind: "video", group: [["video_", "VIDEO"], ["audio_", "AUDIO"], ["filename_", "STRING"]] },
+  ITLMultiVideoLoader:         { kind: "video", group: [["video_", "VIDEO"], ["frames_", "IMAGE"], ["audio_", "AUDIO"]] },
+  ITLMultiVideoLoaderAdvanced: { kind: "video", group: [["video_", "VIDEO"], ["frames_", "IMAGE"], ["audio_", "AUDIO"], ["filename_", "STRING"]] },
 };
 
 // ── Mirror of parse_files in nodes/multi_loader_core.py — three intentional deviations:
@@ -156,7 +162,7 @@ app.registerExtension({
     if (!cfg) return;
     ensureStyles();
 
-    const MIRRORED = ["downscale_mode", "max_size", "output_slots", "force_rate"];   // downscale_mode/max_size are image-only, force_rate is video-only; findWidget just misses on the other kinds
+    const MIRRORED = ["downscale_mode", "max_size", "output_slots", "force_rate", "extract_frames"];   // downscale_mode/max_size are image-only, force_rate/extract_frames are video-only; findWidget just misses on the other kinds
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       const node = this;
@@ -189,6 +195,30 @@ app.registerExtension({
       statusEl.style.cssText = "width:100%;box-sizing:border-box;padding:3px 6px;text-align:center;line-height:1.4;font:12px sans-serif;";
       const setStatus = (text, color) => { statusEl.textContent = text; statusEl.style.color = color; node.setDirtyCanvas?.(true, true); };
       node._blSetStatus = setStatus;
+
+      // Auto-enable extract_frames (video nodes only) the instant a frames_N output socket gets
+      // wired — one-way, never auto-disabled, so a frames_N wire always gets decoded frames
+      // instead of silently outputting None. type 2 = LiteGraph.OUTPUT; the output.name check
+      // (rather than trusting slot math alone) is belt-and-braces so a frontend convention
+      // mismatch degrades to a no-op instead of throwing inside a node callback (which would
+      // kill the canvas).
+      if (cfg.kind === "video") {
+        chainCallback(node, "onConnectionsChange", function (type, slotIndex, isConnected) {
+          try {
+            if (type !== 2 || !isConnected) return;
+            const out = node.outputs?.[slotIndex];
+            if (!out || typeof out.name !== "string" || !out.name.startsWith("frames_")) return;
+            const w = findWidget(node, "extract_frames");
+            if (!w || w.value) return; // already on — never auto-disable
+            w.value = true;
+            w.callback?.(w.value);
+            node._blSetStatus?.(`extract_frames switched on — ${out.name} needs decoded frames.`, "#46b4e6");
+            node.setDirtyCanvas?.(true, true);
+          } catch (e) {
+            console.error("ITL.MultiLoader: extract_frames auto-enable failed", e);
+          }
+        });
+      }
 
       function syncJson() {
         if (jsonW) jsonW.value = JSON.stringify(node._blRows);
