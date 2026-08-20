@@ -195,8 +195,8 @@ image, clip or video somewhere different in the same run. Six nodes, two flavors
 | **Multi Image Loader Advanced** | `image_N` + `mask_N` + `filename_N` | `count` |
 | **Multi Audio Loader** | `audio_N` | `count` |
 | **Multi Audio Loader Advanced** | `audio_N` + `filename_N` | `count` |
-| **Multi Video Loader** | `video_N` + `audio_N` | `count` |
-| **Multi Video Loader Advanced** | `video_N` + `audio_N` + `filename_N` | `count` |
+| **Multi Video Loader** | `video_N` + `frames_N` + `audio_N` | `count` |
+| **Multi Video Loader Advanced** | `video_N` + `frames_N` + `audio_N` + `filename_N` | `count` |
 
 - **Up to 8 files per node.** By default (`output_slots = auto`) sockets appear as you add files
   and disappear as you remove them. Files are uploaded into ComfyUI's `input/` folder (like the
@@ -234,6 +234,19 @@ image, clip or video somewhere different in the same run. Six nodes, two flavors
 - **Video clips with no audio track** yield nothing on that file's `audio_N` socket — same as
   leaving an unplugged **OPTIONAL** input, so it's safe unless that socket feeds a **REQUIRED**
   input downstream.
+- **`extract_frames` (video nodes, off by default):** `frames_N` only carries this file's decoded
+  frames as an IMAGE batch (matching whatever `video_N` would show) while this is on. It's for
+  nodes that want raw frames instead of ComfyUI's native VIDEO object — e.g. VideoHelperSuite-style
+  workflows, or the MiniMax H3 Reference-to-Video node (wire `frames_N` → `ref_video_0`,
+  `audio_N` → `ref_video_audio_0`, and set `force_rate` to `24` to match its "24 fps" expectation).
+  Leave it off for clips you only pass through as `video_N`/`audio_N` — decoding costs the same
+  time and memory as forcing a rate, so `frames_N` staying empty is what keeps the default path
+  free. **Wiring a `frames_N` socket switches `extract_frames` on for you automatically** — the
+  toggle never turns itself back off, so you can always turn it off by hand once you unwire.
+- **⚠ Breaking change:** the Multi Video Loader pair's output socket order changed to
+  `video_N, frames_N, audio_N` (`, filename_N` on Advanced) to make room for `frames_N`. Workflows
+  saved with an earlier version of these nodes will load with wires attached to the wrong sockets
+  (an old `audio_N` wire now lands on `frames_N`) — reconnect them after updating.
 
 ### ITL Resolution Selector
 

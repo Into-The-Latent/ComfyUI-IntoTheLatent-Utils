@@ -209,3 +209,28 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
 - **No audio track → `None`, not an error**: a video file without an audio stream yields `None`
   on that file's `audio_N`, following the same "unplugged OPTIONAL input" rule as a switched-off
   row — safe unless that socket feeds a REQUIRED input.
+
+## Amendments (2026-08-20)
+
+- **`frames_N` (IMAGE) added to the video pair**, between `video_N` and `audio_N`: groups become
+  `video_N`/`frames_N`/`audio_N` (+ `filename_N` on Advanced) — declared totals 1+8×3=25 (simple)
+  and 1+8×4=33 (Advanced). Motivation: `video_N` is ComfyUI's native VIDEO object, but
+  VideoHelperSuite-style workflows and nodes like MiniMax H3's `ref_video_0` want raw decoded
+  IMAGE frames, which the loader previously had no way to hand out. **Breaking**: this reorders
+  every socket after `video_N` for both nodes — workflows saved before this change need their
+  wires reconnected.
+- **`extract_frames` (BOOLEAN, default False) added**, appended last in the video nodes' inputs
+  (pack rule: append, never insert, so old `widgets_values` still restore correctly). Off keeps
+  the existing free path (`frames_N` stays `None`); on decodes the clip's frames once and fills
+  `frames_N` with exactly what `video_N` would show, retimed if `force_rate` also retimes.
+  Folded into `fingerprint_inputs` so toggling it busts the cache.
+- **Decode decision restructured** around `need_retime` (force_rate>0 and the clip's metadata
+  rate differs by ≥1e-6) and `need_decode` (need_retime OR extract_frames): `get_components()` is
+  paid at most once per file, and `audio_N` reuses `components.audio` instead of a second decode
+  whenever a decode already happened for either reason.
+- **Wired-but-off guard**: both video schemas now declare `hidden=[io.Hidden.prompt,
+  io.Hidden.unique_id]` (same pattern as `save_civitai_metadata.py`). When `extract_frames` is
+  off, `execute` scans the prompt for any other node's input linking to one of this node's
+  `frames_N` slots and raises a plain `ValueError` if found — the front-end auto-enables
+  `extract_frames` the moment a `frames_N` socket is wired, so this only fires for prompts built
+  outside that front-end (e.g. the API).

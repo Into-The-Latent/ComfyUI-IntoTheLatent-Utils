@@ -22,3 +22,6 @@ Thumbs.db
 # Logs
 *.log
 .hash_cache.json
+
+# Superpowers working files (specs/progress/reports) - not part of the shipped pack
+.superpowers/
