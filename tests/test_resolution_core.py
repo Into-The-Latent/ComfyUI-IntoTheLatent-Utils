@@ -1,7 +1,7 @@
 # Tests for the comfy-free resolution core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.resolution_core import (
     resolve_dims, effective_ar, parse_ar, profile_clamps, aspect_options,
-    clamp_snap_multiple,
+    clamp_snap_multiple, detect_ar, nearest_preset,
 )
 
 SQ = "1:1 (Square)"
@@ -134,3 +134,94 @@ def test_ideogram_output_invariant_across_bad_snap_multiple():
         assert (w, h) == ref
         assert w % 16 == 0 and h % 16 == 0
         assert 256 <= w <= 2048 and 256 <= h <= 2048
+
+
+# ── input mode: the aspect ratio is detected from the width/height inputs (normally connected),
+#    the size comes from the megapixels target. See docs/superpowers/specs/
+#    2026-08-30-resolution-selector-input-mode-design.md ──
+
+def test_detect_ar_returns_the_exact_source_ratio():
+    # 1512x1080 is 1.400 — between 4:3 (1.333) and 3:2 (1.500), so no preset could represent it.
+    assert round(detect_ar(1512, 1080), 6) == 1.4
+    assert round(detect_ar("1512", "1080"), 6) == 1.4   # widgets can hand back strings
+
+
+def test_detect_ar_falls_back_to_square_on_unusable_sides():
+    # Square, deliberately — NOT the aspect_ratio widget, which is hidden in input mode and would
+    # steer the output from a value the user cannot see.
+    for w, h in ((0, 1080), (1512, 0), (-4, 1080), (1512, -4), (None, 1080), ("", 1080), ("abc", 1080)):
+        assert detect_ar(w, h) == 1.0
+
+
+def test_nearest_preset_names_a_landscape_ratio():
+    assert nearest_preset(1920 / 1080) == ("16:9", "Widescreen", "landscape")
+
+
+def test_nearest_preset_inverts_and_reports_portrait():
+    assert nearest_preset(1080 / 1920) == ("16:9", "Widescreen", "portrait")
+
+
+def test_nearest_preset_compares_in_log_space():
+    # 2.66 is nearer 21:9 (2.333) by absolute distance (0.327 < 0.340) but nearer 3:1 proportionally
+    # (ln 1.128 < ln 1.140) — the log comparison is what stops wide ratios swallowing their
+    # neighbours just because the numbers are bigger.
+    assert nearest_preset(2.66)[0] == "3:1"
+
+
+def test_nearest_preset_never_drives_the_math():
+    # A 1.400 source stays 1.400-ish; it is NOT snapped to the 4:3 preset nearest_preset() reports.
+    assert nearest_preset(1.4)[0] == "4:3"
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert abs(w / h - 1.4) < abs(w / h - 4 / 3)
+
+
+def test_input_mode_keeps_the_source_ratio_at_the_target_megapixels():
+    # ar 1.4, 2 MP -> tw = sqrt(2e6*1.4) = 1673.3 -> /8 -> 1672 ; 1672/1.4 = 1194.3 -> /8 -> 1192
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert (w, h) == (1672, 1192)
+    assert w % 8 == 0 and h % 8 == 0
+    assert abs(w * h / 1e6 - 2.0) < 0.05
+
+
+def test_input_mode_ignores_aspect_ratio_and_orientation():
+    ref = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert resolve_dims("default", "input", WS, "portrait", 8, 2.0, 1512, 1080) == ref
+    assert resolve_dims("default", "input", "3:1 (Wide Panorama)", "portrait", 8, 2.0, 1512, 1080) == ref
+
+
+def test_input_mode_honors_snap_multiple():
+    w, h = resolve_dims("default", "input", SQ, "landscape", 64, 2.0, 1512, 1080)
+    assert w % 64 == 0 and h % 64 == 0
+
+
+def test_input_mode_heals_a_broken_snap_multiple():
+    # Same guarantee as every other mode: "" must not reject the node (see clamp_snap_multiple).
+    assert resolve_dims("default", "input", SQ, "landscape", "", 2.0, 1512, 1080) == (1672, 1192)
+
+
+def test_input_mode_clamps_to_the_profile_keeping_the_detected_ratio():
+    # 16 MP of 3840x2160 under Ideogram 4 -> capped at 2048 wide, ratio intact (not 2048x2048).
+    assert resolve_dims("Ideogram 4", "input", SQ, "landscape", 8, 16.0, 3840, 2160) == (2048, 1152)
+
+
+def test_input_mode_portrait_source_yields_a_portrait_result():
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 1.0, 1080, 1920)
+    assert h > w
+
+
+def test_input_mode_square_fallback_on_missing_source():
+    w, h = resolve_dims("default", "input", WS, "landscape", 8, 1.0, 0, 0)
+    assert w == h == 1000
+
+
+def test_input_mode_agrees_with_megapixel_mode_on_a_preset_ratio_source():
+    # Property: a 1920x1080 source IS 16:9, so detecting it must equal picking it.
+    assert (resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1920, 1080)
+            == resolve_dims("default", "megapixel", WS, "landscape", 8, 2.0, 0, 0))
+
+
+def test_existing_modes_are_untouched_by_the_new_branch():
+    # auto still means "width drives + picker ratio", not "ratio from w/h" — the reason `input` is a
+    # new mode instead of a redefinition of `auto`.
+    assert resolve_dims("default", "auto", WS, "landscape", 8, 1.0, 1920, 0) == (1920, 1080)
+    assert resolve_dims("default", "raw", SQ, "landscape", 8, 1.0, 1021, 1000) == (1024, 1000)

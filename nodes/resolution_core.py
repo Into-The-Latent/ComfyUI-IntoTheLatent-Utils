@@ -5,6 +5,7 @@ The node class in resolution_selector.py imports from here, and the editor JS
 (web/js/resolution_selector.js) mirrors this math so the readout and the INT outputs always agree.
 """
 import re
+from math import log
 
 # A profile whose `max` == BIG has no real per-side cap -> never shows the "clamped" warning.
 BIG = 16384
@@ -112,13 +113,53 @@ def _fit_w(tw, ar, p):
     return w, _snap(w / ar if ar else w, p)
 
 
+def detect_ar(width, height):
+    """Aspect ratio of the raw width/height inputs, exactly as given — never snapped to a preset.
+
+    Returns 1.0 (square) for anything unusable: a zero/negative side, a non-numeric widget value,
+    None. The fallback is deliberately square rather than the `aspect_ratio` widget — that widget is
+    hidden in `input` mode, and a stale hidden value silently steering the output is precisely the
+    failure this mode exists to prevent. Mirrors detectAR in web/js/resolution_selector.js."""
+    try:
+        w, h = float(width), float(height)
+    except (TypeError, ValueError):
+        return 1.0
+    return (w / h) if (w > 0 and h > 0) else 1.0
+
+
+def nearest_preset(ar):
+    """Closest ASPECT_PRESETS entry to `ar` -> (ratio, name, orientation). Display only.
+
+    Distances are compared in log space, so a ratio is judged proportionally: 2.66 reads as nearer
+    3:1 than 21:9 (2.333) even though absolute distance says otherwise, which stops the wide end of
+    the list from swallowing its neighbours just because the numbers there are bigger. Presets are
+    landscape/square only, so a ratio below 1.0 is inverted and reported as portrait. This NEVER
+    feeds resolve_dims — `input` mode keeps the exact detected ratio. Mirrors nearestPreset in
+    web/js/resolution_selector.js."""
+    try:
+        v = float(ar)
+    except (TypeError, ValueError):
+        v = 1.0
+    if v <= 0:
+        v = 1.0
+    orientation = "landscape"
+    if v < 1.0:
+        v, orientation = 1.0 / v, "portrait"
+    ratio, name = min(ASPECT_PRESETS, key=lambda p: abs(log(v / parse_ar(p[0]))))
+    return ratio, name, orientation
+
+
 def resolve_dims(profile, mode, aspect, orientation, snap_multiple, mp, width, height):
     # Mirror of the editor JS math so the INT outputs are correct even headless / via the API.
     p = _rules(profile, snap_multiple)
     if mode == "raw":
         return _snap(width, p), _snap(height, p)
-    ar = effective_ar(aspect, orientation)
-    if mode == "megapixel":
+    # `input`: the ratio comes from the width/height inputs themselves (normally connected), so the
+    # aspect_ratio and orientation widgets are ignored — a portrait source simply gives ar < 1, and
+    # _fit_w already handles that. Defined without reference to whether the values arrived over a
+    # link, so the mode resolves identically headless and via the API.
+    ar = detect_ar(width, height) if mode == "input" else effective_ar(aspect, orientation)
+    if mode in ("megapixel", "input"):        # sized by the megapixel target
         tw = (max(0.0, float(mp)) * 1_000_000.0 * ar) ** 0.5
     else:                                    # auto: width drives (JS keeps both sides consistent)
         tw = float(width)

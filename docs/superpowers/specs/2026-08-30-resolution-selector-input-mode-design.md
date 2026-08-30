@@ -145,6 +145,11 @@ appears in the readout and on the output slots.
 canvas. A new `onExecuted` handler stores `dims` / `src`, refreshes the readout and pushes the real
 dimensions.
 
+Note the two link tests differ on purpose: **both** sides linked selects `input` mode, but **either**
+side linked suppresses the live preview. One linked side is enough for the editor's numbers to
+diverge from what the backend will see (the link value wins at queue time), so it shows "resolves at
+run time" rather than a preview it cannot stand behind.
+
 ## 6. Testing
 
 `tests/test_resolution_core.py` gains, all against the comfy-free core:

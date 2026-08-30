@@ -3,11 +3,15 @@
  *
  * Front-end for the ITL Resolution Selector node. GPL-3.0, like the rest of the pack.
  *
- * Three modes (raw / auto / megapixel) compute a profile-valid width/height. The math mirrors
+ * Four modes (raw / auto / megapixel / input) compute a profile-valid width/height. The math mirrors
  * nodes/resolution_core.py so the readout/UI and the INT outputs always agree. A landscape-only
  * aspect list + a "⟷" flip button (orientation) cover both orientations without duplicate entries.
  * Edits auto-push the dims into any connected node's width/height widgets and fire their callbacks —
  * which, for the ITL Ideogram 4 Prompt Builder, refreshes its editor canvas.
+ *
+ * `input` mode keeps the exact aspect ratio of the width/height INPUTS at a chosen megapixel count.
+ * Connecting both sockets selects it automatically. Their values then live upstream, so the editor
+ * cannot know them before the graph runs: the node reports them back via ui/onExecuted instead.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
@@ -48,6 +52,30 @@ function fitW(tw, ar, p) {
   const w = snap(wlo > whi ? Math.min(p.max, Math.max(p.min, tw)) : Math.min(whi, Math.max(wlo, tw)), p);
   return [w, snap(ar ? w / ar : w, p)];
 }
+// Ratio of the width/height INPUTS exactly as given — never snapped to a preset. 1 (square) on
+// anything unusable. Deliberately not the aspect_ratio widget, which is hidden in input mode and
+// would steer the output from a value the user cannot see. Mirrors detect_ar in resolution_core.py.
+const detectAR = (w, h) => {
+  const a = Number(w), b = Number(h);
+  return (Number.isFinite(a) && Number.isFinite(b) && a > 0 && b > 0) ? a / b : 1;
+};
+// Closest preset to `ar` -> [ratio, name, orientation], compared in LOG space so a ratio is judged
+// proportionally (2.66 reads as nearer 3:1 than 21:9, though absolute distance says otherwise).
+// Sub-1.0 ratios invert and report portrait. Display only — the dims keep the exact detected ratio.
+// Mirrors nearest_preset in nodes/resolution_core.py.
+function nearestPreset(ar) {
+  let v = Number(ar);
+  if (!Number.isFinite(v) || v <= 0) v = 1;
+  let orientation = "landscape";
+  if (v < 1) { v = 1 / v; orientation = "portrait"; }
+  let best = ASPECT_PRESETS[0], bestD = Infinity;
+  for (const p of ASPECT_PRESETS) {
+    const d = Math.abs(Math.log(v / parseAR(p[0])));
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return [best[0], best[1], orientation];
+}
+const flipRatio = (r) => { const m = /(\d+)\s*:\s*(\d+)/.exec(String(r)); return m ? `${m[2]}:${m[1]}` : r; };
 
 app.registerExtension({
   name: "ITL.ResolutionSelector",
@@ -72,6 +100,27 @@ app.registerExtension({
       const orient = () => (orientWidget?.value === "portrait" ? "portrait" : "landscape");
       const currentDims = () => ({ w: parseInt(wWidget?.value, 10) || 0, h: parseInt(hWidget?.value, 10) || 0 });
 
+      // ── input mode: is this node being driven by connected width/height sockets? ──
+      const inputLinked = (name) => {
+        const inp = node.inputs?.find((i) => i.name === name);
+        return !!inp && inp.link != null;
+      };
+      const bothLinked = () => inputLinked("width") && inputLinked("height");   // -> auto-select input mode
+      // Even ONE linked side means the editor cannot know what the backend will see (the link value
+      // wins at queue time), so there is nothing honest to preview or push until the graph runs.
+      const anyLinked = () => inputLinked("width") || inputLinked("height");
+
+      // The node's current OUTPUT dims. In every mode but `input` those are simply the width/height
+      // widgets. In `input` the widgets hold the *source* instead, so the result is computed aside
+      // into _resIn — and while the sockets are linked only a run can know it (_resLast, filled by
+      // onExecuted). null means "linked but never run": nothing truthful to show or push yet.
+      function outDims() {
+        if (resMode() !== "input") return currentDims();
+        if (node._resIn) return { w: node._resIn.w, h: node._resIn.h };
+        if (node._resLast) return { w: node._resLast.dims[0], h: node._resLast.dims[1] };
+        return null;
+      }
+
       // Toggle a native widget's visibility while keeping it serializable (the proven prompt-builder
       // trick): saved computeSize is restored on show, [0,-4] collapses it on hide.
       function setWidgetVisible(w, vis) {
@@ -95,7 +144,22 @@ app.registerExtension({
         node._resCalc = true;
         let warn = false;
         try {
-          if (mode === "raw") {                     // raw: literal sides, snapped + per-axis clamped
+          if (mode === "input") {
+            // The width/height widgets are the SOURCE of the ratio here, never destinations:
+            // overwriting them would fight the user's typing, and writing into a linked widget is
+            // meaningless anyway since the link value wins at queue time. So the result goes to
+            // _resIn. When a side is linked its value lives upstream — nothing to compute until the
+            // node runs and onExecuted reports back.
+            node._resIn = null;
+            if (!anyLinked()) {
+              const src = currentDims();
+              const ar = detectAR(src.w, src.h);
+              const tw = Math.sqrt(Math.max(0, parseFloat(mpWidget?.value) || 0) * 1e6 * ar);
+              warn = clamps && (tw > p.max || (ar ? tw / ar : 0) > p.max);
+              const [w, h] = fitW(tw, ar, p);
+              node._resIn = { w, h, src: [src.w, src.h] };
+            }
+          } else if (mode === "raw") {              // raw: literal sides, snapped + per-axis clamped
             const w = Number(wWidget.value) || 0, h = Number(hWidget.value) || 0;
             warn = clamps && (w > p.max || h > p.max);
             wWidget.value = snap(w, p);
@@ -114,12 +178,30 @@ app.registerExtension({
         } finally { node._resCalc = false; node._resWarn = warn; }
       }
 
+      // The auto-detect field: the ratio actually detected from the source, plus the nearest named
+      // preset for orientation ("auto 1.400 ≈ 4:3 Standard"). The preset is a label only — the dims
+      // keep the exact ratio, which is the whole point of the mode.
+      function detectedSuffix() {
+        const src = node._resIn?.src || node._resLast?.src;
+        if (!src || !(src[0] > 0) || !(src[1] > 0)) return "    ·    ratio auto-detected from inputs";
+        const ar = detectAR(src[0], src[1]);
+        const [ratio, name, orientation] = nearestPreset(ar);
+        return `    ·    auto ${ar.toFixed(3)} ≈ ${orientation === "portrait" ? flipRatio(ratio) : ratio} ${name}`;
+      }
+
       function updateReadout() {
         if (!resLine) return;
-        const d = currentDims(), p = effRules(profName(), snapWidget?.value);
+        const p = effRules(profName(), snapWidget?.value), d = outDims();
+        if (!d) {                                   // input mode, linked, not run yet
+          const target = (parseFloat(mpWidget?.value) || 0).toFixed(2);
+          resLine.textContent = `→ resolves at run time    target ${target} MP${detectedSuffix()}`;
+          warnLine.style.display = "none";
+          return;
+        }
         const mp = (d.w * d.h / 1e6).toFixed(2);
         let suffix = "";
-        if (resMode() !== "raw") {                  // show the effective ratio + orientation
+        if (resMode() === "input") suffix = detectedSuffix();
+        else if (resMode() !== "raw") {             // show the effective ratio + orientation
           const m = /(\d+)\s*:\s*(\d+)/.exec(arWidget?.value || "");
           if (m) {
             const a = +m[1], b = +m[2];
@@ -139,25 +221,51 @@ app.registerExtension({
 
       // Show/hide the mode-relevant widgets (snap_multiple only for the default profile; orientation
       // is always hidden — driven by the flip button; the flip button itself hides in raw mode, where
-      // there is no aspect to flip), then relayout the node.
+      // there is no aspect to flip, and in input mode, where the source carries its own orientation),
+      // then relayout the node.
       function applyVisibility() {
-        const mode = resMode();
-        setWidgetVisible(arWidget, mode !== "raw");
-        setWidgetVisible(mpWidget, mode === "megapixel");
-        setWidgetVisible(wWidget, mode !== "megapixel");
-        setWidgetVisible(hWidget, mode !== "megapixel");
+        const mode = resMode(), isInput = mode === "input";
+        setWidgetVisible(arWidget, mode !== "raw" && !isInput);   // input detects the ratio instead
+        setWidgetVisible(mpWidget, mode === "megapixel" || isInput);
+        // width/height stay visible in EVERY mode: hiding a widget hides its input socket with it,
+        // and those sockets are how input mode is fed. In megapixel mode they show the result.
+        setWidgetVisible(wWidget, true);
+        setWidgetVisible(hWidget, true);
         setWidgetVisible(snapWidget, profName() === DEFAULT_PROFILE);
         setWidgetVisible(orientWidget, false);
-        setWidgetVisible(flipBtn, mode !== "raw");
+        setWidgetVisible(flipBtn, mode !== "raw" && !isInput);
         if (node.computeSize) node.setSize([node.size[0], node.computeSize()[1]]);
         node.setDirtyCanvas?.(true, true);
+      }
+
+      // Both sockets connected means "keep the source's ratio", which is exactly what input mode
+      // does — so select it, remembering the mode we came from to restore on disconnect. Returns
+      // true when the mode changed (the caller relayouts; assigning .value fires no callback).
+      function syncInputMode() {
+        if (!modeWidget) return false;
+        const both = bothLinked();
+        if (both && modeWidget.value !== "input") {
+          node._resPrevMode = modeWidget.value;
+          modeWidget.value = "input";
+          return true;
+        }
+        if (!both && modeWidget.value === "input") {
+          modeWidget.value = node._resPrevMode || "megapixel";
+          node._resPrevMode = null;
+          return true;
+        }
+        return false;
       }
 
       // Push the current dims into every node wired to the width/height outputs (slot 0 = width,
       // 1 = height). Returns the number of target nodes touched.
       function pushToTargets() {
         if (!node.graph) return 0;
-        const d = currentDims();
+        // null = input mode, linked, not yet run: the width/height widgets hold the source, not the
+        // result, so there is nothing truthful to push. Skip rather than poison a builder's canvas
+        // with source dims; onExecuted pushes the real ones as soon as the graph runs.
+        const d = outDims();
+        if (!d) return 0;
         const links = node.graph.links;
         const getLink = (id) => (links?.get ? links.get(id) : links?.[id]);
         const touched = new Set();
@@ -244,16 +352,45 @@ app.registerExtension({
       if (profileWidget) chainCallback(profileWidget, "callback", () => { sanitizeSnap(); applyVisibility(); refresh("w", true); });
       if (snapWidget) chainCallback(snapWidget, "callback", () => { sanitizeSnap(); refresh("w", true); });
       if (modeWidget) chainCallback(modeWidget, "callback", () => { applyVisibility(); refresh("w", true); });
-      if (arWidget) chainCallback(arWidget, "callback", () => { if (resMode() !== "raw") refresh("w", true); });
-      if (mpWidget) chainCallback(mpWidget, "callback", () => { if (resMode() === "megapixel") refresh(undefined, true); });
+      if (arWidget) chainCallback(arWidget, "callback", () => { if (resMode() !== "raw" && resMode() !== "input") refresh("w", true); });
+      if (mpWidget) chainCallback(mpWidget, "callback", () => { if (resMode() === "megapixel" || resMode() === "input") refresh(undefined, true); });
       if (wWidget) chainCallback(wWidget, "callback", () => { if (!node._resCalc) refresh("w", true); });
       if (hWidget) chainCallback(hWidget, "callback", () => { if (!node._resCalc) refresh("h", true); });
 
-      // Push to a freshly-connected downstream node so its canvas reflects right away.
-      chainCallback(node, "onConnectionsChange", function () { requestAnimationFrame(() => pushToTargets()); });
+      // Connection changes: pick up (or drop) input mode, then push to a freshly-connected downstream
+      // node so its canvas reflects right away. type 1 = input side, 2 = output side.
+      chainCallback(node, "onConnectionsChange", function (type) {
+        const inputSide = (type == null || type === 1);
+        requestAnimationFrame(() => {
+          if (inputSide) node._resLast = null;      // a different source: last run's numbers are stale
+          const switched = syncInputMode();
+          if (switched) applyVisibility();
+          if (switched || inputSide) refresh("w", true);
+          else pushToTargets();
+        });
+      });
 
-      // Apply the current state (remap on load + visibility + recompute + readout). Reused by onConfigure.
-      node._resApply = () => { sanitizeSnap(); remapAspectOnLoad(); applyVisibility(); recalcDims("w"); updateReadout(); };
+      // The backend reports what it resolved, and the source it detected the ratio from. With the
+      // width/height sockets linked this is the first moment the editor can know either — so the
+      // readout fills in here and the real dims go downstream. (A cached node does not re-execute,
+      // so the previous values simply stand.)
+      chainCallback(node, "onExecuted", function (message) {
+        const dims = message?.dims, src = message?.src;
+        if (!Array.isArray(dims) || dims.length < 2) return;
+        node._resLast = {
+          dims: [parseInt(dims[0], 10) || 0, parseInt(dims[1], 10) || 0],
+          src: Array.isArray(src) && src.length >= 2 ? [parseInt(src[0], 10) || 0, parseInt(src[1], 10) || 0] : null,
+        };
+        updateReadout();
+        pushToTargets();
+        node.setDirtyCanvas?.(true, true);
+      });
+
+      // Apply the current state (remap on load + input-mode sync + visibility + recompute + readout).
+      // Reused by onConfigure, so a saved workflow whose links are restored lands in input mode.
+      node._resApply = () => {
+        sanitizeSnap(); remapAspectOnLoad(); syncInputMode(); applyVisibility(); recalcDims("w"); updateReadout();
+      };
       requestAnimationFrame(node._resApply);
     });
 
