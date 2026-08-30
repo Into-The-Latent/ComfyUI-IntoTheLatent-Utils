@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-intothelatent-utils"
 description = "ComfyUI utility nodes by Into The Latent."
-version = "1.6.1"
+version = "1.7.0"
 license = { file = "LICENSE" }
 dependencies = [
     "pillow>=10.3.0",
