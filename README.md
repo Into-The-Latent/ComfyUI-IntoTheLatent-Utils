@@ -246,12 +246,22 @@ a connected **Ideogram 4 Prompt Builder**.
   when a request exceeds the cap. `default` is the default so the node is safe to drop into any
   workflow.
 - **Modes** — `raw` (type width/height), `auto` (pick a ratio; edit one side, the other follows),
-  `megapixel` (target megapixels + ratio; both computed).
+  `megapixel` (target megapixels + ratio; both computed), `input` (keep the exact ratio of the
+  width/height **inputs** and size it to the megapixel target).
 - **Aspect ratios** — named presets from **1:1 (Square)** to **3:1 (Wide Panorama)**, including **21:9 (Cinemascope)**. The list is
   square + landscape only; the **`⟷` flip button** transposes to portrait (16:9 → 9:16) and swaps
   width/height, so there's no duplicated 1:1.
-- The readout shows the resulting **W × H**, megapixels, and the effective ratio + orientation. Wire
-  `width`/`height` into a Prompt Builder; edits push into its canvas live and also apply on execution.
+- **Matching an existing image** — connect something like an image's dimensions into `width` and
+  `height` and the node switches to **`input`** mode by itself (unplug either and it switches back).
+  The ratio is then taken from those numbers **exactly** — a 1512×1080 source stays 1.400, it is not
+  rounded to 4:3 — while you pick the size in **megapixels** and keep the usual `snap_multiple`
+  rounding. The `aspect_ratio` picker and flip button step aside; a portrait source simply produces
+  a portrait result. Because the connected values only exist while the graph runs, the readout says
+  *"resolves at run time"* until the first execution, then reports the real numbers.
+- The readout shows the resulting **W × H**, megapixels, and the effective ratio + orientation — in
+  `input` mode the **detected** ratio and its nearest named preset (`auto 1.400 ≈ 4:3 Standard`,
+  a label only; the exact ratio is what's used). Wire `width`/`height` into a Prompt Builder; edits
+  push into its canvas live and also apply on execution.
 
 ### ITL Save Metadata (Civitai)
 

@@ -1,7 +1,7 @@
 # Tests for the comfy-free resolution core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 from nodes.resolution_core import (
     resolve_dims, effective_ar, parse_ar, profile_clamps, aspect_options,
-    clamp_snap_multiple,
+    clamp_snap_multiple, detect_ar, nearest_preset, clamp_megapixels, exceeds_cap, ui_payload,
 )
 
 SQ = "1:1 (Square)"
@@ -134,3 +134,169 @@ def test_ideogram_output_invariant_across_bad_snap_multiple():
         assert (w, h) == ref
         assert w % 16 == 0 and h % 16 == 0
         assert 256 <= w <= 2048 and 256 <= h <= 2048
+
+
+# ── input mode: the aspect ratio is detected from the width/height inputs (normally connected),
+#    the size comes from the megapixels target. See docs/superpowers/specs/
+#    2026-08-30-resolution-selector-input-mode-design.md ──
+
+def test_detect_ar_returns_the_exact_source_ratio():
+    # 1512x1080 is 1.400 — between 4:3 (1.333) and 3:2 (1.500), so no preset could represent it.
+    assert round(detect_ar(1512, 1080), 6) == 1.4
+    assert round(detect_ar("1512", "1080"), 6) == 1.4   # widgets can hand back strings
+
+
+def test_detect_ar_falls_back_to_square_on_unusable_sides():
+    # Square, deliberately — NOT the aspect_ratio widget, which is hidden in input mode and would
+    # steer the output from a value the user cannot see.
+    for w, h in ((0, 1080), (1512, 0), (-4, 1080), (1512, -4), (None, 1080), ("", 1080), ("abc", 1080)):
+        assert detect_ar(w, h) == 1.0
+
+
+def test_nearest_preset_names_a_landscape_ratio():
+    assert nearest_preset(1920 / 1080) == ("16:9", "Widescreen", "landscape")
+
+
+def test_nearest_preset_inverts_and_reports_portrait():
+    assert nearest_preset(1080 / 1920) == ("16:9", "Widescreen", "portrait")
+
+
+def test_nearest_preset_compares_in_log_space():
+    # 2.66 is nearer 21:9 (2.333) by absolute distance (0.327 < 0.340) but nearer 3:1 proportionally
+    # (ln 1.128 < ln 1.140) — the log comparison is what stops wide ratios swallowing their
+    # neighbours just because the numbers are bigger.
+    assert nearest_preset(2.66)[0] == "3:1"
+
+
+def test_nearest_preset_never_drives_the_math():
+    # A 1.400 source stays 1.400-ish; it is NOT snapped to the 4:3 preset nearest_preset() reports.
+    assert nearest_preset(1.4)[0] == "4:3"
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert abs(w / h - 1.4) < abs(w / h - 4 / 3)
+
+
+def test_input_mode_keeps_the_source_ratio_at_the_target_megapixels():
+    # ar 1.4, 2 MP -> tw = sqrt(2e6*1.4) = 1673.3 -> /8 -> 1672 ; 1672/1.4 = 1194.3 -> /8 -> 1192
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert (w, h) == (1672, 1192)
+    assert w % 8 == 0 and h % 8 == 0
+    assert abs(w * h / 1e6 - 2.0) < 0.05
+
+
+def test_input_mode_ignores_aspect_ratio_and_orientation():
+    ref = resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1512, 1080)
+    assert resolve_dims("default", "input", WS, "portrait", 8, 2.0, 1512, 1080) == ref
+    assert resolve_dims("default", "input", "3:1 (Wide Panorama)", "portrait", 8, 2.0, 1512, 1080) == ref
+
+
+def test_input_mode_honors_snap_multiple():
+    w, h = resolve_dims("default", "input", SQ, "landscape", 64, 2.0, 1512, 1080)
+    assert w % 64 == 0 and h % 64 == 0
+
+
+def test_input_mode_heals_a_broken_snap_multiple():
+    # Same guarantee as every other mode: "" must not reject the node (see clamp_snap_multiple).
+    assert resolve_dims("default", "input", SQ, "landscape", "", 2.0, 1512, 1080) == (1672, 1192)
+
+
+def test_input_mode_clamps_to_the_profile_keeping_the_detected_ratio():
+    # 16 MP of 3840x2160 under Ideogram 4 -> capped at 2048 wide, ratio intact (not 2048x2048).
+    assert resolve_dims("Ideogram 4", "input", SQ, "landscape", 8, 16.0, 3840, 2160) == (2048, 1152)
+
+
+def test_input_mode_portrait_source_yields_a_portrait_result():
+    w, h = resolve_dims("default", "input", SQ, "landscape", 8, 1.0, 1080, 1920)
+    assert h > w
+
+
+def test_input_mode_square_fallback_on_missing_source():
+    w, h = resolve_dims("default", "input", WS, "landscape", 8, 1.0, 0, 0)
+    assert w == h == 1000
+
+
+def test_input_mode_agrees_with_megapixel_mode_on_a_preset_ratio_source():
+    # Property: a 1920x1080 source IS 16:9, so detecting it must equal picking it.
+    assert (resolve_dims("default", "input", SQ, "landscape", 8, 2.0, 1920, 1080)
+            == resolve_dims("default", "megapixel", WS, "landscape", 8, 2.0, 0, 0))
+
+
+# ── review follow-ups: megapixels robustness, the snap floor, the clamp flag, the ui payload ──
+
+def test_clamp_megapixels_heals_bad_values_to_the_default():
+    # Same hazard as clamp_snap_multiple: an emptied number widget serializes "" and float("")
+    # raises, which rejects the whole node — now reachable through `input`, the auto-selected mode.
+    for bad in ("", None, 0, -3, "abc", float("nan")):
+        assert clamp_megapixels(bad) == 1.0
+
+
+def test_clamp_megapixels_keeps_and_bounds_valid_values():
+    assert clamp_megapixels(2.5) == 2.5
+    assert clamp_megapixels("4") == 4.0      # numeric strings (a widget can hand back a string)
+    assert clamp_megapixels(100) == 16.0     # clamped to the widget max
+    assert clamp_megapixels(0.01) == 0.1     # clamped to the widget min
+
+
+def test_resolve_dims_survives_an_emptied_megapixels_widget():
+    # Must not raise, and must equal the healed default rather than collapsing to minimum dims.
+    assert (resolve_dims("default", "input", SQ, "landscape", 8, "", 1512, 1080)
+            == resolve_dims("default", "input", SQ, "landscape", 8, 1.0, 1512, 1080))
+    assert (resolve_dims("default", "megapixel", WS, "landscape", 8, "", 0, 0)
+            == resolve_dims("default", "megapixel", WS, "landscape", 8, 1.0, 0, 0))
+
+
+def test_no_side_ever_snaps_below_one_multiple():
+    # An extreme detected ratio used to collapse the short side to the profile floor of 1 px —
+    # not a multiple of anything, and unusable. Unreachable via the presets (they stop at 3:1);
+    # `input` mode is what lets an arbitrary upstream ratio reach _fit_w.
+    for snap in (8, 64):
+        for src in ((4096, 8), (16384, 3), (3, 16384)):
+            w, h = resolve_dims("default", "input", SQ, "landscape", snap, 1.0, *src)
+            assert w % snap == 0 and h % snap == 0, (snap, src, w, h)
+            assert w >= snap and h >= snap, (snap, src, w, h)
+
+
+def test_model_profile_floor_still_wins_over_the_multiple():
+    # Ideogram's 256 px floor is larger than its multiple of 16 — the floor must not regress to 16.
+    w, h = resolve_dims("Ideogram 4", "input", SQ, "landscape", 8, 0.1, 4096, 8)
+    assert w >= 256 and h >= 256 and w % 16 == 0 and h % 16 == 0
+
+
+def test_exceeds_cap_flags_a_clamped_result():
+    # The editor cannot compute this itself while the sockets are linked (it never sees the source),
+    # so the node reports it. True exactly when the ideal size overflows the profile's per-side cap.
+    assert exceeds_cap("Ideogram 4", "input", SQ, "landscape", 8, 16.0, 3840, 2160) is True
+    assert exceeds_cap("Ideogram 4", "input", SQ, "landscape", 8, 1.0, 1512, 1080) is False
+    # `default` has no real cap, so it never warns however extreme the request.
+    assert exceeds_cap("default", "input", SQ, "landscape", 8, 16.0, 3840, 2160) is False
+
+
+def test_exceeds_cap_agrees_with_what_resolve_dims_actually_did():
+    # Property: whenever the flag is True the result must be pinned to the cap on some side.
+    for mp in (0.5, 1.0, 4.0, 9.0, 16.0):
+        for src in ((3840, 2160), (1024, 1024), (800, 1600), (5000, 71)):
+            flagged = exceeds_cap("Ideogram 4", "input", SQ, "landscape", 8, mp, *src)
+            w, h = resolve_dims("Ideogram 4", "input", SQ, "landscape", 8, mp, *src)
+            assert flagged == (w == 2048 or h == 2048), (mp, src, w, h, flagged)
+
+
+def test_ui_payload_shape_is_the_contract_the_front_end_destructures():
+    # web/js/resolution_selector.js reads message.dims / .src / .clamped in onExecuted; renaming a
+    # key here breaks the readout with nothing else failing, so pin the shape.
+    assert ui_payload(1672, 1192, 1512, 1080, False) == {
+        "dims": [1672, 1192], "src": [1512, 1080], "clamped": [False],
+    }
+
+
+def test_ui_payload_never_raises_on_a_stray_source_value():
+    # int(float('inf')) raises OverflowError, not ValueError — the cosmetic payload must not be able
+    # to fail execute() after resolve_dims has already succeeded.
+    assert ui_payload(1024, 1024, float("inf"), "", True)["src"] == [0, 0]
+    assert ui_payload(1024, 1024, None, "abc", True)["src"] == [0, 0]
+    assert ui_payload(1024, 1024, "1512", 1080.7, False)["src"] == [1512, 1080]
+
+
+def test_existing_modes_are_untouched_by_the_new_branch():
+    # auto still means "width drives + picker ratio", not "ratio from w/h" — the reason `input` is a
+    # new mode instead of a redefinition of `auto`.
+    assert resolve_dims("default", "auto", WS, "landscape", 8, 1.0, 1920, 0) == (1920, 1080)
+    assert resolve_dims("default", "raw", SQ, "landscape", 8, 1.0, 1021, 1000) == (1024, 1000)
