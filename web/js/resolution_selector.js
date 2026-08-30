@@ -41,12 +41,19 @@ const profClamps = (name) => (PROFILES[name] || PROFILES[DEFAULT_PROFILE]).max <
 // coerces the widget to INT at queue time and int("") rejects the whole node — even for a profile
 // that ignores snap_multiple. Mirrors clamp_snap_multiple in nodes/resolution_core.py exactly.
 const clampSnap = (v) => { const n = Math.trunc(Number(v)); return (Number.isFinite(n) && n >= 1) ? Math.min(1024, n) : 8; };
+// Same guarantee for megapixels: an emptied widget serializes "" and float("") rejects the whole
+// node on the backend. Heals to the 1.0 default, clamps to the widget's own range. Mirrors
+// clamp_megapixels in nodes/resolution_core.py.
+const MP_MIN = 0.1, MP_MAX = 16.0;
+const clampMP = (v) => { const n = Number(v); return (Number.isFinite(n) && n > 0) ? Math.min(MP_MAX, Math.max(MP_MIN, n)) : 1.0; };
 function effRules(name, snapMult) {
   const p = PROFILES[name] || PROFILES[DEFAULT_PROFILE];
   const mult = p.mult ? p.mult : clampSnap(snapMult);
-  return { mult, min: p.min, max: p.max };
+  // floor: never below one whole multiple, so an extreme ratio can't collapse a side to a value
+  // that isn't a multiple at all. A model floor larger than its multiple still wins. See _rules.
+  return { mult, floor: Math.max(p.min, mult), min: p.min, max: p.max };
 }
-const snap = (v, p) => Math.min(p.max, Math.max(p.min, Math.round((Number(v) || 0) / p.mult) * p.mult));
+const snap = (v, p) => Math.min(p.max, Math.max(p.floor, Math.round((Number(v) || 0) / p.mult) * p.mult));
 function fitW(tw, ar, p) {
   const wlo = Math.max(p.min, p.min * ar), whi = Math.min(p.max, p.max * ar);
   const w = snap(wlo > whi ? Math.min(p.max, Math.max(p.min, tw)) : Math.min(whi, Math.max(wlo, tw)), p);
@@ -150,11 +157,18 @@ app.registerExtension({
             // meaningless anyway since the link value wins at queue time. So the result goes to
             // _resIn. When a side is linked its value lives upstream — nothing to compute until the
             // node runs and onExecuted reports back.
+            //
+            // Clearing _resLast is what keeps that honest: every path into recalcDims is a real
+            // change (megapixels, profile, snap_multiple, a rewire), and each one invalidates the
+            // last run — whose dims were computed for different settings. Without this, dragging
+            // megapixels to 4.0 would keep printing the 2 MP result AND push those stale numbers
+            // into a connected canvas, which is exactly what outDims()'s null case exists to stop.
             node._resIn = null;
-            if (!anyLinked()) {
+            if (anyLinked()) node._resLast = null;
+            else {
               const src = currentDims();
               const ar = detectAR(src.w, src.h);
-              const tw = Math.sqrt(Math.max(0, parseFloat(mpWidget?.value) || 0) * 1e6 * ar);
+              const tw = Math.sqrt(clampMP(mpWidget?.value) * 1e6 * ar);
               warn = clamps && (tw > p.max || (ar ? tw / ar : 0) > p.max);
               const [w, h] = fitW(tw, ar, p);
               node._resIn = { w, h, src: [src.w, src.h] };
@@ -167,7 +181,7 @@ app.registerExtension({
           } else {                                  // auto / megapixel: aspect-locked, ratio preserved at cap
             const ar = effAR(arWidget?.value, orient());
             let tw;
-            if (mode === "megapixel") tw = Math.sqrt(Math.max(0, parseFloat(mpWidget?.value) || 0) * 1e6 * ar);
+            if (mode === "megapixel") tw = Math.sqrt(clampMP(mpWidget?.value) * 1e6 * ar);
             else if (driver === "h") tw = (Number(hWidget.value) || 0) * ar;   // auto, height edited
             else tw = Number(wWidget.value) || 0;                              // auto, width edited / ratio change
             warn = clamps && (tw > p.max || (ar ? tw / ar : 0) > p.max);       // ideal side exceeds the cap
@@ -193,7 +207,7 @@ app.registerExtension({
         if (!resLine) return;
         const p = effRules(profName(), snapWidget?.value), d = outDims();
         if (!d) {                                   // input mode, linked, not run yet
-          const target = (parseFloat(mpWidget?.value) || 0).toFixed(2);
+          const target = clampMP(mpWidget?.value).toFixed(2);
           resLine.textContent = `→ resolves at run time    target ${target} MP${detectedSuffix()}`;
           warnLine.style.display = "none";
           return;
@@ -214,10 +228,19 @@ app.registerExtension({
         if (node._resWarn) {
           warnLine.textContent = `⚠ ${profName()} max ${p.max} × ${p.max} px — clamped to keep aspect`;
           warnLine.style.display = "";
+        } else if (linksIgnored()) {
+          // Now that the sockets are visible in every mode, they can be wired in a mode that does
+          // not read them. Say so rather than dropping the connection in silence.
+          warnLine.textContent = "⚠ width/height inputs are ignored in megapixel mode — connect both for 'input' mode";
+          warnLine.style.display = "";
         } else {
           warnLine.style.display = "none";
         }
       }
+
+      // megapixel computes both sides from megapixels x ratio, so a link into width/height there is
+      // read by nobody. (raw and auto do use them; input is what links are for.)
+      const linksIgnored = () => resMode() === "megapixel" && anyLinked();
 
       // Show/hide the mode-relevant widgets (snap_multiple only for the default profile; orientation
       // is always hidden — driven by the flip button; the flip button itself hides in raw mode, where
@@ -231,6 +254,12 @@ app.registerExtension({
         // and those sockets are how input mode is fed. In megapixel mode they show the result.
         setWidgetVisible(wWidget, true);
         setWidgetVisible(hWidget, true);
+        // ...but in megapixel mode they are OUTPUTS of the computation: recalcDims overwrites both
+        // on the next keystroke, so leaving them editable offers an edit that cannot stick. Mark
+        // them disabled there and skip the recalc their callback would trigger (see below).
+        const computed = mode === "megapixel";
+        if (wWidget) wWidget.disabled = computed;
+        if (hWidget) hWidget.disabled = computed;
         setWidgetVisible(snapWidget, profName() === DEFAULT_PROFILE);
         setWidgetVisible(orientWidget, false);
         setWidgetVisible(flipBtn, mode !== "raw" && !isInput);
@@ -241,16 +270,28 @@ app.registerExtension({
       // Both sockets connected means "keep the source's ratio", which is exactly what input mode
       // does — so select it, remembering the mode we came from to restore on disconnect. Returns
       // true when the mode changed (the caller relayouts; assigning .value fires no callback).
-      function syncInputMode() {
+      //
+      // EDGE-triggered, and the restore is gated on having auto-selected in the first place. Both
+      // matter, because manual `input` (typed width/height, no links) is a first-class state and a
+      // saved workflow's mode belongs to the user:
+      //   - level-triggering would re-impose input mode on every later connection event, undoing a
+      //     mode the user deliberately picked while the sockets stayed linked;
+      //   - restoring without _resPrevMode would rewrite a hand-picked (or freshly loaded) `input`
+      //     to megapixel the moment anything touched the connections — silently changing a 1512x1080
+      //     source from its detected 1.400 ratio to the hidden aspect_ratio widget's 1:1.
+      // `initial` (load time) therefore only records the link state; it never switches.
+      function syncInputMode(initial) {
         if (!modeWidget) return false;
-        const both = bothLinked();
-        if (both && modeWidget.value !== "input") {
+        const both = bothLinked(), was = !!node._resBothLinked;
+        node._resBothLinked = both;
+        if (initial) return false;
+        if (both && !was && modeWidget.value !== "input") {          // rising edge: adopt input mode
           node._resPrevMode = modeWidget.value;
           modeWidget.value = "input";
           return true;
         }
-        if (!both && modeWidget.value === "input") {
-          modeWidget.value = node._resPrevMode || "megapixel";
+        if (!both && was && modeWidget.value === "input" && node._resPrevMode != null) {
+          modeWidget.value = node._resPrevMode;                      // falling edge: hand it back
           node._resPrevMode = null;
           return true;
         }
@@ -343,27 +384,39 @@ app.registerExtension({
       // number widget can serialize an empty string; int("") then fails the backend's INT validation
       // and rejects the whole node — even under a profile (Ideogram 4) that ignores snap_multiple.
       // serializeValue is graphToPrompt's single serialization point, so coercing here sanitizes
-      // every queue path and the saved workflow; sanitizeSnap repairs the DISPLAYED value on
+      // every queue path and the saved workflow; sanitizeNumbers repairs the DISPLAYED value on
       // load/edit. (Same guard pattern as web/js/prompt_batch.js.)
-      const sanitizeSnap = () => { if (snapWidget) snapWidget.value = clampSnap(snapWidget.value); };
+      // megapixels needs the same guard: float("") raises on the backend and rejects the node, and
+      // `input` — the mode the node auto-selects — reads megapixels on every run.
+      const sanitizeNumbers = () => {
+        if (snapWidget) snapWidget.value = clampSnap(snapWidget.value);
+        if (mpWidget && !(Number(mpWidget.value) > 0)) mpWidget.value = clampMP(mpWidget.value);
+      };
       if (snapWidget) snapWidget.serializeValue = () => clampSnap(snapWidget.value);
+      if (mpWidget) mpWidget.serializeValue = () => clampMP(mpWidget.value);
 
       // ── wire widget callbacks (auto-push live so a connected canvas tracks edits) ──
-      if (profileWidget) chainCallback(profileWidget, "callback", () => { sanitizeSnap(); applyVisibility(); refresh("w", true); });
-      if (snapWidget) chainCallback(snapWidget, "callback", () => { sanitizeSnap(); refresh("w", true); });
-      if (modeWidget) chainCallback(modeWidget, "callback", () => { applyVisibility(); refresh("w", true); });
+      if (profileWidget) chainCallback(profileWidget, "callback", () => { sanitizeNumbers(); applyVisibility(); refresh("w", true); });
+      if (snapWidget) chainCallback(snapWidget, "callback", () => { sanitizeNumbers(); refresh("w", true); });
+      // Picking a mode by hand is the user overruling the auto-switch: drop the stashed mode so a
+      // later disconnect restores nothing and leaves their choice standing.
+      if (modeWidget) chainCallback(modeWidget, "callback", () => { node._resPrevMode = null; applyVisibility(); refresh("w", true); });
       if (arWidget) chainCallback(arWidget, "callback", () => { if (resMode() !== "raw" && resMode() !== "input") refresh("w", true); });
       if (mpWidget) chainCallback(mpWidget, "callback", () => { if (resMode() === "megapixel" || resMode() === "input") refresh(undefined, true); });
-      if (wWidget) chainCallback(wWidget, "callback", () => { if (!node._resCalc) refresh("w", true); });
-      if (hWidget) chainCallback(hWidget, "callback", () => { if (!node._resCalc) refresh("h", true); });
+      // `megapixel` computes both sides, so an edit there must not drive a recalc — it would bounce
+      // the typed value back on the next keystroke. Every other mode reads them for real.
+      const sidesDriveResult = () => resMode() !== "megapixel";
+      if (wWidget) chainCallback(wWidget, "callback", () => { if (!node._resCalc && sidesDriveResult()) refresh("w", true); });
+      if (hWidget) chainCallback(hWidget, "callback", () => { if (!node._resCalc && sidesDriveResult()) refresh("h", true); });
 
       // Connection changes: pick up (or drop) input mode, then push to a freshly-connected downstream
       // node so its canvas reflects right away. type 1 = input side, 2 = output side.
       chainCallback(node, "onConnectionsChange", function (type) {
         const inputSide = (type == null || type === 1);
         requestAnimationFrame(() => {
-          if (inputSide) node._resLast = null;      // a different source: last run's numbers are stale
-          const switched = syncInputMode();
+          // Only an INPUT-side change can alter what drives this node. Wiring an output (e.g. width
+          // into a Prompt Builder) must never re-impose input mode over a mode the user chose.
+          const switched = inputSide && syncInputMode();
           if (switched) applyVisibility();
           if (switched || inputSide) refresh("w", true);
           else pushToTargets();
@@ -375,12 +428,15 @@ app.registerExtension({
       // readout fills in here and the real dims go downstream. (A cached node does not re-execute,
       // so the previous values simply stand.)
       chainCallback(node, "onExecuted", function (message) {
-        const dims = message?.dims, src = message?.src;
+        const dims = message?.dims, src = message?.src, clamped = message?.clamped;
         if (!Array.isArray(dims) || dims.length < 2) return;
         node._resLast = {
           dims: [parseInt(dims[0], 10) || 0, parseInt(dims[1], 10) || 0],
           src: Array.isArray(src) && src.length >= 2 ? [parseInt(src[0], 10) || 0, parseInt(src[1], 10) || 0] : null,
         };
+        // Only the backend can tell whether a linked source overflowed the profile cap — the editor
+        // never sees that source. Without this the readout would show clamped dims and say nothing.
+        node._resWarn = Array.isArray(clamped) ? !!clamped[0] : !!clamped;
         updateReadout();
         pushToTargets();
         node.setDirtyCanvas?.(true, true);
@@ -389,7 +445,7 @@ app.registerExtension({
       // Apply the current state (remap on load + input-mode sync + visibility + recompute + readout).
       // Reused by onConfigure, so a saved workflow whose links are restored lands in input mode.
       node._resApply = () => {
-        sanitizeSnap(); remapAspectOnLoad(); syncInputMode(); applyVisibility(); recalcDims("w"); updateReadout();
+        sanitizeNumbers(); remapAspectOnLoad(); syncInputMode(true); applyVisibility(); recalcDims("w"); updateReadout();
       };
       requestAnimationFrame(node._resApply);
     });

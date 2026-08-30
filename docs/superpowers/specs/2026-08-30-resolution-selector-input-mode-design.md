@@ -87,6 +87,23 @@ Ideogram 4 gives 2048×1152, not 2048×2048) and the existing clamp warning stil
 `input` ignores `aspect` and `orientation` entirely; a portrait source simply produces `ar < 1`,
 which `_fit_w` already handles.
 
+**Two hardening changes the review pulled in, both of which `input` mode is what makes reachable:**
+
+- `clamp_megapixels` — `float(mp)` was unguarded, so an emptied `megapixels` widget raised
+  `ValueError` and rejected the whole node: the same failure class `clamp_snap_multiple` exists to
+  prevent, now on the mode the node auto-selects. Heals to the 1.0 default, clamps to the widget's
+  `[0.1, 16.0]`, and gets the matching `serializeValue` guard on the front-end.
+- A **floor** in `_rules`: `max(min, mult)` rather than the profile's bare `min`. With `min == 1` on
+  the `default` profile, an extreme detected ratio drove `w / ar` to round to 0 and `_snap` returned
+  **1** — not a multiple of anything, breaking the `snap_multiple` guarantee (512:1 source at
+  `snap_multiple` 64 gave height 1). The presets stop at 3:1 so this was unreachable before; an
+  arbitrary upstream ratio reaches `_fit_w` now. A model floor larger than its multiple still wins.
+
+`exceeds_cap(...)` reports whether the ideal size overflowed the profile cap. It shares `_target()`
+with `resolve_dims`, so "did we clamp?" cannot drift from the dimensions themselves. It exists
+because the editor computes that warning from a source it cannot see in linked `input` mode — without
+it a clamped result displayed the cut-down dimensions and said nothing.
+
 ## 4. Node schema (`nodes/resolution_selector.py`)
 
 - `resolution_mode` options become `["raw", "auto", "megapixel", "input"]`. Default stays
@@ -96,12 +113,20 @@ which `_fit_w` already handles.
 - `execute` returns run-time feedback alongside the INTs, mirroring `ideogram4_nodes.py`:
 
   ```python
-  return io.NodeOutput(w, h, ui={"dims": [w, h], "src": [src_w, src_h]})
+  return io.NodeOutput(w, h, ui=ui_payload(w, h, width, height, exceeds_cap(*args)))
+  #  -> {"dims": [w, h], "src": [src_w, src_h], "clamped": [bool]}
   ```
 
-  `dims` is the resolved output; `src` is what the auto-detect readout reflects. The front-end
-  derives the ratio and the nearest preset from `src` with its mirrored helper, keeping the payload
-  minimal and the display logic on one side.
+  `dims` is the resolved output; `src` is what the auto-detect readout reflects; `clamped` drives the
+  warning line. The front-end derives the ratio and the nearest preset from `src` with its mirrored
+  helper, keeping the payload minimal and the display logic on one side.
+
+  `ui_payload` lives in `resolution_core`, not in the node module, for one reason: the node module
+  cannot be imported without ComfyUI, so a test of it would be permanently skipped in this repo. The
+  front-end is the payload's only other consumer, so a silent rename would break the readout with
+  nothing failing anywhere. In the core it is pinned by tests that actually run. Every field is
+  coerced — this is cosmetic, and must never fail `execute()` after `resolve_dims` has succeeded
+  (`int(float('inf'))` raises `OverflowError`, which is not a `ValueError`).
 - The node `description` and the `resolution_mode` tooltip document the new mode.
 
 Known limitation: an unchanged node is served from cache and does not re-execute, so no `executed`
@@ -112,19 +137,41 @@ event fires and the readout keeps its previous values.
 Mirrors the core math as always (`detectAR`, `nearestPreset` alongside `parseAR` / `effAR`).
 
 **Auto-switch.** A helper reports whether the inputs named `width` and `height` both have
-`link != null`. The already-chained `onConnectionsChange` then:
+`link != null`. The already-chained `onConnectionsChange` then, **on input-side changes only**
+(`type === 1`; wiring an *output* into a Prompt Builder must never re-impose a mode):
 
-- both linked, mode is not `input` → stash the current mode on `node._resPrevMode`, set
-  `resolution_mode` to `input`;
-- not both linked, mode is `input` → restore `node._resPrevMode`, falling back to `megapixel`.
+- rising edge — both became linked, mode is not `input` → stash the current mode on
+  `node._resPrevMode`, set `resolution_mode` to `input`;
+- falling edge — both were linked and no longer are, mode is `input` **and `_resPrevMode` is set** →
+  hand the stashed mode back.
 
-`node._resApply` calls the same helper, so a saved workflow whose links are restored on load lands
-in `input` mode without the user touching anything.
+Edge-triggering and that `_resPrevMode` gate are both load-bearing, because manual `input` (typed
+width/height, no links) is a first-class state:
+
+- level-triggering would re-impose `input` on every later connection event, undoing a mode the user
+  deliberately picked while the sockets stayed linked;
+- restoring without the gate would rewrite a hand-picked — or freshly loaded — `input` to
+  `megapixel` the moment anything touched the connections, silently swapping a 1512×1080 source's
+  detected 1.400 for the hidden `aspect_ratio` widget's 1:1.
+
+Choosing a mode by hand clears `_resPrevMode`, so the user's choice outlives a later disconnect. At
+load `node._resApply` only *records* the link state and never switches: a saved workflow's mode
+belongs to the user, and rewriting it would change what an existing graph outputs.
 
 **Visibility** in `input` mode: show `megapixels`, `snap_multiple` (default profile only) and
 width/height; hide `aspect_ratio` and the flip button — the ratio comes from the source and carries
 its own orientation. Plus the change from section 2: width/height are no longer hidden in
 `megapixel` mode.
+
+That visibility change has two consequences of its own, both handled rather than left implicit:
+
+- In `megapixel` mode the two widgets are *outputs* of the computation — `recalcDims` overwrites
+  them — so an edit there could never stick. They are marked `disabled` in that mode and their
+  callbacks skip the recalc, instead of silently bouncing back what the user typed.
+- The sockets can now be wired in a mode that never reads them. `megapixel` computes both sides from
+  `megapixels × ratio`, so a link into either side is dropped; the readout says so explicitly
+  ("width/height inputs are ignored in megapixel mode — connect both for 'input' mode") rather than
+  ignoring the connection in silence.
 
 **In `input` mode the JS never writes computed dimensions into the width/height widgets.** There
 they are *source* fields, not destinations. Overwriting a typed 1512×1080 with 1352×966 on every
@@ -142,8 +189,15 @@ appears in the readout and on the output slots.
 
 **Pushing to connected nodes.** While linked and un-run the JS has no real dimensions, so
 `pushToTargets` is skipped rather than pushing stale widget values into a connected Prompt Builder
-canvas. A new `onExecuted` handler stores `dims` / `src`, refreshes the readout and pushes the real
-dimensions.
+canvas. A new `onExecuted` handler stores `dims` / `src` / `clamped`, refreshes the readout and
+pushes the real dimensions.
+
+**Invalidating the last run.** `_resLast` is cleared whenever `recalcDims` runs in linked `input`
+mode. Every path into `recalcDims` is a real change — `megapixels`, `profile`, `snap_multiple`, a
+rewire — and each one makes the last run's dimensions answer a question nobody asked any more.
+Without this, dragging `megapixels` from 2.0 to 4.0 kept printing the 2 MP result *and* pushed those
+stale numbers into the connected canvas: exactly the outcome `outDims()`'s null case exists to
+prevent.
 
 Note the two link tests differ on purpose: **both** sides linked selects `input` mode, but **either**
 side linked suppresses the live preview. One linked side is enough for the editor's numbers to
@@ -163,6 +217,11 @@ run time" rather than a preview it cannot stand behind.
 - `detect_ar` and `nearest_preset` unit cases, including portrait inversion and the log-space
   choice;
 - a property test that `input` from a 1920×1080 source equals `megapixel` at `16:9 (Widescreen)`.
+
+From the review, also in the core tests: `clamp_megapixels` healing and range; `resolve_dims`
+surviving an emptied `megapixels` widget; no side ever snapping below one multiple (with the model
+floor still winning); `exceeds_cap` agreeing with what `resolve_dims` actually did, as a property
+across a grid of targets and sources; and the `ui_payload` shape plus its coercion of stray values.
 
 ## 7. Docs
 

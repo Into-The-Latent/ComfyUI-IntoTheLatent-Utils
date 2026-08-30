@@ -71,6 +71,8 @@ def profile_clamps(name):
 # Widget max for snap_multiple; keep in sync with the io.Int.Input in resolution_selector.py and the
 # clampSnap helper in web/js/resolution_selector.js.
 SNAP_MAX = 1024
+# Widget range for megapixels; same sync obligation (io.Float.Input + clampMP in the JS).
+MP_MIN, MP_MAX = 0.1, 16.0
 
 
 def clamp_snap_multiple(v):
@@ -91,16 +93,36 @@ def clamp_snap_multiple(v):
     return min(SNAP_MAX, n)
 
 
+def clamp_megapixels(v):
+    """Coerce the megapixels widget value into the widget's own [MP_MIN, MP_MAX] range.
+
+    Same hazard as clamp_snap_multiple: an emptied number widget serializes "" and float("") raises,
+    which rejects the whole node. That was only reachable through `megapixel` mode before; `input`
+    mode — which the node now selects automatically — makes it reachable again. Anything
+    non-numeric, NaN or <= 0 heals to the 1.0 default; valid values clamp to the widget's range.
+    Mirrors clampMP in web/js/resolution_selector.js."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return 1.0
+    if not n > 0 or n != n:              # <= 0, or NaN (which fails every comparison)
+        return 1.0
+    return min(MP_MAX, max(MP_MIN, n))
+
+
 def _rules(name, snap_multiple):
-    # Effective {mult, min, max}. `default` reads its multiple from the widget; models use their own.
+    # Effective {mult, floor, min, max}. `default` reads its multiple from the widget; models use
+    # their own. `floor` is the smallest legal side: never below one whole multiple, so an extreme
+    # aspect can't collapse a side to a value that isn't a multiple at all (a 512:1 source used to
+    # yield height 1 under snap_multiple 64). A model floor larger than its multiple still wins.
     p = _prof(name)
     mult = p["mult"] if p["mult"] else clamp_snap_multiple(snap_multiple)
-    return {"mult": mult, "min": p["min"], "max": p["max"]}
+    return {"mult": mult, "floor": max(p["min"], mult), "min": p["min"], "max": p["max"]}
 
 
 def _snap(v, p):
     m = p["mult"]
-    return int(min(p["max"], max(p["min"], round((float(v) if v else 0.0) / m) * m)))
+    return int(min(p["max"], max(p["floor"], round((float(v) if v else 0.0) / m) * m)))
 
 
 def _fit_w(tw, ar, p):
@@ -130,6 +152,11 @@ def detect_ar(width, height):
 def nearest_preset(ar):
     """Closest ASPECT_PRESETS entry to `ar` -> (ratio, name, orientation). Display only.
 
+    NOTE: nothing in the Python package calls this. The readout it describes is rendered by the JS
+    mirror (`nearestPreset`), and the ui payload deliberately ships raw `src` numbers so the display
+    logic stays on one side. It exists here as the *testable* twin of that mirror: the log-space rule
+    below is pinned by tests the JS is diffed against. Don't go looking for a caller.
+
     Distances are compared in log space, so a ratio is judged proportionally: 2.66 reads as nearer
     3:1 than 21:9 (2.333) even though absolute distance says otherwise, which stops the wide end of
     the list from swallowing its neighbours just because the numbers there are bigger. Presets are
@@ -149,18 +176,68 @@ def nearest_preset(ar):
     return ratio, name, orientation
 
 
+def _target(mode, aspect, orientation, mp, width, height):
+    # (aspect ratio, ideal pre-clamp width) for the aspect-locked modes. Shared by resolve_dims and
+    # exceeds_cap so the "did we clamp?" answer can never drift from the dimensions themselves.
+    # `input`: the ratio comes from the width/height inputs (normally connected), so the aspect_ratio
+    # and orientation widgets are ignored — a portrait source simply gives ar < 1, which _fit_w
+    # already handles. Defined without reference to whether the values arrived over a link, so the
+    # mode resolves identically headless and via the API.
+    ar = detect_ar(width, height) if mode == "input" else effective_ar(aspect, orientation)
+    if mode in ("megapixel", "input"):        # sized by the megapixel target
+        return ar, (clamp_megapixels(mp) * 1_000_000.0 * ar) ** 0.5
+    try:                                      # auto: width drives (JS keeps both sides consistent)
+        return ar, float(width)
+    except (TypeError, ValueError):
+        return ar, 0.0
+
+
 def resolve_dims(profile, mode, aspect, orientation, snap_multiple, mp, width, height):
     # Mirror of the editor JS math so the INT outputs are correct even headless / via the API.
     p = _rules(profile, snap_multiple)
     if mode == "raw":
         return _snap(width, p), _snap(height, p)
-    # `input`: the ratio comes from the width/height inputs themselves (normally connected), so the
-    # aspect_ratio and orientation widgets are ignored — a portrait source simply gives ar < 1, and
-    # _fit_w already handles that. Defined without reference to whether the values arrived over a
-    # link, so the mode resolves identically headless and via the API.
-    ar = detect_ar(width, height) if mode == "input" else effective_ar(aspect, orientation)
-    if mode in ("megapixel", "input"):        # sized by the megapixel target
-        tw = (max(0.0, float(mp)) * 1_000_000.0 * ar) ** 0.5
-    else:                                    # auto: width drives (JS keeps both sides consistent)
-        tw = float(width)
+    ar, tw = _target(mode, aspect, orientation, mp, width, height)
     return _fit_w(tw, ar, p)
+
+
+def exceeds_cap(profile, mode, aspect, orientation, snap_multiple, mp, width, height):
+    """True when the ideal (pre-clamp) size overflows the profile's per-side cap — i.e. the result
+    was clamped and the readout should say so.
+
+    The editor computes this itself for the modes it can preview, but in `input` mode with connected
+    sockets it never sees the source, so the node reports it back in the ui payload instead. Mirrors
+    the `warn` computation in web/js/resolution_selector.js."""
+    if not profile_clamps(profile):
+        return False
+    p = _rules(profile, snap_multiple)
+    if mode == "raw":
+        return _snap_input(width) > p["max"] or _snap_input(height) > p["max"]
+    ar, tw = _target(mode, aspect, orientation, mp, width, height)
+    return tw > p["max"] or (tw / ar if ar else 0.0) > p["max"]
+
+
+def _snap_input(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def ui_payload(w, h, src_w, src_h, clamped):
+    """The `executed` message the front-end destructures in onExecuted (dims / src / clamped).
+
+    Lives here, beside the math it describes, so the contract with web/js/resolution_selector.js is
+    covered by the comfy-free tests — the node module itself cannot be imported without ComfyUI, and
+    the front-end is the only other consumer, so a silent rename would otherwise break the readout
+    with nothing failing. Every field is coerced: this is cosmetic, and must never be able to fail
+    execute() after resolve_dims has already succeeded."""
+    return {"dims": [int(w), int(h)], "src": [_ui_int(src_w), _ui_int(src_h)], "clamped": [bool(clamped)]}
+
+
+def _ui_int(v):
+    # OverflowError included on purpose: int(float('inf')) raises it, and it is not a ValueError.
+    try:
+        return int(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return 0

@@ -22,18 +22,11 @@ without ComfyUI, and the editor JS mirrors it.
 from comfy_api.latest import io
 
 from .resolution_core import (
-    ASPECT_PRESETS, DEFAULT_PROFILE, PROFILES, aspect_label, aspect_options, resolve_dims,
+    ASPECT_PRESETS, DEFAULT_PROFILE, PROFILES, aspect_label, aspect_options, exceeds_cap,
+    resolve_dims, ui_payload,
 )
 
 _DEFAULT_ASPECT = aspect_label(*ASPECT_PRESETS[0])   # "1:1 (Square)"
-
-
-def _src_int(v):
-    # For the ui payload only: never let a stray widget value raise where resolve_dims tolerates it.
-    try:
-        return int(float(v))
-    except (TypeError, ValueError):
-        return 0
 
 
 class ITLResolutionSelector(io.ComfyNode):
@@ -101,10 +94,13 @@ the builder's canvas live (they also apply on execution).""",
     def execute(cls, profile=DEFAULT_PROFILE, snap_multiple=8, resolution_mode="megapixel",
                 aspect_ratio=_DEFAULT_ASPECT, orientation="landscape", megapixels=1.0,
                 width=1024, height=1024) -> io.NodeOutput:
-        w, h = resolve_dims(profile, resolution_mode, aspect_ratio, orientation,
-                            snap_multiple, megapixels, width, height)
+        args = (profile, resolution_mode, aspect_ratio, orientation, snap_multiple, megapixels,
+                width, height)
+        w, h = resolve_dims(*args)
         # Run-time feedback for the editor readout: `dims` is what we resolved, `src` the width/
-        # height the ratio was detected from — in 'input' mode those arrive over links, so the
-        # front-end cannot know either until now. Same ui/onExecuted path as ideogram4_nodes.
-        # (A cached node does not re-execute, so the readout keeps its previous values.)
-        return io.NodeOutput(w, h, ui={"dims": [w, h], "src": [_src_int(width), _src_int(height)]})
+        # height the ratio was detected from, `clamped` whether the profile's cap cut it down — in
+        # 'input' mode all three arrive over links, so the front-end cannot know any of them until
+        # now (without the flag a clamped result would show no warning at all). Same ui/onExecuted
+        # path as ideogram4_nodes. A cached node does not re-execute, so the readout keeps its
+        # previous values. Payload shape lives in resolution_core, where tests can reach it.
+        return io.NodeOutput(w, h, ui=ui_payload(w, h, width, height, exceeds_cap(*args)))
