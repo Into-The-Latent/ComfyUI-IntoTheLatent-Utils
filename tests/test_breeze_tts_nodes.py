@@ -168,3 +168,22 @@ def test_api_import_error_names_install_hint(monkeypatch):
     monkeypatch.setitem(sys.modules, "breeze_infer.templates", None)
     with pytest.raises(ImportError, match="not installed"):
         gen._api()
+
+
+def test_pack_registers_all_seven_breeze_nodes():
+    import importlib.util
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "itl_pack", os.path.join(repo_root, "__init__.py"), submodule_search_locations=[repo_root]
+    )
+    root = importlib.util.module_from_spec(spec)
+    sys.modules["itl_pack"] = root
+    spec.loader.exec_module(root)
+
+    ids = ["ITLBreezeTTSLoader", *EXPECTED]
+    for node_id in ids:
+        assert node_id in root.NODE_CLASS_MAPPINGS, node_id
+        assert root.NODE_CLASS_MAPPINGS[node_id].define_schema().node_id == node_id
+        assert node_id in root.NODE_DISPLAY_NAME_MAPPINGS
+    assert root.NODE_DISPLAY_NAME_MAPPINGS["ITLBreezeTTSLoader"] == "ITL Breeze TTS Loader"

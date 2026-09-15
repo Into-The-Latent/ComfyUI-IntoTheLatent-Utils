@@ -1,4 +1,11 @@
 pillow>=10.3.0
 
+# Breeze TTS 2 nodes (ITL Breeze TTS *). Our fork of breezeblue-ai/breeze-tts: pip-installable,
+# transformers 4.57–5.x, no qwen-tts pin. Pinned to a tag on purpose.
+breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.1
+librosa>=0.10
+soundfile>=0.13
+huggingface_hub>=0.25
+
 # dev/test only (not needed at runtime):
 # pytest>=8.0

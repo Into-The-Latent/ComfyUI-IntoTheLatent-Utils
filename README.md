@@ -337,6 +337,30 @@ Both nodes assume **one KSampler** in the workflow. Multi-sampler graphs (e.g. a
 two KSamplers) aren't disambiguated by the trace; wire the Advanced node's override sockets in that
 case.
 
+### ITL Breeze TTS (Loader, Voice Clone / Design / Direction)
+
+Text-to-speech with [Breeze TTS 2](https://github.com/breezeblue-ai/breeze-tts) (BreezeBlue, 3B,
+English + Chinese). Three modes, each as a Normal and an Advanced node:
+
+- **Voice Clone** — `reference_audio` + its exact `reference_text` → speak `text` in that voice.
+- **Voice Design** — describe the voice in `instruction` ("a calm, deep male voice"); no reference.
+- **Voice Direction** — reference audio + transcript + an `instruction` for tone, pace, emotion.
+
+Inline vocal events work in the text: `(laugh)`, `(sigh)`, `(clears throat)`; Chinese `[笑]`, `[叹气]`.
+Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_new_tokens`
+(defaults equal the Normal nodes). `cfg_scale` defaults to 1.0 for Clone and 4.0 for Design / Direction.
+
+**First run** downloads the weights (~7.2 GB) from Hugging Face into `models/breeze_tts/Breeze-TTS-2/`.
+Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (CUDA graphs).
+Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
+
+The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.1`), which
+works with transformers 4.57–5.x and does not change your torch install. If the nodes report
+"Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on this pack (pip needs `git`).
+
+**License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
+*research and non-commercial* (BreezeBlue Research and Non-Commercial License).
+
 ## Credits & License
 
 Licensed under **GPL-3.0** — see [LICENSE](LICENSE).
