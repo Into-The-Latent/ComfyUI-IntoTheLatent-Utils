@@ -31,8 +31,9 @@ git clone https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils
 
 Then install the pack's requirements (ComfyUI Manager does this for you; for a manual clone run
 `pip install -r requirements.txt` with ComfyUI's Python). The pack needs `soundfile` to import at
-all, the Breeze TTS nodes need the fork listed there, and the Whisper nodes need `librosa` for
-resampling; `transformers` comes with ComfyUI itself. It can coexist with
+all and the Whisper nodes need `librosa` for resampling; `transformers` comes with ComfyUI itself.
+The Breeze TTS model code ships inside the pack (see that section), so nothing is fetched from
+GitHub and `git` is not needed. It can coexist with
 ComfyUI-KJNodes — both Ideogram 4 nodes run side by side without conflict.
 
 ## Nodes
@@ -367,17 +368,21 @@ ComfyUI's own model manager cannot evict it. If an image or video model runs lat
 workflow, turn on `unload_after` on the generate node (or wire the audio through **ITL Breeze TTS
 Unload**); the next Breeze node reloads the weights (~20 s).
 
-The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.5`), which
-works with transformers 4.57–5.x. Requirements: `git` on PATH (pip fetches the fork from GitHub),
-transformers >= 4.57 (< 6), torch >= 2.7. **The install never upgrades or replaces torch:** the fork
-declares no torch version floor and no torchaudio, so your existing CUDA build stays exactly as it is.
-pip may still move transformers within 4.57–5.x; if it lands on 5.x, `fast_path` is refused (see
-above), everything else works. If your torch is older than 2.7 the nodes say so at load time instead
-of pip swapping it for a CPU-only wheel. If the nodes
-report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on this pack (pip needs `git`).
+The model code ships inside this pack: `vendor/breeze-tts` is our fork of
+`breezeblue-ai/breeze-tts` (tag `comfyui-v1.5`, Apache-2.0; provenance and re-sync steps in
+`vendor/breeze-tts/VENDORED.md`), which works with transformers 4.57–5.x. Nothing is installed from
+GitHub, so `git` is not needed and the Comfy registry's scanner accepts the pack (versions 1.8.0–1.9.1
+were hidden from ComfyUI Manager because they pulled the fork by URL). Requirements: transformers
+>= 4.57 (< 6), torch >= 2.7. **The install never upgrades or replaces torch:** the pack declares no
+torch dependency at all, so your existing CUDA build stays exactly as it is. pip may still move
+transformers within 4.57–5.x; if it lands on 5.x, `fast_path` is refused (see above), everything else
+works. If your torch is older than 2.7 the nodes say so at load time instead of pip swapping it for a
+CPU-only wheel. If the nodes report that Breeze's dependencies are missing, run ComfyUI Manager's
+*Try fix* on this pack.
 
-**License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
-*research and non-commercial* (BreezeBlue Research and Non-Commercial License).
+**License:** the node code is GPL-3.0 like the rest of this pack; the vendored model code is
+Apache-2.0; the Breeze weights are *research and non-commercial* (BreezeBlue Research and
+Non-Commercial License).
 
 ### ITL Whisper Transcribe (Loader + Audio to Text)
 

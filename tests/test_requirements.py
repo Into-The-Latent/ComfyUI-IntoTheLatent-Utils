@@ -1,16 +1,22 @@
-"""The pack's install must never make pip replace the host's torch.
+"""The pack's install must be registry-clean and must never make pip replace the host's torch.
 
-Regression guard for a fresh ComfyUI install breaking after `pip install -r requirements.txt`: a
-torch/torchaudio version floor anywhere in the dependency set makes pip upgrade torch, and on Windows
-PyPI only carries CPU-only torch wheels, so ComfyUI then fails with "Torch not compiled with CUDA
-enabled". These checks cover the files this repo owns; the pinned breeze-tts fork tag (comfyui-v1.4+)
-declares `torch` without a floor and no torchaudio for the same reason; older tags are the bug.
+Two regressions this guards:
+
+1. A fresh ComfyUI install broke after `pip install -r requirements.txt`: a torch/torchaudio version
+   floor anywhere in the dependency set makes pip upgrade torch, and on Windows PyPI only carries
+   CPU-only torch wheels, so ComfyUI then fails with "Torch not compiled with CUDA enabled". The
+   torch family is therefore never listed; the vendored breeze_models checks torch >= 2.7 at import.
+2. Versions 1.8.0-1.9.1 were flagged (hidden from ComfyUI Manager) by the Comfy registry scanner,
+   rule "contains_custom_url_dependency", because of
+   `breeze-tts @ git+https://github.com/...` in requirements.txt. The model code is vendored under
+   vendor/breeze-tts instead, and no dependency may be a URL / direct reference.
 """
 import re
 import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+VENDOR = ROOT / "vendor" / "breeze-tts"
 TORCH_FAMILY = ("torch", "torchaudio", "torchvision")
 
 
@@ -38,11 +44,44 @@ def test_no_torch_family_in_pyproject():
     assert not names & set(TORCH_FAMILY), names
 
 
-def test_fork_pin_is_a_tag_and_matches_in_both_files():
-    pattern = re.compile(r"breeze-tts @ git\+https://github\.com/Into-The-Latent/breeze-tts@(comfyui-v[\d.]+)$")
-    req = [m.group(1) for s in _requirements_lines() if (m := pattern.match(s))]
-    proj = [m.group(1) for s in _pyproject_deps() if (m := pattern.match(s))]
-    assert len(req) == 1 and len(proj) == 1, (req, proj)
-    assert req == proj
-    tag_version = tuple(int(part) for part in req[0].removeprefix("comfyui-v").split("."))
-    assert tag_version >= (1, 5), tag_version  # comfyui-v1.4 and older declared torch>=2.9
+def test_no_url_or_direct_reference_dependencies():
+    # PEP 508 direct references (`name @ url`), bare URLs, VCS specs, local paths: all of these trip
+    # the registry's "custom wheel or URL dependency" rule.
+    bad = re.compile(r"@|://|git\+|\.whl|^\.{0,2}/|^[a-zA-Z]:\\", re.IGNORECASE)
+    offenders = [s for s in _requirements_lines() + _pyproject_deps() if bad.search(s)]
+    assert not offenders, offenders
+
+
+def test_requirements_and_pyproject_agree():
+    assert sorted(_requirements_lines()) == sorted(_pyproject_deps())
+
+
+def test_breeze_fork_is_vendored():
+    assert (VENDOR / "LICENSE").is_file()
+    assert (VENDOR / "VENDORED.md").is_file()
+    assert (VENDOR / "breeze_models" / "__init__.py").is_file()
+    assert (VENDOR / "breeze_models" / "fast_streaming.py").is_file()
+    assert (VENDOR / "breeze_infer" / "runtime.py").is_file()
+    assert (VENDOR / "breeze_infer" / "templates.py").is_file()
+    # The fork's FastAPI server is not part of the nodes and is left out on purpose.
+    assert not (VENDOR / "breeze_infer" / "api.py").exists()
+    # Nothing vendored may declare a torch floor either (the fork's import-time check replaces it).
+    for py in VENDOR.rglob("*.py"):
+        text = py.read_text(encoding="utf-8", errors="ignore")
+        assert not re.search(r"torch\s*[><=]=\s*\d", text), py
+
+
+def test_vendored_fork_declares_torch_floor_at_import():
+    text = (VENDOR / "breeze_models" / "__init__.py").read_text(encoding="utf-8")
+    assert "_MIN_TORCH = (2, 7)" in text
+
+
+def test_vendor_shim_points_at_the_vendored_tree():
+    from nodes.breeze_vendor import VENDOR_DIR, ensure_on_path
+    import sys
+
+    assert Path(VENDOR_DIR) == VENDOR
+    assert ensure_on_path() == VENDOR_DIR
+    assert sys.path[0] == VENDOR_DIR
+    assert ensure_on_path() == VENDOR_DIR  # idempotent
+    assert sys.path.count(VENDOR_DIR) == 1

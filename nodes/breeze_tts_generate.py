@@ -3,7 +3,7 @@
 # Voice Clone / Voice Design / Voice Direction, each as Normal and Advanced — six classes built
 # by one factory so the input table exists once (design:
 # docs/superpowers/specs/2026-09-14-breeze-tts-design.md §3). The engine is
-# breeze_tts_core.generate_audio; the fork is imported lazily in _api().
+# breeze_tts_core.generate_audio; the vendored fork (vendor/breeze-tts) is imported lazily in _api().
 from types import SimpleNamespace
 
 import folder_paths
@@ -11,6 +11,7 @@ from comfy_api.latest import io
 
 from .breeze_tts_core import DEFAULT_SAMPLING, SamplingConfig, generate_audio
 from .breeze_tts_loader import BREEZE_TTS, INSTALL_HINT, resolve_handle, unload
+from .breeze_vendor import ensure_on_path
 
 _MODE_INFO = {
     # (title, cfg_scale default, blurb). Clone's cfg default is unused — the clone template has no
@@ -29,6 +30,7 @@ _EVENTS_HELP = ("Inline vocal events: (laugh), (sigh), (clears throat) in Englis
 
 def _api():
     """The fork's functions, imported on first use."""
+    ensure_on_path()
     try:
         from breeze_infer import templates as t
         from breeze_infer.runtime import set_all_seeds

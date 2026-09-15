@@ -1,0 +1,4 @@
+This directory contains code copied from qwen-tts 0.1.1
+(https://pypi.org/project/qwen-tts/, Copyright 2026 The Alibaba Qwen team),
+licensed under the Apache License, Version 2.0. Modifications: transformers 5
+decorator shim, removal of the 25 Hz (V1) tokenizer, relative imports.

@@ -4,8 +4,9 @@
 # BREEZE_TTS key (the immutable cache_key tuple, not the loaded model — see resolve_handle()
 # below). The first run downloads the Hugging Face snapshot (~7.2 GB) into
 # models/breeze_tts/Breeze-TTS-2/; later runs find it there. Design:
-# docs/superpowers/specs/2026-09-14-breeze-tts-design.md. All Breeze imports are lazy so the
-# pack loads even when the `breeze-tts` fork is not installed.
+# docs/superpowers/specs/2026-09-14-breeze-tts-design.md. The model code is vendored under
+# vendor/breeze-tts (see nodes/breeze_vendor.py); all Breeze imports are lazy so the pack loads
+# even when its Python dependencies (transformers, librosa, ...) are missing.
 import gc
 import os
 
@@ -15,6 +16,7 @@ from comfy_api.latest import io
 from .breeze_tts_core import (
     DOWNLOAD_IGNORE, REPO_ID, SNAPSHOT_DIRNAME, BreezeHandle, cache_key, missing_snapshot_files,
 )
+from .breeze_vendor import ensure_on_path
 
 BREEZE_TTS = io.Custom("BREEZE_TTS")
 
@@ -23,10 +25,11 @@ folder_paths.add_model_folder_path(_MODELS_SUBDIR, os.path.join(folder_paths.mod
 
 _CACHE: dict = {}          # cache_key -> BreezeHandle; at most one entry (one 7 GB model resident)
 _LICENSE_PRINTED = False
-INSTALL_HINT = ("Breeze TTS is not installed. Run ComfyUI Manager's 'Try fix' for "
-                "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt"
-                " (pip installs the model code from GitHub, so `git` must be on PATH; needs transformers "
-                ">= 4.57, < 6 and torch >= 2.7; the install never upgrades or replaces torch)")
+INSTALL_HINT = ("Breeze TTS's dependencies are not installed (transformers >= 4.57, < 6; numpy; librosa; "
+                "soundfile). Run ComfyUI Manager's 'Try fix' for ComfyUI-IntoTheLatent-Utils, or: "
+                "pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt (the model code itself "
+                "ships inside the pack under vendor/breeze-tts; needs torch >= 2.7; the install never upgrades "
+                "or replaces torch)")
 
 
 def _snapshot_dir() -> str:
@@ -75,6 +78,7 @@ def _require_cuda():
 
 
 def _load_pieces(ckpt_dir: str, attention: str):
+    ensure_on_path()
     try:
         from breeze_infer.runtime import load_runtime, resolve_device, update_generation_config_for_breeze
     except ImportError as e:
@@ -87,6 +91,7 @@ def _load_pieces(ckpt_dir: str, attention: str):
 
 
 def _runtime_factory(fast_path: bool):
+    ensure_on_path()
     try:
         from breeze_models.fast_streaming import FastBreezeStreamingRuntime, FastStreamingConfig
     except ImportError as e:
