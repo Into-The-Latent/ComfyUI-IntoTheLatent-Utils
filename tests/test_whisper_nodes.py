@@ -129,3 +129,49 @@ def test_load_pieces_import_error_names_install_hint(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "transformers", None)
     with pytest.raises(ImportError, match="transformers"):
         loader._load_pieces(str(tmp_path), "cpu")
+
+
+from nodes import whisper_transcribe as tr  # noqa: E402
+
+
+def test_transcribe_schema():
+    s = tr.ITLWhisperTranscribe.define_schema()
+    assert s.node_id == "ITLWhisperTranscribe" and s.display_name == "ITL Whisper Transcribe"
+    assert s.category == "Into The Latent/audio"
+    by_id = {i.id: i for i in s.inputs}
+    assert list(by_id) == ["model", "audio", "language", "unload_after"]
+    assert by_id["model"].io_type == "WHISPER" and by_id["audio"].io_type == "AUDIO"
+    assert by_id["language"].options == ["auto", *core.LANGUAGES] and by_id["language"].default == "auto"
+    assert by_id["unload_after"].default is False
+    assert [o.io_type for o in s.outputs] == ["STRING"]
+
+
+def _capture_transcribe(monkeypatch):
+    calls = {}
+
+    def fake_transcribe(handle, audio, language="auto"):
+        calls["handle"], calls["audio"], calls["language"] = handle, audio, language
+        return "hello world"
+    monkeypatch.setattr(tr, "transcribe", fake_transcribe)
+    monkeypatch.setattr(tr, "resolve_handle", lambda key: "H:" + str(key))
+    return calls
+
+
+def test_transcribe_execute(monkeypatch):
+    calls = _capture_transcribe(monkeypatch)
+    audio = {"waveform": torch.zeros((1, 1, 4)), "sample_rate": 16000}
+    out = tr.ITLWhisperTranscribe.execute(model=("tiny", "cpu"), audio=audio, language="zh")
+    assert out.args[0] == "hello world"
+    assert calls == {"handle": "H:('tiny', 'cpu')", "audio": audio, "language": "zh"}
+
+
+def test_transcribe_unload_after(monkeypatch):
+    _capture_transcribe(monkeypatch)
+    order = []
+    monkeypatch.setattr(tr, "transcribe", lambda *a, **kw: (order.append("transcribe"), "t")[1])
+    monkeypatch.setattr(tr, "unload", lambda: order.append("unload"))
+    audio = {"waveform": torch.zeros((1, 1, 4)), "sample_rate": 16000}
+    tr.ITLWhisperTranscribe.execute(model=("tiny", "cpu"), audio=audio, language="auto")
+    assert order == ["transcribe"]
+    tr.ITLWhisperTranscribe.execute(model=("tiny", "cpu"), audio=audio, language="auto", unload_after=True)
+    assert order == ["transcribe", "transcribe", "unload"]
