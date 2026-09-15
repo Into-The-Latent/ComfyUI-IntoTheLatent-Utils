@@ -1,11 +1,11 @@
 [project]
 name = "comfyui-intothelatent-utils"
 description = "ComfyUI utility nodes by Into The Latent."
-version = "1.9.0"
+version = "1.9.1"
 license = { file = "LICENSE" }
 dependencies = [
     "pillow>=10.3.0",
-    "breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.3",
+    "breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.4",
     "librosa>=0.10",
     "soundfile>=0.13",
     "huggingface_hub>=0.25",
