@@ -22,7 +22,7 @@ def test_loader_schema():
     assert list(by_id) == ["model", "device"]
     assert by_id["model"].options == list(core.MODEL_NAMES) and by_id["model"].default == core.DEFAULT_MODEL
     assert by_id["device"].options == list(core.DEVICE_CHOICES) and by_id["device"].default == "auto"
-    assert [o.io_type for o in s.outputs] == ["WHISPER"]
+    assert [o.io_type for o in s.outputs] == ["ITL_WHISPER"]
 
 
 def test_models_folder_registered():
@@ -140,7 +140,7 @@ def test_transcribe_schema():
     assert s.category == "Into The Latent/audio"
     by_id = {i.id: i for i in s.inputs}
     assert list(by_id) == ["model", "audio", "language", "unload_after"]
-    assert by_id["model"].io_type == "WHISPER" and by_id["audio"].io_type == "AUDIO"
+    assert by_id["model"].io_type == "ITL_WHISPER" and by_id["audio"].io_type == "AUDIO"
     assert by_id["language"].options == ["auto", *core.LANGUAGES] and by_id["language"].default == "auto"
     assert by_id["unload_after"].default is False
     assert [o.io_type for o in s.outputs] == ["STRING"]
@@ -166,8 +166,8 @@ def test_transcribe_execute(monkeypatch):
 
 
 def test_transcribe_unload_after(monkeypatch):
-    _capture_transcribe(monkeypatch)
     order = []
+    monkeypatch.setattr(tr, "resolve_handle", lambda key: "H")
     monkeypatch.setattr(tr, "transcribe", lambda *a, **kw: (order.append("transcribe"), "t")[1])
     monkeypatch.setattr(tr, "unload", lambda: order.append("unload"))
     audio = {"waveform": torch.zeros((1, 1, 4)), "sample_rate": 16000}

@@ -62,7 +62,7 @@ Resampling uses `librosa.resample` (already a dependency through Breeze and list
 | `model` | combo `large-v3-turbo`, `large-v3`, `medium`, `small`, `base`, `tiny` | `large-v3-turbo` | maps to `openai/whisper-<name>` |
 | `device` | combo `auto`, `cuda`, `cpu` | `auto` | `auto` = cuda if available else cpu |
 
-**Output:** `WHISPER` (`io.Custom("WHISPER")`). Like `BREEZE_TTS`, the graph carries only the
+**Output:** `WHISPER` (`io.Custom("ITL_WHISPER")` — namespaced so another pack's bare `WHISPER` type cannot link into it). Like `BREEZE_TTS`, the graph carries only the
 immutable **cache key** `(ckpt_dir, device)`, not the model: ComfyUI's output cache then holds no
 second reference to the tensors, so `unload()` really frees them (lesson from PR #4).
 
@@ -89,7 +89,7 @@ second reference to the tensors, so `unload()` really frees them (lesson from PR
    `merges.txt`, `vocab.json`, `normalizer.json`. One console line before ("downloading X to …")
    and after; partial downloads resume.
 3. Load `WhisperProcessor.from_pretrained(dir)` and
-   `WhisperForConditionalGeneration.from_pretrained(dir, torch_dtype=fp16 on cuda / fp32 on cpu)`,
+   `WhisperForConditionalGeneration.from_pretrained(dir, dtype=fp16 on cuda / fp32 on cpu)`,
    `.to(device).eval()`.
 4. Cache in a module-level dict keyed by `(ckpt_dir, device)`; a new key evicts every other
    entry first (one Whisper resident at a time), then `gc.collect()` +
@@ -126,12 +126,13 @@ does not need transformers at import time.
 1. `audio_to_mono_numpy(waveform)` (batch 0, channel mean, float32) — same rule as Breeze.
    Empty waveform → `ValueError("audio is empty")`.
 2. Resample to 16 000 Hz with `librosa.resample` when `sample_rate != 16000`.
-3. `processor(samples, sampling_rate=16000, return_tensors="pt", truncation=False,
-   padding="longest", return_attention_mask=True)` → `input_features` (+ `attention_mask`).
-   With ≤ 30 s of audio this is the ordinary `[1, n_mels, 3000]` features and `generate()` runs
-   short-form; longer audio yields wider features and `generate()` runs transformers' sequential
-   long-form decoding (`return_timestamps=True` is required for it, `condition_on_prev_tokens=False`
-   keeps it from looping on repeated phrases). One code path for both.
+3. ≤ 30 s of audio: `processor(samples, sampling_rate=16000, return_tensors="pt")` — the
+   extractor's default padding to 3000 mel frames, which the encoder requires. > 30 s:
+   `processor(samples, sampling_rate=16000, return_tensors="pt", truncation=False,
+   padding="longest", return_attention_mask=True)` and `attention_mask` passed to `generate()`,
+   which then runs transformers' sequential long-form decoding (`return_timestamps=True` required,
+   `condition_on_prev_tokens=False` keeps it from looping on repeated phrases). Two processor
+   calls, one `generate()` call.
 4. `model.generate(input_features.to(device, dtype), attention_mask=..., task="transcribe",
    language=None|code, return_timestamps=True, condition_on_prev_tokens=False, num_beams=1)`
    under `torch.inference_mode()`.

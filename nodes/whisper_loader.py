@@ -11,11 +11,13 @@ import folder_paths
 from comfy_api.latest import io
 
 from .whisper_core import (
-    DEFAULT_MODEL, DEVICE_CHOICES, DOWNLOAD_PATTERNS, MODEL_NAMES, MODELS, WhisperHandle, cache_key,
-    dtype_for, missing_files, resolve_device, snapshot_dirname,
+    DEFAULT_MODEL, DEVICE_CHOICES, DOWNLOAD_PATTERNS, MODEL_NAMES, MODEL_SIZES, MODELS, WhisperHandle,
+    cache_key, dtype_for, missing_files, resolve_device, snapshot_dirname,
 )
 
-WHISPER = io.Custom("WHISPER")
+# Namespaced on purpose: ComfyUI matches links by type name globally, and a bare "WHISPER" from
+# another pack would plug into our `model` input with a payload resolve_handle() cannot unpack.
+WHISPER = io.Custom("ITL_WHISPER")
 
 _MODELS_SUBDIR = "whisper"
 folder_paths.add_model_folder_path(_MODELS_SUBDIR, os.path.join(folder_paths.models_dir, _MODELS_SUBDIR))
@@ -42,7 +44,7 @@ def ensure_snapshot(name: str, ckpt_dir: str) -> str:
     if not missing:
         return ckpt_dir
     repo = MODELS[name]
-    print(f"[Whisper] downloading {repo} to {ckpt_dir} ...")
+    print(f"[Whisper] downloading {repo} (~{MODEL_SIZES[name]}) to {ckpt_dir} ...")
     try:
         _snapshot_download(repo_id=repo, local_dir=ckpt_dir, allow_patterns=DOWNLOAD_PATTERNS)
     except Exception as e:

@@ -25,6 +25,10 @@ MODELS = {
 MODEL_NAMES = tuple(MODELS)
 DEFAULT_MODEL = MODEL_NAMES[0]
 
+# Approximate download size of model.safetensors per model (fp16 for the two large ones, fp32 otherwise).
+MODEL_SIZES = {"large-v3-turbo": "1.6 GB", "large-v3": "3.1 GB", "medium": "3.1 GB",
+               "small": "1 GB", "base": "290 MB", "tiny": "150 MB"}
+
 # ISO 639-1 codes Whisper's tokenizer knows; "auto" (model-side detection) is added by the node.
 LANGUAGES = ("en", "zh", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "tr", "ar", "hi",
              "ja", "ko", "vi", "id", "th", "sv", "da", "no", "fi", "cs", "el", "he", "hu", "ro")
@@ -44,6 +48,9 @@ REQUIRED_FILES = (
     "vocab.json",
     "normalizer.json",
 )
+# The must-exist check and the download allow-list are the same set on purpose: every official
+# openai/whisper-* repo ships all 11. If a checkpoint is ever added that lacks one, split the two
+# lists rather than dropping the file from the allow-list.
 DOWNLOAD_PATTERNS = list(REQUIRED_FILES)
 
 TARGET_SR = 16000                     # Whisper's fixed input rate
@@ -87,7 +94,11 @@ def dtype_for(device: str) -> torch.dtype:
 
 
 def _librosa_resample(samples: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
-    import librosa
+    try:
+        import librosa
+    except ImportError as e:
+        raise ImportError("Whisper resampling needs `librosa` (in this pack's requirements.txt): "
+                          "pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt") from e
     return librosa.resample(samples, orig_sr=orig_sr, target_sr=target_sr)
 
 

@@ -10,6 +10,7 @@ from nodes.whisper_core import (
     LANGUAGES,
     LONG_FORM_SAMPLES,
     MODEL_NAMES,
+    MODEL_SIZES,
     MODELS,
     REQUIRED_FILES,
     TARGET_SR,
@@ -28,6 +29,7 @@ def test_model_table():
     assert DEFAULT_MODEL == "large-v3-turbo"
     assert MODELS["large-v3-turbo"] == "openai/whisper-large-v3-turbo"
     assert all(repo == f"openai/whisper-{name}" for name, repo in MODELS.items())
+    assert set(MODEL_SIZES) == set(MODEL_NAMES)
 
 
 def test_languages_and_devices():
@@ -116,6 +118,14 @@ def test_normalise_text():
     assert normalise_text("  Hello,\n  world.  ") == "Hello, world."
     assert normalise_text("") == ""
     assert normalise_text(None) == ""
+
+
+def test_librosa_resample_import_error_names_requirements(monkeypatch):
+    import sys
+    from nodes.whisper_core import _librosa_resample
+    monkeypatch.setitem(sys.modules, "librosa", None)
+    with pytest.raises(ImportError, match="requirements.txt"):
+        _librosa_resample(np.zeros(4, dtype=np.float32), 8000, 16000)
 
 
 from nodes.whisper_core import WhisperHandle, transcribe  # noqa: E402

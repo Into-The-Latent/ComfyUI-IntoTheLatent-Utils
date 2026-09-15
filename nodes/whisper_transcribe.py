@@ -40,6 +40,10 @@ characters before using it as a Breeze transcript.""",
 
     @classmethod
     def execute(cls, model, audio, language="auto", unload_after=False) -> io.NodeOutput:
+        # The handle is deliberately never bound to a local: the temporary dies when transcribe()
+        # returns, so by the time unload() runs only whisper_loader._CACHE references the model and
+        # its VRAM really comes back. Binding `handle = resolve_handle(...)` would silently defeat
+        # unload_after (the node tests stub both calls and cannot catch that).
         text = transcribe(resolve_handle(model), audio, language=language)
         if unload_after:
             unload()

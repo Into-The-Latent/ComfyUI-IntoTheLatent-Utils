@@ -29,9 +29,10 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils
 ```
 
-No extra dependencies for the image / prompt / metadata nodes (Pillow ships with ComfyUI). The
-Breeze TTS nodes need `pip install -r requirements.txt` (see their section); the Whisper nodes
-run on the `transformers` package ComfyUI already has. It can coexist with
+Then install the pack's requirements (ComfyUI Manager does this for you; for a manual clone run
+`pip install -r requirements.txt` with ComfyUI's Python). The pack needs `soundfile` to import at
+all, the Breeze TTS nodes need the fork listed there, and the Whisper nodes need `librosa` for
+resampling; `transformers` comes with ComfyUI itself. It can coexist with
 ComfyUI-KJNodes — both Ideogram 4 nodes run side by side without conflict.
 
 ## Nodes
@@ -388,18 +389,21 @@ Two nodes:
 
 Built to feed the Breeze TTS Clone / Direction nodes' `reference_text`, but it is a general
 transcription node: stereo is downmixed, any sample rate is accepted, and clips longer than 30 s
-are transcribed in full (sequential long-form decoding). Whisper's punctuation and casing are
+are transcribed with sequential long-form decoding. Whisper's punctuation and casing are
 used as-is. For Chinese, Whisper writes simplified or traditional characters depending on the
 audio; check the text before using it as a Breeze transcript.
+
+One Whisper model stays resident at a time: two loaders with different models in one workflow
+reload on every run.
 
 **First run** downloads the checkpoint from Hugging Face into `models/whisper/whisper-<model>/`
 (only the safetensors + tokenizer files: `large-v3-turbo` 1.6 GB, `large-v3` 3.1 GB, `medium` 3.1 GB,
 `small` 1 GB, `base` 290 MB, `tiny` 150 MB). Runs in fp16 on CUDA (`large-v3-turbo` ≈ 2 GiB VRAM,
 `large-v3` ≈ 3.5 GiB) or fp32 on CPU. Whisper and Breeze can be resident together (≈ 10 GiB).
 
-No extra install: it uses the `transformers` (>= 4.57) and `librosa` packages the Breeze nodes and
-ComfyUI already require. Whisper weights are Apache 2.0; the node code is GPL-3.0 like the rest of
-this pack.
+No install beyond the pack's `requirements.txt`: Whisper runs on `transformers` (>= 4.57, shipped
+with ComfyUI) and resamples with `librosa` (in `requirements.txt`). Whisper weights are Apache 2.0;
+the node code is GPL-3.0 like the rest of this pack.
 
 ## Credits & License
 
@@ -410,7 +414,7 @@ Only the **Ideogram 4 Prompt Builder** node and its canvas editor are derived fr
 Kijai for that original work — the derived files retain their attribution.
 
 Everything else in this pack — the **Ideogram 4 Style Wizard**, the **Resolution Selector**, the
-**Prompt Batch** node, and the **Save Metadata (Civitai)** nodes — is original development by
-**Into The Latent**.
+**Prompt Batch** node, the **Save Metadata (Civitai)** nodes, the **Multi Loaders**, the **Breeze TTS** nodes
+and the **Whisper** nodes — is original development by **Into The Latent**.
 
 Because the pack includes Kijai's GPL-3.0 code, the whole pack is released under **GPL-3.0** as well.
