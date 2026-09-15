@@ -175,3 +175,30 @@ def test_transcribe_unload_after(monkeypatch):
     assert order == ["transcribe"]
     tr.ITLWhisperTranscribe.execute(model=("tiny", "cpu"), audio=audio, language="auto", unload_after=True)
     assert order == ["transcribe", "transcribe", "unload"]
+
+
+def test_pack_registers_both_whisper_nodes():
+    import importlib.util
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "itl_pack", os.path.join(repo_root, "__init__.py"), submodule_search_locations=[repo_root]
+    )
+    root = importlib.util.module_from_spec(spec)
+    sys.modules["itl_pack"] = root
+    try:
+        spec.loader.exec_module(root)
+        for node_id, display in [("ITLWhisperLoader", "ITL Whisper Loader"),
+                                 ("ITLWhisperTranscribe", "ITL Whisper Transcribe")]:
+            assert root.NODE_CLASS_MAPPINGS[node_id].define_schema().node_id == node_id
+            assert root.NODE_DISPLAY_NAME_MAPPINGS[node_id] == display
+    finally:
+        for name in [n for n in sys.modules if n == "itl_pack" or n.startswith("itl_pack.")]:
+            del sys.modules[name]
+
+
+def test_breeze_reference_text_tooltip_points_at_whisper():
+    from nodes import breeze_tts_generate as gen
+    s = gen.ITLBreezeTTSVoiceClone.define_schema()
+    tip = next(i for i in s.inputs if i.id == "reference_text").tooltip
+    assert "Whisper" in tip

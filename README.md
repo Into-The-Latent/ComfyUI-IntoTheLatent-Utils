@@ -29,7 +29,9 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils
 ```
 
-No extra dependencies (it uses Pillow, already shipped with ComfyUI). It can coexist with
+No extra dependencies for the image / prompt / metadata nodes (Pillow ships with ComfyUI). The
+Breeze TTS nodes need `pip install -r requirements.txt` (see their section); the Whisper nodes
+run on the `transformers` package ComfyUI already has. It can coexist with
 ComfyUI-KJNodes — both Ideogram 4 nodes run side by side without conflict.
 
 ## Nodes
@@ -346,6 +348,9 @@ English + Chinese). Three modes, each as a Normal and an Advanced node:
 - **Voice Design** — describe the voice in `instruction` ("a calm, deep male voice"); no reference.
 - **Voice Direction** — reference audio + transcript + an `instruction` for tone, pace, emotion.
 
+`reference_text` must be the clip's exact transcript — **ITL Whisper Transcribe** (below) produces it
+from the reference audio.
+
 Inline vocal events work in the text: `(laugh)`, `(sigh)`, `(clears throat)`; Chinese `[笑]`, `[叹气]`.
 Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_new_tokens`
 (defaults equal the Normal nodes). `cfg_scale` (Design / Direction only) defaults to 4.0; Voice
@@ -370,6 +375,31 @@ this pack (pip needs `git`).
 
 **License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
 *research and non-commercial* (BreezeBlue Research and Non-Commercial License).
+
+### ITL Whisper Transcribe (Loader + Audio to Text)
+
+Speech-to-text with [OpenAI Whisper](https://github.com/openai/whisper) through `transformers`.
+Two nodes:
+
+- **ITL Whisper Loader** — picks the model (`large-v3-turbo` default, `large-v3`, `medium`,
+  `small`, `base`, `tiny`) and the device (`auto` / `cuda` / `cpu`).
+- **ITL Whisper Transcribe** — `AUDIO` in, transcript `STRING` out. `language` is `auto` or a
+  fixed code (pick one when detection guesses wrong). `unload_after` frees the model.
+
+Built to feed the Breeze TTS Clone / Direction nodes' `reference_text`, but it is a general
+transcription node: stereo is downmixed, any sample rate is accepted, and clips longer than 30 s
+are transcribed in full (sequential long-form decoding). Whisper's punctuation and casing are
+used as-is. For Chinese, Whisper writes simplified or traditional characters depending on the
+audio; check the text before using it as a Breeze transcript.
+
+**First run** downloads the checkpoint from Hugging Face into `models/whisper/whisper-<model>/`
+(only the safetensors + tokenizer files: `large-v3-turbo` 1.6 GB, `large-v3` 3.1 GB, `medium` 3.1 GB,
+`small` 1 GB, `base` 290 MB, `tiny` 150 MB). Runs in fp16 on CUDA (`large-v3-turbo` ≈ 2 GiB VRAM,
+`large-v3` ≈ 3.5 GiB) or fp32 on CPU. Whisper and Breeze can be resident together (≈ 10 GiB).
+
+No extra install: it uses the `transformers` (>= 4.57) and `librosa` packages the Breeze nodes and
+ComfyUI already require. Whisper weights are Apache 2.0; the node code is GPL-3.0 like the rest of
+this pack.
 
 ## Credits & License
 
