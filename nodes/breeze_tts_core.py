@@ -105,3 +105,68 @@ def chunks_to_audio(chunks, sample_rate: int) -> dict:
         raise ValueError("Breeze TTS produced no audio")
     wave = torch.from_numpy(np.concatenate(parts))
     return {"waveform": wave[None, None, :], "sample_rate": int(sample_rate)}
+
+
+REPO_ID = "BreezeBlue/Breeze-TTS-2"
+SNAPSHOT_DIRNAME = "Breeze-TTS-2"
+DOWNLOAD_IGNORE = ("assets/*",)   # logos and the leaderboard SVG are not needed
+REQUIRED_SNAPSHOT_FILES = (
+    "config.json",
+    "generation_config.json",
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors",
+    "model.safetensors.index.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "audio_tokenizer/config.json",
+    "audio_tokenizer/model.safetensors",
+    "audio_tokenizer/preprocessor_config.json",
+)
+
+
+def missing_snapshot_files(ckpt_dir: str) -> list[str]:
+    """Required files that are absent or empty (a killed download leaves 0-byte stubs)."""
+    out = []
+    for rel in REQUIRED_SNAPSHOT_FILES:
+        p = os.path.join(ckpt_dir, *rel.split("/"))
+        if not os.path.isfile(p) or os.path.getsize(p) == 0:
+            out.append(rel)
+    return out
+
+
+def snapshot_is_complete(ckpt_dir: str) -> bool:
+    return not missing_snapshot_files(ckpt_dir)
+
+
+def cache_key(ckpt_dir: str, attention: str, fast_path: bool) -> tuple:
+    return (os.path.normcase(os.path.abspath(ckpt_dir)), str(attention), bool(fast_path))
+
+
+class BreezeHandle:
+    """What the loader node emits as BREEZE_TTS: the loaded pieces plus a lazily built runtime.
+
+    runtime_factory(model, audio_tokenizer, tokenizer, fast_config_kwargs) -> runtime. Building a
+    runtime is cheap next to loading weights (eager mode: no graph capture), so only the most
+    recent sampling config's runtime is kept; a change rebuilds it without reloading anything.
+    """
+
+    def __init__(self, key, tokenizer, model, audio_tokenizer, runtime_factory):
+        self.key = key
+        self.tokenizer = tokenizer
+        self.model = model
+        self.audio_tokenizer = audio_tokenizer
+        self._runtime_factory = runtime_factory
+        self._runtime = None
+        self._runtime_sampling = None
+
+    @property
+    def fast_path(self) -> bool:
+        return bool(self.key[2])
+
+    def runtime_for(self, sampling: SamplingConfig):
+        if self._runtime is None or sampling != self._runtime_sampling:
+            self._runtime = self._runtime_factory(self.model, self.audio_tokenizer, self.tokenizer,
+                                                  sampling.fast_config_kwargs())
+            self._runtime_sampling = sampling
+        return self._runtime

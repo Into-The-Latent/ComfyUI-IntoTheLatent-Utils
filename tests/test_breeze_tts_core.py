@@ -9,10 +9,15 @@ import torch
 from nodes.breeze_tts_core import (
     DEFAULT_SAMPLING,
     MODES,
+    BreezeHandle,
+    REQUIRED_SNAPSHOT_FILES,
     SamplingConfig,
     audio_to_mono_numpy,
     build_request,
+    cache_key,
     chunks_to_audio,
+    missing_snapshot_files,
+    snapshot_is_complete,
     write_reference_wav,
 )
 
@@ -121,3 +126,59 @@ def test_chunks_to_audio_rejects_empty():
         chunks_to_audio([], 24000)
     with pytest.raises(ValueError, match="no audio"):
         chunks_to_audio([np.zeros(0, np.float32)], 24000)
+
+
+def _touch_all(root):
+    from pathlib import Path
+    root = Path(root)
+    for rel in REQUIRED_SNAPSHOT_FILES:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+
+
+def test_required_snapshot_files_cover_model_tokenizer_and_codec():
+    assert "model-00001-of-00002.safetensors" in REQUIRED_SNAPSHOT_FILES
+    assert "model-00002-of-00002.safetensors" in REQUIRED_SNAPSHOT_FILES
+    assert "audio_tokenizer/model.safetensors" in REQUIRED_SNAPSHOT_FILES
+    assert "tokenizer.json" in REQUIRED_SNAPSHOT_FILES
+
+
+def test_snapshot_complete_and_missing(tmp_path):
+    assert missing_snapshot_files(str(tmp_path)) == list(REQUIRED_SNAPSHOT_FILES)
+    assert snapshot_is_complete(str(tmp_path)) is False
+    _touch_all(tmp_path)
+    assert snapshot_is_complete(str(tmp_path)) is True
+    (tmp_path / "audio_tokenizer" / "model.safetensors").unlink()
+    assert missing_snapshot_files(str(tmp_path)) == ["audio_tokenizer/model.safetensors"]
+
+
+def test_snapshot_ignores_zero_byte_files(tmp_path):
+    _touch_all(tmp_path)
+    (tmp_path / "tokenizer.json").write_bytes(b"")
+    assert missing_snapshot_files(str(tmp_path)) == ["tokenizer.json"]
+
+
+def test_cache_key_normalises_path(tmp_path):
+    a = cache_key(str(tmp_path / "x" / ".."), "sdpa", True)
+    b = cache_key(str(tmp_path), "sdpa", True)
+    assert a == b and a[1:] == ("sdpa", True)
+    assert cache_key(str(tmp_path), "eager", True) != b
+
+
+def test_handle_runtime_for_caches_by_sampling():
+    calls = []
+
+    def factory(model, audio_tokenizer, tokenizer, kwargs):
+        calls.append(kwargs)
+        return object()
+
+    h = BreezeHandle(("p", "sdpa", False), "tok", "model", "atok", factory)
+    r1 = h.runtime_for(SamplingConfig())
+    r2 = h.runtime_for(SamplingConfig())
+    assert r1 is r2 and len(calls) == 1 and calls[0]["max_new_tokens"] == 750
+    r3 = h.runtime_for(SamplingConfig(top_k=10))
+    assert r3 is not r1 and len(calls) == 2 and calls[1]["top_k"] == 10
+    r4 = h.runtime_for(SamplingConfig())          # previous config again -> rebuilt (only last is kept)
+    assert r4 is not r1 and len(calls) == 3
+    assert h.fast_path is False and h.tokenizer == "tok"
