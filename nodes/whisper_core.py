@@ -104,3 +104,45 @@ def prepare_samples(audio: dict, resample=None) -> np.ndarray:
 
 def normalise_text(text) -> str:
     return " ".join(text.split()) if isinstance(text, str) else ""
+
+
+class WhisperHandle:
+    """What the loader keeps resident: the processor + model and where they live."""
+
+    def __init__(self, key, processor, model, device: str, dtype: torch.dtype):
+        self.key = key
+        self.processor = processor
+        self.model = model
+        self.device = device
+        self.dtype = dtype
+
+
+def transcribe(handle: WhisperHandle, audio: dict, language: str = "auto", resample=None) -> str:
+    """One transcription. Verified call path on transformers 4.57 and 5.15 — see the plan's
+    Global Constraints before changing any keyword here.
+
+    <= 30 s: the feature extractor pads to Whisper's fixed 3000 mel frames (its default) and
+    generate() runs short-form. > 30 s: `truncation=False, padding="longest"` keeps every frame
+    and generate() runs transformers' sequential long-form decoding, which needs the attention
+    mask and timestamps; condition_on_prev_tokens=False stops it looping on repeated phrases."""
+    if language in (None, "", "auto"):
+        lang = None
+    elif language in LANGUAGES:
+        lang = str(language)
+    else:
+        raise ValueError(f"Unknown language {language!r}; expected 'auto' or one of {LANGUAGES}")
+    samples = prepare_samples(audio, resample=resample)
+    if samples.shape[0] > LONG_FORM_SAMPLES:
+        inputs = handle.processor(samples, sampling_rate=TARGET_SR, return_tensors="pt",
+                                  truncation=False, padding="longest", return_attention_mask=True)
+    else:
+        inputs = handle.processor(samples, sampling_rate=TARGET_SR, return_tensors="pt")
+    features = inputs["input_features"].to(handle.device, handle.dtype)
+    extra = {}
+    if "attention_mask" in inputs:
+        extra["attention_mask"] = inputs["attention_mask"].to(handle.device)
+    with torch.inference_mode():
+        ids = handle.model.generate(features, task="transcribe", language=lang, return_timestamps=True,
+                                    condition_on_prev_tokens=False, num_beams=1, **extra)
+    text = handle.processor.batch_decode(ids, skip_special_tokens=True)[0]
+    return normalise_text(text)

@@ -116,3 +116,102 @@ def test_normalise_text():
     assert normalise_text("  Hello,\n  world.  ") == "Hello, world."
     assert normalise_text("") == ""
     assert normalise_text(None) == ""
+
+
+from nodes.whisper_core import WhisperHandle, transcribe  # noqa: E402
+
+
+class _StubProcessor:
+    """Records the feature-extractor call, returns a features dict like transformers' BatchFeature."""
+
+    def __init__(self, with_mask=False):
+        self.calls = []
+        self.with_mask = with_mask
+        self.decoded = []
+
+    def __call__(self, samples, **kw):
+        self.calls.append((np.asarray(samples), kw))
+        out = {"input_features": torch.zeros((1, 80, 3000))}
+        if self.with_mask:
+            out["attention_mask"] = torch.ones((1, 3000), dtype=torch.long)
+        return out
+
+    def batch_decode(self, ids, **kw):
+        self.decoded.append((ids, kw))
+        return ["  Hello,   world.\n"]
+
+
+class _StubModel:
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, features, **kw):
+        self.calls.append((features, kw))
+        return torch.tensor([[1, 2, 3]])
+
+
+def _handle(with_mask=False):
+    return WhisperHandle(("tiny", "cpu"), _StubProcessor(with_mask), _StubModel(), "cpu", torch.float32)
+
+
+def _audio(seconds, sr=16000):
+    return {"waveform": torch.zeros((1, 1, int(seconds * sr))), "sample_rate": sr}
+
+
+def test_handle_attributes():
+    h = _handle()
+    assert h.key == ("tiny", "cpu") and h.device == "cpu" and h.dtype is torch.float32
+    assert isinstance(h.processor, _StubProcessor) and isinstance(h.model, _StubModel)
+
+
+def test_transcribe_short_form_auto_language():
+    h = _handle()
+    text = transcribe(h, _audio(2.0))
+    assert text == "Hello, world."
+    samples, kw = h.processor.calls[0]
+    assert samples.shape == (32000,) and kw == {"sampling_rate": 16000, "return_tensors": "pt"}
+    features, gkw = h.model.calls[0]
+    assert tuple(features.shape) == (1, 80, 3000) and features.dtype is torch.float32
+    assert gkw == {"task": "transcribe", "language": None, "return_timestamps": True,
+                   "condition_on_prev_tokens": False, "num_beams": 1}
+    ids, dkw = h.processor.decoded[0]
+    assert ids.tolist() == [[1, 2, 3]] and dkw == {"skip_special_tokens": True}
+
+
+def test_transcribe_fixed_language():
+    h = _handle()
+    transcribe(h, _audio(1.0), language="zh")
+    assert h.model.calls[0][1]["language"] == "zh"
+
+
+def test_transcribe_rejects_unknown_language():
+    with pytest.raises(ValueError, match="language"):
+        transcribe(_handle(), _audio(1.0), language="xx")
+
+
+def test_transcribe_long_form_uses_longest_padding_and_mask():
+    h = _handle(with_mask=True)
+    transcribe(h, _audio(31.0))
+    _, kw = h.processor.calls[0]
+    assert kw == {"sampling_rate": 16000, "return_tensors": "pt", "truncation": False,
+                  "padding": "longest", "return_attention_mask": True}
+    _, gkw = h.model.calls[0]
+    assert gkw["attention_mask"].shape == (1, 3000) and gkw["return_timestamps"] is True
+
+
+def test_transcribe_exactly_30s_is_short_form():
+    h = _handle()
+    transcribe(h, _audio(30.0))
+    assert h.processor.calls[0][1] == {"sampling_rate": 16000, "return_tensors": "pt"}
+
+
+def test_transcribe_resamples_before_the_processor():
+    h = _handle()
+    transcribe(h, _audio(1.0, sr=8000), resample=lambda s, o, t: np.repeat(s, 2))
+    assert h.processor.calls[0][0].shape == (16000,)
+
+
+def test_transcribe_moves_features_to_handle_device_and_dtype():
+    h = WhisperHandle(("tiny", "cpu"), _StubProcessor(), _StubModel(), "cpu", torch.float16)
+    transcribe(h, _audio(1.0))
+    assert h.model.calls[0][0].dtype is torch.float16
