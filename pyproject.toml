@@ -5,7 +5,7 @@ version = "1.8.0"
 license = { file = "LICENSE" }
 dependencies = [
     "pillow>=10.3.0",
-    "breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.2",
+    "breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.3",
     "librosa>=0.10",
     "soundfile>=0.13",
     "huggingface_hub>=0.25",

@@ -356,7 +356,7 @@ Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (
 Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
 `fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
 
-The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.2`), which
+The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.3`), which
 works with transformers 4.57–5.x. Requirements: `git` on PATH (pip fetches the fork from GitHub),
 torch >= 2.9, transformers >= 4.57 (< 6). If you already meet those floors the install leaves torch
 and transformers untouched; if you are below them pip upgrades them, and on Windows you should then
