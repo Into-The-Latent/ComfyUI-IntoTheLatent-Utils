@@ -71,7 +71,10 @@ def _load_pieces(ckpt_dir: str, attention: str):
 
 
 def _runtime_factory(fast_path: bool):
-    from breeze_models.fast_streaming import FastBreezeStreamingRuntime, FastStreamingConfig
+    try:
+        from breeze_models.fast_streaming import FastBreezeStreamingRuntime, FastStreamingConfig
+    except ImportError as e:
+        raise ImportError(INSTALL_HINT) from e
 
     def build(model, audio_tokenizer, tokenizer, kwargs):
         config = FastStreamingConfig(fast_all=True if fast_path else None, **kwargs)

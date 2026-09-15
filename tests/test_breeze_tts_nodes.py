@@ -81,3 +81,10 @@ def test_loader_execute_returns_handle(monkeypatch):
     monkeypatch.setattr(loader, "load_handle", lambda attention, fast_path: sentinel)
     out = loader.ITLBreezeTTSLoader.execute(attention="sdpa", fast_path=False)
     assert out.args[0] is sentinel
+
+
+def test_runtime_factory_import_error_names_install_hint(monkeypatch):
+    monkeypatch.setitem(sys.modules, "breeze_models", None)
+    monkeypatch.setitem(sys.modules, "breeze_models.fast_streaming", None)
+    with pytest.raises(ImportError, match="not installed"):
+        loader._runtime_factory(False)
