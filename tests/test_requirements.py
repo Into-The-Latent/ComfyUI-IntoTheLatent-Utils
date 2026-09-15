@@ -85,3 +85,24 @@ def test_vendor_shim_points_at_the_vendored_tree():
     assert sys.path[0] == VENDOR_DIR
     assert ensure_on_path() == VENDOR_DIR  # idempotent
     assert sys.path.count(VENDOR_DIR) == 1
+
+
+def test_vendored_loader_does_not_need_accelerate():
+    # `from_pretrained(..., device_map=...)` makes transformers demand the optional `accelerate`
+    # package, which a fresh ComfyUI venv does not have (seen on a torch 2.11 / CUDA 13 install).
+    # accelerate also carries a torch floor, so it must never become a dependency either.
+    import ast
+
+    offenders = []
+    for py in VENDOR.rglob("*.py"):
+        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and any(k.arg == "device_map" for k in node.keywords):
+                offenders.append(f"{py}:{node.lineno} device_map=")
+            if isinstance(node, ast.Import) and any(a.name.split(".")[0] == "accelerate" for a in node.names):
+                offenders.append(f"{py}:{node.lineno} import accelerate")
+            if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "accelerate":
+                offenders.append(f"{py}:{node.lineno} from accelerate")
+    assert not offenders, offenders
+    names = {_package_name(s) for s in _requirements_lines() + _pyproject_deps()}
+    assert "accelerate" not in names

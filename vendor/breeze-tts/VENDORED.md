@@ -8,8 +8,8 @@ BreezeBlue).
 | | |
 |---|---|
 | Source repo | https://github.com/Into-The-Latent/breeze-tts |
-| Tag | `comfyui-v1.5` |
-| Commit | `63d0a81dd88ea160d0c4a79ea7e5bc7c1ff135d2` |
+| Tag | `comfyui-v1.6` |
+| Commit | `cbd9909d34a4ab01666ecbb4d3457bd9808317d0` |
 | License | Apache-2.0 (see `LICENSE` here; `breeze_models/qwen_tokenizer/NOTICE` covers the vendored Qwen tokenizer) |
 | Left out | `breeze_infer/api.py` (the fork's FastAPI server; not used by the nodes, needs fastapi/uvicorn) |
 
@@ -33,6 +33,9 @@ the fork's own top-level names `breeze_models` / `breeze_infer` with no source c
 - Nothing in here may declare a torch version floor (`tests/test_requirements.py` checks).
   `breeze_models/__init__.py` enforces torch >= 2.7 at import time instead; a floor in pip
   metadata would make pip replace a Windows user's CUDA torch with the CPU-only wheel.
+- Nothing in here may pass `device_map=` to `from_pretrained` or import `accelerate`
+  (`tests/test_requirements.py` checks): transformers then demands the optional `accelerate`
+  package, which a fresh ComfyUI venv does not have. Load on CPU and `.to(device)` instead.
 - Do not edit files in this directory by hand. Fix things in the fork, tag it, and re-sync.
 
 ## Re-syncing from the fork

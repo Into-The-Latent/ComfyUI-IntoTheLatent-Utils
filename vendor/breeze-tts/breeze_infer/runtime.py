@@ -106,8 +106,11 @@ def load_runtime(
             f"{bundled_audio_tokenizer}. The Breeze model package must include "
             "the audio_tokenizer directory."
         )
-    audio_tokenizer = Qwen3TTSTokenizer.from_pretrained(
-        str(bundled_audio_tokenizer), device_map=device
-    )
+    # Load on CPU and move afterwards, like the main model above. Passing `device_map=` here makes
+    # transformers demand the optional `accelerate` package, which a fresh ComfyUI venv does not
+    # have (and accelerate carries a torch floor, which this package must never pull in).
+    audio_tokenizer = Qwen3TTSTokenizer.from_pretrained(str(bundled_audio_tokenizer))
+    audio_tokenizer.model.to(device).eval()
+    audio_tokenizer.device = audio_tokenizer.model.device
     reinit_computed_buffers(getattr(audio_tokenizer, "model", None))
     return tokenizer, model, audio_tokenizer
