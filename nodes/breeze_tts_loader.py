@@ -25,8 +25,8 @@ _CACHE: dict = {}          # cache_key -> BreezeHandle; at most one entry (one 7
 _LICENSE_PRINTED = False
 INSTALL_HINT = ("Breeze TTS is not installed. Run ComfyUI Manager's 'Try fix' for "
                 "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt"
-                " (pip installs the model code from GitHub, so `git` must be on PATH; needs torch >= 2.9 "
-                "and transformers >= 4.57, < 6)")
+                " (pip installs the model code from GitHub, so `git` must be on PATH; needs transformers "
+                ">= 4.57, < 6 and torch >= 2.7; the install never upgrades or replaces torch)")
 
 
 def _snapshot_dir() -> str:
