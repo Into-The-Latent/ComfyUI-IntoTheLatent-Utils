@@ -26,7 +26,7 @@ _LICENSE_PRINTED = False
 INSTALL_HINT = ("Breeze TTS is not installed. Run ComfyUI Manager's 'Try fix' for "
                 "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt"
                 " (pip installs the model code from GitHub, so `git` must be on PATH; needs torch >= 2.9 "
-                "and transformers >= 4.57)")
+                "and transformers >= 4.57, < 6)")
 
 
 def _snapshot_dir() -> str:

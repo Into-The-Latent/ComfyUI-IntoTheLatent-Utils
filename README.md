@@ -357,10 +357,10 @@ Changing Advanced sampling settings with `fast_path` on re-captures the graphs (
 `fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
 
 The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.2`), which
-works with transformers 4.57–5.x and does not change your torch install. Requirements: `git` on
-PATH (pip fetches the fork from GitHub), torch >= 2.9, transformers >= 4.57 (< 6). Users below
-those floors get upgraded by the install; on Windows check that the torch wheel pip picks is a
-CUDA build. If the nodes report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on
+works with transformers 4.57–5.x. Requirements: `git` on PATH (pip fetches the fork from GitHub),
+torch >= 2.9, transformers >= 4.57 (< 6). If you already meet those floors the install leaves torch
+and transformers untouched; if you are below them pip upgrades them, and on Windows you should then
+check that the torch wheel it picked is a CUDA build. If the nodes report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on
 this pack (pip needs `git`).
 
 **License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
