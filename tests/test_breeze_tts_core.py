@@ -1,11 +1,19 @@
 # Tests for the Breeze TTS engine helpers — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
+import os
+
+import numpy as np
 import pytest
+import soundfile as sf
+import torch
 
 from nodes.breeze_tts_core import (
     DEFAULT_SAMPLING,
     MODES,
     SamplingConfig,
+    audio_to_mono_numpy,
     build_request,
+    chunks_to_audio,
+    write_reference_wav,
 )
 
 
@@ -69,3 +77,47 @@ def test_build_request_missing_inputs(mode, kwargs, missing):
 def test_build_request_unknown_mode():
     with pytest.raises(ValueError, match="mode"):
         build_request("sing", "t")
+
+
+def test_audio_to_mono_numpy_batched_stereo_means_channels():
+    wav = torch.zeros((2, 2, 4))
+    wav[0, 0] = 1.0   # batch 0 left = 1, right = 0 -> mean 0.5
+    wav[1] = 9.0      # batch 1 must be ignored
+    out = audio_to_mono_numpy(wav)
+    assert out.shape == (4,) and out.dtype == np.float32
+    assert np.allclose(out, 0.5)
+
+
+def test_audio_to_mono_numpy_accepts_2d():
+    out = audio_to_mono_numpy(torch.ones((1, 3)))
+    assert out.shape == (3,)
+
+
+def test_audio_to_mono_numpy_rejects_other_ranks():
+    with pytest.raises(ValueError, match="waveform"):
+        audio_to_mono_numpy(torch.ones(5))
+
+
+def test_write_reference_wav_roundtrip(tmp_path):
+    sr = 16000
+    t = torch.linspace(0, 1, sr)
+    audio = {"waveform": torch.stack([t, -t])[None], "sample_rate": sr}   # [1, 2, N]
+    path = write_reference_wav(audio, str(tmp_path))
+    assert os.path.dirname(path) == str(tmp_path) and os.path.basename(path).startswith("breeze_ref_")
+    data, rate = sf.read(path, dtype="float32")
+    assert rate == sr and data.ndim == 1 and len(data) == sr
+    assert np.allclose(data, 0.0, atol=1e-4)   # channels cancel out
+
+
+def test_chunks_to_audio_concatenates():
+    out = chunks_to_audio([np.array([1, 2], np.float32), np.array([3], np.float32)], 24000)
+    assert out["sample_rate"] == 24000
+    assert out["waveform"].shape == (1, 1, 3) and out["waveform"].dtype == torch.float32
+    assert out["waveform"][0, 0].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_chunks_to_audio_rejects_empty():
+    with pytest.raises(ValueError, match="no audio"):
+        chunks_to_audio([], 24000)
+    with pytest.raises(ValueError, match="no audio"):
+        chunks_to_audio([np.zeros(0, np.float32)], 24000)

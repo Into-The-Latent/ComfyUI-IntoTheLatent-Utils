@@ -76,3 +76,32 @@ def build_request(mode: str, text: str, *, reference_text: str | None = None,
             raise ValueError("instruction is empty")
         request["instruction"] = ins
     return request
+
+
+def audio_to_mono_numpy(waveform) -> np.ndarray:
+    """ComfyUI AUDIO waveform ([B, C, N] or [C, N]) -> 1-D float32 mono of batch item 0."""
+    if not isinstance(waveform, torch.Tensor):
+        waveform = torch.as_tensor(waveform)
+    if waveform.dim() == 3:
+        waveform = waveform[0]
+    if waveform.dim() != 2:
+        raise ValueError(f"waveform must be [B, C, N] or [C, N], got shape {tuple(waveform.shape)}")
+    return waveform.detach().float().mean(dim=0).cpu().numpy().astype(np.float32, copy=False)
+
+
+def write_reference_wav(audio: dict, directory: str) -> str:
+    """Write an AUDIO dict as a mono PCM_16 WAV the Breeze runtime can load by path."""
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, f"breeze_ref_{uuid.uuid4().hex}.wav")
+    sf.write(path, audio_to_mono_numpy(audio["waveform"]), int(audio["sample_rate"]), subtype="PCM_16")
+    return path
+
+
+def chunks_to_audio(chunks, sample_rate: int) -> dict:
+    """Concatenate the runtime's 1-D float chunks into a ComfyUI AUDIO dict [1, 1, N]."""
+    parts = [np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks]
+    parts = [p for p in parts if p.size]
+    if not parts:
+        raise ValueError("Breeze TTS produced no audio")
+    wave = torch.from_numpy(np.concatenate(parts))
+    return {"waveform": wave[None, None, :], "sample_rate": int(sample_rate)}
