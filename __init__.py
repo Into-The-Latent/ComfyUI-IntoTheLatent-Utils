@@ -5,6 +5,12 @@ NODE_DISPLAY_NAME_MAPPINGS. Front-end (JS) extensions live under ``web/`` and ar
 served to the ComfyUI frontend via WEB_DIRECTORY.
 """
 
+from .nodes.breeze_vendor import ensure_on_path as _ensure_breeze_on_path
+
+# The Breeze TTS model code is vendored (vendor/breeze-tts); make it importable before any node
+# module that lazily imports `breeze_models` / `breeze_infer` can run.
+_ensure_breeze_on_path()
+
 from .nodes.ideogram4_nodes import ITLIdeogram4PromptBuilder
 from .nodes.ideogram4_style_wizard import ITLIdeogram4StyleWizard
 from .nodes.resolution_selector import ITLResolutionSelector
