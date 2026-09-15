@@ -337,6 +337,40 @@ Both nodes assume **one KSampler** in the workflow. Multi-sampler graphs (e.g. a
 two KSamplers) aren't disambiguated by the trace; wire the Advanced node's override sockets in that
 case.
 
+### ITL Breeze TTS (Loader, Voice Clone / Design / Direction)
+
+Text-to-speech with [Breeze TTS 2](https://github.com/breezeblue-ai/breeze-tts) (BreezeBlue, 3B,
+English + Chinese). Three modes, each as a Normal and an Advanced node:
+
+- **Voice Clone** — `reference_audio` + its exact `reference_text` → speak `text` in that voice.
+- **Voice Design** — describe the voice in `instruction` ("a calm, deep male voice"); no reference.
+- **Voice Direction** — reference audio + transcript + an `instruction` for tone, pace, emotion.
+
+Inline vocal events work in the text: `(laugh)`, `(sigh)`, `(clears throat)`; Chinese `[笑]`, `[叹气]`.
+Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_new_tokens`
+(defaults equal the Normal nodes). `cfg_scale` (Design / Direction only) defaults to 4.0; Voice
+Clone has no CFG — its prompt template has no negative branch.
+
+**First run** downloads the weights (~7.2 GB) from Hugging Face into `models/breeze_tts/Breeze-TTS-2/`.
+Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (CUDA graphs).
+Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
+`fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
+
+**Freeing VRAM:** the loaded model stays resident between runs so repeated generations are fast, and
+ComfyUI's own model manager cannot evict it. If an image or video model runs later in the same
+workflow, turn on `unload_after` on the generate node (or wire the audio through **ITL Breeze TTS
+Unload**); the next Breeze node reloads the weights (~20 s).
+
+The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.3`), which
+works with transformers 4.57–5.x. Requirements: `git` on PATH (pip fetches the fork from GitHub),
+torch >= 2.9, transformers >= 4.57 (< 6). If you already meet those floors the install leaves torch
+and transformers untouched; if you are below them pip upgrades them, and on Windows you should then
+check that the torch wheel it picked is a CUDA build. If the nodes report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on
+this pack (pip needs `git`).
+
+**License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
+*research and non-commercial* (BreezeBlue Research and Non-Commercial License).
+
 ## Credits & License
 
 Licensed under **GPL-3.0** — see [LICENSE](LICENSE).

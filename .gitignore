@@ -22,3 +22,6 @@ Thumbs.db
 # Logs
 *.log
 .hash_cache.json
+
+# SDD scratch workspaces
+.superpowers/

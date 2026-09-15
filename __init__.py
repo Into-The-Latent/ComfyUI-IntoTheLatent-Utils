@@ -13,6 +13,12 @@ from .nodes.save_civitai_metadata import ITLSaveCivitaiMetadata, ITLSaveCivitaiM
 from .nodes.multi_image_loader import ITLMultiImageLoader, ITLMultiImageLoaderAdvanced
 from .nodes.multi_audio_loader import ITLMultiAudioLoader, ITLMultiAudioLoaderAdvanced
 from .nodes.multi_video_loader import ITLMultiVideoLoader, ITLMultiVideoLoaderAdvanced
+from .nodes.breeze_tts_loader import ITLBreezeTTSLoader, ITLBreezeTTSUnload
+from .nodes.breeze_tts_generate import (
+    ITLBreezeTTSVoiceClone, ITLBreezeTTSVoiceCloneAdvanced,
+    ITLBreezeTTSVoiceDesign, ITLBreezeTTSVoiceDesignAdvanced,
+    ITLBreezeTTSVoiceDirection, ITLBreezeTTSVoiceDirectionAdvanced,
+)
 
 # Key MUST match each node's schema node_id.
 NODE_CLASS_MAPPINGS = {
@@ -28,6 +34,14 @@ NODE_CLASS_MAPPINGS = {
     "ITLMultiAudioLoaderAdvanced": ITLMultiAudioLoaderAdvanced,
     "ITLMultiVideoLoader": ITLMultiVideoLoader,
     "ITLMultiVideoLoaderAdvanced": ITLMultiVideoLoaderAdvanced,
+    "ITLBreezeTTSLoader": ITLBreezeTTSLoader,
+    "ITLBreezeTTSUnload": ITLBreezeTTSUnload,
+    "ITLBreezeTTSVoiceClone": ITLBreezeTTSVoiceClone,
+    "ITLBreezeTTSVoiceCloneAdvanced": ITLBreezeTTSVoiceCloneAdvanced,
+    "ITLBreezeTTSVoiceDesign": ITLBreezeTTSVoiceDesign,
+    "ITLBreezeTTSVoiceDesignAdvanced": ITLBreezeTTSVoiceDesignAdvanced,
+    "ITLBreezeTTSVoiceDirection": ITLBreezeTTSVoiceDirection,
+    "ITLBreezeTTSVoiceDirectionAdvanced": ITLBreezeTTSVoiceDirectionAdvanced,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -43,6 +57,14 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ITLMultiAudioLoaderAdvanced": "ITL Multi Audio Loader Advanced",
     "ITLMultiVideoLoader": "ITL Multi Video Loader",
     "ITLMultiVideoLoaderAdvanced": "ITL Multi Video Loader Advanced",
+    "ITLBreezeTTSLoader": "ITL Breeze TTS Loader",
+    "ITLBreezeTTSUnload": "ITL Breeze TTS Unload",
+    "ITLBreezeTTSVoiceClone": "ITL Breeze TTS Voice Clone",
+    "ITLBreezeTTSVoiceCloneAdvanced": "ITL Breeze TTS Voice Clone Advanced",
+    "ITLBreezeTTSVoiceDesign": "ITL Breeze TTS Voice Design",
+    "ITLBreezeTTSVoiceDesignAdvanced": "ITL Breeze TTS Voice Design Advanced",
+    "ITLBreezeTTSVoiceDirection": "ITL Breeze TTS Voice Direction",
+    "ITLBreezeTTSVoiceDirectionAdvanced": "ITL Breeze TTS Voice Direction Advanced",
 }
 
 # Folder of front-end JavaScript served to the ComfyUI client.
