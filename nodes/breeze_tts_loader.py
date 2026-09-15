@@ -108,6 +108,17 @@ def _evict_all():
         pass
 
 
+def unload():
+    """Drop the resident Breeze model and give its VRAM back.
+
+    ComfyUI's model manager does not know about `_CACHE`, so it can never evict the ~7.7 GiB
+    itself: without this, a workflow that runs Breeze and then an image/video model OOMs on the
+    second model. Called by the generate nodes' `unload_after` toggle and by the Unload node."""
+    if _CACHE:
+        print("[Breeze TTS] unloading model")
+    _evict_all()
+
+
 def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
     global _LICENSE_PRINTED
     _require_cuda()
@@ -131,9 +142,11 @@ def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
 def resolve_handle(key) -> BreezeHandle:
     """Turn a BREEZE_TTS key (what the loader node now outputs) back into a live BreezeHandle.
 
-    A `_CACHE` hit returns the resident handle for free; a miss reloads — that's the point: the
-    graph carries only the small immutable key, so ComfyUI's output cache never pins the ~7 GB of
-    model tensors, whatever cache mode (classic / LRU / RAM-pressure) is active."""
+    A `_CACHE` hit returns the resident handle for free; a miss reloads. The graph carries only
+    the small immutable key so that ComfyUI's output cache holds no second reference to the model
+    tensors; `_CACHE` itself is the one thing that keeps them resident, and only unload() (via
+    the generate nodes' `unload_after` toggle or the Unload node) releases them — ComfyUI's own
+    cache modes and model manager cannot see or evict this cache."""
     _, attention, fast_path = key
     return load_handle(attention, fast_path)
 
@@ -167,3 +180,31 @@ Weights are research / non-commercial (BreezeBlue license).""",
     @classmethod
     def execute(cls, attention="sdpa", fast_path=False) -> io.NodeOutput:
         return io.NodeOutput(load_handle(attention, fast_path).key)
+
+
+class ITLBreezeTTSUnload(io.ComfyNode):
+    """Pass-through node that frees the Breeze model. Wire the generated AUDIO through it so the
+    unload happens after synthesis and before the next model in the workflow loads."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="ITLBreezeTTSUnload",
+            display_name="ITL Breeze TTS Unload",
+            category="Into The Latent/audio",
+            search_aliases=["breeze", "tts", "unload", "free vram"],
+            is_experimental=True,
+            description="""
+Frees the Breeze TTS model from VRAM (~7.7 GiB) and passes the audio through unchanged.
+
+Put it between a Breeze generate node and whatever uses the audio next, so an image or video
+model later in the workflow has the memory. The next Breeze node reloads the weights (~20 s).
+The generate nodes' `unload_after` toggle does the same thing without an extra node.""",
+            inputs=[io.Audio.Input("audio", tooltip="Passed through unchanged.")],
+            outputs=[io.Audio.Output(display_name="audio")],
+        )
+
+    @classmethod
+    def execute(cls, audio) -> io.NodeOutput:
+        unload()
+        return io.NodeOutput(audio)

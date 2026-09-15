@@ -123,6 +123,14 @@ def test_chunks_to_audio_concatenates():
     assert out["waveform"][0, 0].tolist() == [1.0, 2.0, 3.0]
 
 
+def test_chunks_to_audio_skips_none_chunks():
+    # np.asarray(None, dtype=float32) is a one-sample NaN, so None must be filtered, not converted.
+    out = chunks_to_audio([None, np.array([1, 2], np.float32), None], 24000)
+    assert out["waveform"][0, 0].tolist() == [1.0, 2.0]
+    with pytest.raises(ValueError, match="no audio"):
+        chunks_to_audio([None], 24000)
+
+
 def test_chunks_to_audio_rejects_empty():
     with pytest.raises(ValueError, match="no audio"):
         chunks_to_audio([], 24000)
@@ -261,6 +269,39 @@ def test_generate_audio_removes_temp_wav_on_failure(tmp_path):
         generate_audio(handle, api, mode="direction", text="hi", seed=1, cfg_scale=4.0,
                        reference_audio=ref, reference_text="hi", instruction="fast", temp_dir=str(tmp_path))
     assert not list(tmp_path.iterdir())
+
+
+def test_generate_audio_tolerates_temp_wav_delete_failure(tmp_path, monkeypatch):
+    log = []
+    handle, api = _stub(log)
+    ref = {"waveform": torch.zeros((1, 1, 800)), "sample_rate": 8000}
+    real_remove = os.remove
+
+    def locked(path):
+        raise PermissionError(32, "The process cannot access the file", path)
+    monkeypatch.setattr(os, "remove", locked)
+    out = generate_audio(handle, api, mode="clone", text="hi", seed=1, cfg_scale=1.0,
+                         reference_audio=ref, reference_text="hi", temp_dir=str(tmp_path))
+    assert out["waveform"].shape == (1, 1, 3)          # the result survives a failed cleanup
+
+    def boom(*a, **k):
+        raise RuntimeError("cuda oom")
+    api.prepare_inputs = boom
+    with pytest.raises(RuntimeError, match="cuda oom"):   # and the real error is not masked
+        generate_audio(handle, api, mode="clone", text="hi", seed=1, cfg_scale=1.0,
+                       reference_audio=ref, reference_text="hi", temp_dir=str(tmp_path))
+    monkeypatch.setattr(os, "remove", real_remove)
+
+
+def test_generate_audio_seeds_after_runtime_is_built(tmp_path):
+    log = []
+    handle = BreezeHandle(("p", "sdpa", False), "tok", "model", "atok",
+                          lambda m, a, t, kw: (log.append(("build",)), _Runtime(log))[1])
+    _, api = _stub(log)
+    generate_audio(handle, api, mode="design", text="hi", seed=7, cfg_scale=4.0,
+                   instruction="deep voice", temp_dir=str(tmp_path))
+    kinds = [e[0] for e in log]
+    assert kinds == ["prepare", "build", "seed", "iter"]   # building may consume RNG; seed last
 
 
 def test_generate_audio_validates_before_touching_runtime(tmp_path):

@@ -10,7 +10,7 @@ import folder_paths
 from comfy_api.latest import io
 
 from .breeze_tts_core import DEFAULT_SAMPLING, SamplingConfig, generate_audio
-from .breeze_tts_loader import BREEZE_TTS, INSTALL_HINT, resolve_handle
+from .breeze_tts_loader import BREEZE_TTS, INSTALL_HINT, resolve_handle, unload
 
 _MODE_INFO = {
     # (title, cfg_scale default, blurb). Clone's cfg default is unused — the clone template has no
@@ -67,6 +67,10 @@ def _inputs(mode: str, advanced: bool):
             io.Int.Input("max_new_tokens", default=d.max_new_tokens, min=50, max=1500,
                          tooltip="Caps output length; ~12.5 codec frames per second of audio."),
         ]
+    ins.append(io.Boolean.Input("unload_after", default=False,
+                                tooltip="Free the Breeze model (~7.7 GiB VRAM) after this node runs. Turn on when "
+                                        "an image/video model runs later in the same workflow; the next Breeze "
+                                        "node reloads the weights."))
     return ins
 
 
@@ -94,7 +98,7 @@ def _make_node(mode: str, advanced: bool):
         @classmethod
         def execute(cls, model, text, seed, reference_audio=None, reference_text=None, instruction=None,
                     cfg_scale=1.0, temperature=None, top_k=None, top_p=None, repetition_penalty=None,
-                    max_new_tokens=None) -> io.NodeOutput:
+                    max_new_tokens=None, unload_after=False) -> io.NodeOutput:
             sampling = DEFAULT_SAMPLING
             if advanced:
                 sampling = SamplingConfig(temperature=temperature, top_k=top_k, top_p=top_p,
@@ -103,6 +107,8 @@ def _make_node(mode: str, advanced: bool):
                                    cfg_scale=cfg_scale, sampling=sampling, reference_audio=reference_audio,
                                    reference_text=reference_text, instruction=instruction,
                                    temp_dir=folder_paths.get_temp_directory())
+            if unload_after:
+                unload()
             return io.NodeOutput(audio)
 
     _Node.__name__ = _Node.__qualname__ = node_id

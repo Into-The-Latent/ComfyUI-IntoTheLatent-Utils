@@ -13,7 +13,7 @@ from .nodes.save_civitai_metadata import ITLSaveCivitaiMetadata, ITLSaveCivitaiM
 from .nodes.multi_image_loader import ITLMultiImageLoader, ITLMultiImageLoaderAdvanced
 from .nodes.multi_audio_loader import ITLMultiAudioLoader, ITLMultiAudioLoaderAdvanced
 from .nodes.multi_video_loader import ITLMultiVideoLoader, ITLMultiVideoLoaderAdvanced
-from .nodes.breeze_tts_loader import ITLBreezeTTSLoader
+from .nodes.breeze_tts_loader import ITLBreezeTTSLoader, ITLBreezeTTSUnload
 from .nodes.breeze_tts_generate import (
     ITLBreezeTTSVoiceClone, ITLBreezeTTSVoiceCloneAdvanced,
     ITLBreezeTTSVoiceDesign, ITLBreezeTTSVoiceDesignAdvanced,
@@ -35,6 +35,7 @@ NODE_CLASS_MAPPINGS = {
     "ITLMultiVideoLoader": ITLMultiVideoLoader,
     "ITLMultiVideoLoaderAdvanced": ITLMultiVideoLoaderAdvanced,
     "ITLBreezeTTSLoader": ITLBreezeTTSLoader,
+    "ITLBreezeTTSUnload": ITLBreezeTTSUnload,
     "ITLBreezeTTSVoiceClone": ITLBreezeTTSVoiceClone,
     "ITLBreezeTTSVoiceCloneAdvanced": ITLBreezeTTSVoiceCloneAdvanced,
     "ITLBreezeTTSVoiceDesign": ITLBreezeTTSVoiceDesign,
@@ -57,6 +58,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ITLMultiVideoLoader": "ITL Multi Video Loader",
     "ITLMultiVideoLoaderAdvanced": "ITL Multi Video Loader Advanced",
     "ITLBreezeTTSLoader": "ITL Breeze TTS Loader",
+    "ITLBreezeTTSUnload": "ITL Breeze TTS Unload",
     "ITLBreezeTTSVoiceClone": "ITL Breeze TTS Voice Clone",
     "ITLBreezeTTSVoiceCloneAdvanced": "ITL Breeze TTS Voice Clone Advanced",
     "ITLBreezeTTSVoiceDesign": "ITL Breeze TTS Voice Design",

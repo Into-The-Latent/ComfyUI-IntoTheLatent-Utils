@@ -99,7 +99,8 @@ def write_reference_wav(audio: dict, directory: str) -> str:
 
 def chunks_to_audio(chunks, sample_rate: int) -> dict:
     """Concatenate the runtime's 1-D float chunks into a ComfyUI AUDIO dict [1, 1, N]."""
-    parts = [np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks]
+    # `None` is skipped explicitly: np.asarray(None, dtype=float32) is a one-sample NaN, not an error.
+    parts = [np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks if c is not None]
     parts = [p for p in parts if p.size]
     if not parts:
         raise ValueError("Breeze TTS produced no audio")
@@ -196,11 +197,14 @@ def generate_audio(handle: BreezeHandle, api, *, mode: str, text: str, seed: int
         inputs = api.prepare_inputs(handle.tokenizer, handle.audio_tokenizer, handle.model, [request],
                                     template, guidance_scale=float(cfg_scale),
                                     guidance_scale_ref=None, guidance_scale_ins=None)
-        api.set_all_seeds(seed)
-        runtime = handle.runtime_for(sampling)
+        runtime = handle.runtime_for(sampling)   # may build (and with fast_path, warm up) a runtime
+        api.set_all_seeds(seed)                   # so seeding is the last thing before generation
         with torch.inference_mode():
             chunks = [c.audio for c in runtime.iter_audio_chunks(inputs, request_id=REQUEST_ID, seed=seed)]
         return chunks_to_audio(chunks, runtime.sample_rate)
     finally:
-        if ref_path and os.path.exists(ref_path):
-            os.remove(ref_path)
+        if ref_path:
+            try:
+                os.remove(ref_path)
+            except OSError:
+                pass  # a stray temp file must not fail the node or mask an in-flight exception
