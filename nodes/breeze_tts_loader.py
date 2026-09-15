@@ -1,0 +1,139 @@
+# Breeze TTS Loader node — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
+#
+# Loads Breeze TTS 2 (BreezeBlue, 3B, English + Chinese) and hands it to the generate nodes as
+# a BREEZE_TTS handle. The first run downloads the Hugging Face snapshot (~7.2 GB) into
+# models/breeze_tts/Breeze-TTS-2/; later runs find it there. Design:
+# docs/superpowers/specs/2026-09-14-breeze-tts-design.md. All Breeze imports are lazy so the
+# pack loads even when the `breeze-tts` fork is not installed.
+import gc
+import os
+
+import folder_paths
+from comfy_api.latest import io
+
+from .breeze_tts_core import (
+    DOWNLOAD_IGNORE, REPO_ID, SNAPSHOT_DIRNAME, BreezeHandle, cache_key, missing_snapshot_files,
+)
+
+BREEZE_TTS = io.Custom("BREEZE_TTS")
+
+_MODELS_SUBDIR = "breeze_tts"
+folder_paths.add_model_folder_path(_MODELS_SUBDIR, os.path.join(folder_paths.models_dir, _MODELS_SUBDIR))
+
+_CACHE: dict = {}          # cache_key -> BreezeHandle; at most one entry (one 7 GB model resident)
+_LICENSE_PRINTED = False
+INSTALL_HINT = ("Breeze TTS is not installed. Run ComfyUI Manager's 'Try fix' for "
+                "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt")
+
+
+def _snapshot_dir() -> str:
+    return os.path.join(folder_paths.get_folder_paths(_MODELS_SUBDIR)[0], SNAPSHOT_DIRNAME)
+
+
+def _snapshot_download(**kwargs):
+    from huggingface_hub import snapshot_download
+    snapshot_download(**kwargs)
+
+
+def ensure_snapshot(ckpt_dir: str) -> str:
+    """Download the weights if any required file is missing; resumes partial downloads."""
+    missing = missing_snapshot_files(ckpt_dir)
+    if not missing:
+        return ckpt_dir
+    print(f"[Breeze TTS] downloading {REPO_ID} (~7.2 GB) to {ckpt_dir} ...")
+    try:
+        _snapshot_download(repo_id=REPO_ID, local_dir=ckpt_dir, ignore_patterns=list(DOWNLOAD_IGNORE))
+    except Exception as e:
+        raise RuntimeError(f"Breeze TTS download to {ckpt_dir} failed: {e}") from e
+    still = missing_snapshot_files(ckpt_dir)
+    if still:
+        raise RuntimeError(f"Breeze TTS download finished but files are missing in {ckpt_dir}: {', '.join(still)}")
+    print("[Breeze TTS] download done")
+    return ckpt_dir
+
+
+def _require_cuda():
+    import torch
+    if not torch.cuda.is_available():
+        raise RuntimeError("Breeze TTS needs an NVIDIA GPU (CUDA); the upstream runtime has no CPU path.")
+
+
+def _load_pieces(ckpt_dir: str, attention: str):
+    try:
+        from breeze_infer.runtime import load_runtime, resolve_device, update_generation_config_for_breeze
+    except ImportError as e:
+        raise ImportError(INSTALL_HINT) from e
+    from pathlib import Path
+    tokenizer, model, audio_tokenizer = load_runtime(Path(ckpt_dir), device=resolve_device(),
+                                                     attn_implementation=attention)
+    update_generation_config_for_breeze(model)
+    return tokenizer, model, audio_tokenizer
+
+
+def _runtime_factory(fast_path: bool):
+    from breeze_models.fast_streaming import FastBreezeStreamingRuntime, FastStreamingConfig
+
+    def build(model, audio_tokenizer, tokenizer, kwargs):
+        config = FastStreamingConfig(fast_all=True if fast_path else None, **kwargs)
+        return FastBreezeStreamingRuntime(model, audio_tokenizer, config, tokenizer=tokenizer)
+    return build
+
+
+def _evict_all():
+    _CACHE.clear()
+    gc.collect()
+    try:
+        import comfy.model_management as mm
+        mm.soft_empty_cache()
+    except Exception:
+        pass
+
+
+def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
+    global _LICENSE_PRINTED
+    _require_cuda()
+    ckpt_dir = ensure_snapshot(_snapshot_dir())
+    key = cache_key(ckpt_dir, attention, fast_path)
+    handle = _CACHE.get(key)
+    if handle is not None:
+        return handle
+    _evict_all()
+    if not _LICENSE_PRINTED:
+        print("[Breeze TTS] weights are licensed for research and non-commercial use only "
+              "(BreezeBlue Research and Non-Commercial License).")
+        _LICENSE_PRINTED = True
+    tokenizer, model, audio_tokenizer = _load_pieces(ckpt_dir, attention)
+    handle = BreezeHandle(key, tokenizer, model, audio_tokenizer, _runtime_factory(fast_path))
+    _CACHE[key] = handle
+    return handle
+
+
+class ITLBreezeTTSLoader(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="ITLBreezeTTSLoader",
+            display_name="ITL Breeze TTS Loader",
+            category="Into The Latent/audio",
+            search_aliases=["breeze", "tts", "text to speech", "voice clone"],
+            is_experimental=True,
+            description="""
+Loads Breeze TTS 2 (BreezeBlue — English + Chinese text-to-speech, voice clone / design / direction).
+
+First run downloads the weights (~7.2 GB) from Hugging Face into models/breeze_tts/Breeze-TTS-2/.
+Needs an NVIDIA GPU: ~7.7 GiB VRAM (fast_path off) or ~14.4 GiB (fast_path on).
+Weights are research / non-commercial (BreezeBlue license).""",
+            inputs=[
+                io.Combo.Input("attention", options=["sdpa", "eager"], default="sdpa",
+                               tooltip="Attention kernel. 'sdpa' is faster; 'eager' is upstream's reference path."),
+                io.Boolean.Input("fast_path", default=False,
+                                 tooltip="Capture CUDA graphs for every stage (upstream --fast-all). Faster "
+                                         "generation, ~2x VRAM, longer first run. Changing sampling settings "
+                                         "re-captures."),
+            ],
+            outputs=[BREEZE_TTS.Output(display_name="model")],
+        )
+
+    @classmethod
+    def execute(cls, attention="sdpa", fast_path=False) -> io.NodeOutput:
+        return io.NodeOutput(load_handle(attention, fast_path))
