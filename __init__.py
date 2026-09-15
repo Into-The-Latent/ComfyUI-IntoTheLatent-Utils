@@ -19,6 +19,8 @@ from .nodes.breeze_tts_generate import (
     ITLBreezeTTSVoiceDesign, ITLBreezeTTSVoiceDesignAdvanced,
     ITLBreezeTTSVoiceDirection, ITLBreezeTTSVoiceDirectionAdvanced,
 )
+from .nodes.whisper_loader import ITLWhisperLoader
+from .nodes.whisper_transcribe import ITLWhisperTranscribe
 
 # Key MUST match each node's schema node_id.
 NODE_CLASS_MAPPINGS = {
@@ -42,6 +44,8 @@ NODE_CLASS_MAPPINGS = {
     "ITLBreezeTTSVoiceDesignAdvanced": ITLBreezeTTSVoiceDesignAdvanced,
     "ITLBreezeTTSVoiceDirection": ITLBreezeTTSVoiceDirection,
     "ITLBreezeTTSVoiceDirectionAdvanced": ITLBreezeTTSVoiceDirectionAdvanced,
+    "ITLWhisperLoader": ITLWhisperLoader,
+    "ITLWhisperTranscribe": ITLWhisperTranscribe,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -65,6 +69,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ITLBreezeTTSVoiceDesignAdvanced": "ITL Breeze TTS Voice Design Advanced",
     "ITLBreezeTTSVoiceDirection": "ITL Breeze TTS Voice Direction",
     "ITLBreezeTTSVoiceDirectionAdvanced": "ITL Breeze TTS Voice Direction Advanced",
+    "ITLWhisperLoader": "ITL Whisper Loader",
+    "ITLWhisperTranscribe": "ITL Whisper Transcribe",
 }
 
 # Folder of front-end JavaScript served to the ComfyUI client.

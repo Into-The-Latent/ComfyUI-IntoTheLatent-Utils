@@ -29,7 +29,10 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/Into-The-Latent/ComfyUI-IntoTheLatent-Utils
 ```
 
-No extra dependencies (it uses Pillow, already shipped with ComfyUI). It can coexist with
+Then install the pack's requirements (ComfyUI Manager does this for you; for a manual clone run
+`pip install -r requirements.txt` with ComfyUI's Python). The pack needs `soundfile` to import at
+all, the Breeze TTS nodes need the fork listed there, and the Whisper nodes need `librosa` for
+resampling; `transformers` comes with ComfyUI itself. It can coexist with
 ComfyUI-KJNodes — both Ideogram 4 nodes run side by side without conflict.
 
 ## Nodes
@@ -346,6 +349,9 @@ English + Chinese). Three modes, each as a Normal and an Advanced node:
 - **Voice Design** — describe the voice in `instruction` ("a calm, deep male voice"); no reference.
 - **Voice Direction** — reference audio + transcript + an `instruction` for tone, pace, emotion.
 
+`reference_text` must be the clip's exact transcript — **ITL Whisper Transcribe** (below) produces it
+from the reference audio.
+
 Inline vocal events work in the text: `(laugh)`, `(sigh)`, `(clears throat)`; Chinese `[笑]`, `[叹气]`.
 Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_new_tokens`
 (defaults equal the Normal nodes). `cfg_scale` (Design / Direction only) defaults to 4.0; Voice
@@ -371,6 +377,34 @@ this pack (pip needs `git`).
 **License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
 *research and non-commercial* (BreezeBlue Research and Non-Commercial License).
 
+### ITL Whisper Transcribe (Loader + Audio to Text)
+
+Speech-to-text with [OpenAI Whisper](https://github.com/openai/whisper) through `transformers`.
+Two nodes:
+
+- **ITL Whisper Loader** — picks the model (`large-v3-turbo` default, `large-v3`, `medium`,
+  `small`, `base`, `tiny`) and the device (`auto` / `cuda` / `cpu`).
+- **ITL Whisper Transcribe** — `AUDIO` in, transcript `STRING` out. `language` is `auto` or a
+  fixed code (pick one when detection guesses wrong). `unload_after` frees the model.
+
+Built to feed the Breeze TTS Clone / Direction nodes' `reference_text`, but it is a general
+transcription node: stereo is downmixed, any sample rate is accepted, and clips longer than 30 s
+are transcribed with sequential long-form decoding. Whisper's punctuation and casing are
+used as-is. For Chinese, Whisper writes simplified or traditional characters depending on the
+audio; check the text before using it as a Breeze transcript.
+
+One Whisper model stays resident at a time: two loaders with different models in one workflow
+reload on every run.
+
+**First run** downloads the checkpoint from Hugging Face into `models/whisper/whisper-<model>/`
+(only the safetensors + tokenizer files: `large-v3-turbo` 1.6 GB, `large-v3` 3.1 GB, `medium` 3.1 GB,
+`small` 1 GB, `base` 290 MB, `tiny` 150 MB). Runs in fp16 on CUDA (`large-v3-turbo` ≈ 2 GiB VRAM,
+`large-v3` ≈ 3.5 GiB) or fp32 on CPU. Whisper and Breeze can be resident together (≈ 10 GiB).
+
+No install beyond the pack's `requirements.txt`: Whisper runs on `transformers` (>= 4.57, shipped
+with ComfyUI) and resamples with `librosa` (in `requirements.txt`). Whisper weights are Apache 2.0;
+the node code is GPL-3.0 like the rest of this pack.
+
 ## Credits & License
 
 Licensed under **GPL-3.0** — see [LICENSE](LICENSE).
@@ -380,7 +414,7 @@ Only the **Ideogram 4 Prompt Builder** node and its canvas editor are derived fr
 Kijai for that original work — the derived files retain their attribution.
 
 Everything else in this pack — the **Ideogram 4 Style Wizard**, the **Resolution Selector**, the
-**Prompt Batch** node, and the **Save Metadata (Civitai)** nodes — is original development by
-**Into The Latent**.
+**Prompt Batch** node, the **Save Metadata (Civitai)** nodes, the **Multi Loaders**, the **Breeze TTS** nodes
+and the **Whisper** nodes — is original development by **Into The Latent**.
 
 Because the pack includes Kijai's GPL-3.0 code, the whole pack is released under **GPL-3.0** as well.

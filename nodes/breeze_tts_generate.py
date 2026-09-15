@@ -48,7 +48,8 @@ def _inputs(mode: str, advanced: bool):
         ins += [
             io.Audio.Input("reference_audio", tooltip="A few seconds of the voice to imitate (mono is fine; stereo is downmixed)."),
             io.String.Input("reference_text", multiline=True, default="",
-                            tooltip="Exact transcript of reference_audio. Wrong text = wrong voice."),
+                            tooltip="Exact transcript of reference_audio. Wrong text = wrong voice. "
+                                    "ITL Whisper Transcribe can produce it from the clip."),
         ]
     if mode in ("design", "direction"):
         ins.append(io.String.Input("instruction", multiline=True, default="",
