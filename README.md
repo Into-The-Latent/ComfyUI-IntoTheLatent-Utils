@@ -367,12 +367,13 @@ ComfyUI's own model manager cannot evict it. If an image or video model runs lat
 workflow, turn on `unload_after` on the generate node (or wire the audio through **ITL Breeze TTS
 Unload**); the next Breeze node reloads the weights (~20 s).
 
-The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.4`), which
+The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.5`), which
 works with transformers 4.57–5.x. Requirements: `git` on PATH (pip fetches the fork from GitHub),
-transformers >= 4.57 (< 6), torch >= 2.3. **The install never upgrades or replaces torch:** the fork
-declares no torch version floor and no torchaudio, so your existing CUDA build stays exactly as it is
-(pip may still move transformers within 4.57–5.x, which is harmless). If your torch is older than
-2.3 the nodes say so at load time instead of pip swapping it for a CPU-only wheel. If the nodes
+transformers >= 4.57 (< 6), torch >= 2.7. **The install never upgrades or replaces torch:** the fork
+declares no torch version floor and no torchaudio, so your existing CUDA build stays exactly as it is.
+pip may still move transformers within 4.57–5.x; if it lands on 5.x, `fast_path` is refused (see
+above), everything else works. If your torch is older than 2.7 the nodes say so at load time instead
+of pip swapping it for a CPU-only wheel. If the nodes
 report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on this pack (pip needs `git`).
 
 **License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are

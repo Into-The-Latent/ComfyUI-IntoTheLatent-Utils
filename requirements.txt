@@ -3,7 +3,7 @@ pillow>=10.3.0
 # Breeze TTS 2 nodes (ITL Breeze TTS *). Our fork of breezeblue-ai/breeze-tts: pip-installable,
 # transformers 4.57–5.x, no qwen-tts pin, and no torch version floor (so pip never replaces the
 # host's torch build; see tests/test_requirements.py). Pinned to a tag on purpose.
-breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.4
+breeze-tts @ git+https://github.com/Into-The-Latent/breeze-tts@comfyui-v1.5
 librosa>=0.10
 soundfile>=0.13
 huggingface_hub>=0.25
