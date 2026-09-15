@@ -1,7 +1,8 @@
 # Breeze TTS Loader node — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
-# Loads Breeze TTS 2 (BreezeBlue, 3B, English + Chinese) and hands it to the generate nodes as
-# a BREEZE_TTS handle. The first run downloads the Hugging Face snapshot (~7.2 GB) into
+# Loads Breeze TTS 2 (BreezeBlue, 3B, English + Chinese) and hands the generate nodes a
+# BREEZE_TTS key (the immutable cache_key tuple, not the loaded model — see resolve_handle()
+# below). The first run downloads the Hugging Face snapshot (~7.2 GB) into
 # models/breeze_tts/Breeze-TTS-2/; later runs find it there. Design:
 # docs/superpowers/specs/2026-09-14-breeze-tts-design.md. All Breeze imports are lazy so the
 # pack loads even when the `breeze-tts` fork is not installed.
@@ -23,7 +24,9 @@ folder_paths.add_model_folder_path(_MODELS_SUBDIR, os.path.join(folder_paths.mod
 _CACHE: dict = {}          # cache_key -> BreezeHandle; at most one entry (one 7 GB model resident)
 _LICENSE_PRINTED = False
 INSTALL_HINT = ("Breeze TTS is not installed. Run ComfyUI Manager's 'Try fix' for "
-                "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt")
+                "ComfyUI-IntoTheLatent-Utils, or: pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt"
+                " (pip installs the model code from GitHub, so `git` must be on PATH; needs torch >= 2.9 "
+                "and transformers >= 4.57)")
 
 
 def _snapshot_dir() -> str:
@@ -111,6 +114,16 @@ def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
     return handle
 
 
+def resolve_handle(key) -> BreezeHandle:
+    """Turn a BREEZE_TTS key (what the loader node now outputs) back into a live BreezeHandle.
+
+    A `_CACHE` hit returns the resident handle for free; a miss reloads — that's the point: the
+    graph carries only the small immutable key, so ComfyUI's output cache never pins the ~7 GB of
+    model tensors, whatever cache mode (classic / LRU / RAM-pressure) is active."""
+    _, attention, fast_path = key
+    return load_handle(attention, fast_path)
+
+
 class ITLBreezeTTSLoader(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -139,4 +152,4 @@ Weights are research / non-commercial (BreezeBlue license).""",
 
     @classmethod
     def execute(cls, attention="sdpa", fast_path=False) -> io.NodeOutput:
-        return io.NodeOutput(load_handle(attention, fast_path))
+        return io.NodeOutput(load_handle(attention, fast_path).key)

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("comfy_api")  # only runs inside a ComfyUI environment
-import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from nodes import breeze_tts_core as core  # noqa: E402
@@ -77,10 +76,18 @@ def test_load_handle_caches_and_evicts(monkeypatch, tmp_path):
 
 
 def test_loader_execute_returns_handle(monkeypatch):
-    sentinel = object()
+    sentinel = SimpleNamespace(key=("p", "sdpa", False))
     monkeypatch.setattr(loader, "load_handle", lambda attention, fast_path: sentinel)
     out = loader.ITLBreezeTTSLoader.execute(attention="sdpa", fast_path=False)
-    assert out.args[0] is sentinel
+    assert out.args[0] == sentinel.key
+
+
+def test_resolve_handle_uses_load_handle(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(loader, "load_handle", lambda attention, fast_path: seen.update(
+        attention=attention, fast_path=fast_path) or "RESOLVED")
+    out = loader.resolve_handle(("x", "sdpa", True))
+    assert out == "RESOLVED" and seen == {"attention": "sdpa", "fast_path": True}
 
 
 def test_runtime_factory_import_error_names_install_hint(monkeypatch):
@@ -93,8 +100,8 @@ def test_runtime_factory_import_error_names_install_hint(monkeypatch):
 from nodes import breeze_tts_generate as gen  # noqa: E402
 
 EXPECTED = {
-    "ITLBreezeTTSVoiceClone": ("ITL Breeze TTS Voice Clone", ["model", "text", "reference_audio", "reference_text", "seed", "cfg_scale"]),
-    "ITLBreezeTTSVoiceCloneAdvanced": ("ITL Breeze TTS Voice Clone Advanced", ["model", "text", "reference_audio", "reference_text", "seed", "cfg_scale", "temperature", "top_k", "top_p", "repetition_penalty", "max_new_tokens"]),
+    "ITLBreezeTTSVoiceClone": ("ITL Breeze TTS Voice Clone", ["model", "text", "reference_audio", "reference_text", "seed"]),
+    "ITLBreezeTTSVoiceCloneAdvanced": ("ITL Breeze TTS Voice Clone Advanced", ["model", "text", "reference_audio", "reference_text", "seed", "temperature", "top_k", "top_p", "repetition_penalty", "max_new_tokens"]),
     "ITLBreezeTTSVoiceDesign": ("ITL Breeze TTS Voice Design", ["model", "text", "instruction", "seed", "cfg_scale"]),
     "ITLBreezeTTSVoiceDesignAdvanced": ("ITL Breeze TTS Voice Design Advanced", ["model", "text", "instruction", "seed", "cfg_scale", "temperature", "top_k", "top_p", "repetition_penalty", "max_new_tokens"]),
     "ITLBreezeTTSVoiceDirection": ("ITL Breeze TTS Voice Direction", ["model", "text", "reference_audio", "reference_text", "instruction", "seed", "cfg_scale"]),
@@ -112,8 +119,9 @@ def test_generate_schemas(node_id):
     assert [i.id for i in s.inputs] == inputs
     assert [o.io_type for o in s.outputs] == ["AUDIO"]
     assert s.inputs[0].io_type == "BREEZE_TTS"
-    cfg = next(i for i in s.inputs if i.id == "cfg_scale")
-    assert cfg.default == (1.0 if "Clone" in node_id else 4.0)
+    if "Clone" not in node_id:
+        cfg = next(i for i in s.inputs if i.id == "cfg_scale")
+        assert cfg.default == 4.0
     if "Advanced" in node_id:
         by_id = {i.id: i for i in s.inputs}
         assert (by_id["temperature"].default, by_id["top_k"].default, by_id["top_p"].default,
@@ -128,6 +136,7 @@ def _capture(monkeypatch, tmp_path):
         return {"waveform": torch.zeros((1, 1, 10)), "sample_rate": 24000}
     monkeypatch.setattr(gen, "generate_audio", fake_generate)
     monkeypatch.setattr(gen, "_api", lambda: "API")
+    monkeypatch.setattr(gen, "resolve_handle", lambda key: "H:" + str(key))
     import folder_paths
     monkeypatch.setattr(folder_paths, "get_temp_directory", lambda: str(tmp_path))
     return calls
@@ -135,10 +144,10 @@ def _capture(monkeypatch, tmp_path):
 
 def test_design_normal_execute(monkeypatch, tmp_path):
     calls = _capture(monkeypatch, tmp_path)
-    out = gen.ITLBreezeTTSVoiceDesign.execute(model="H", text="hi", instruction="deep", seed=3, cfg_scale=4.0)
+    out = gen.ITLBreezeTTSVoiceDesign.execute(model="K", text="hi", instruction="deep", seed=3, cfg_scale=4.0)
     assert out.args[0]["sample_rate"] == 24000
     kw = calls["kw"]
-    assert calls["handle"] == "H" and calls["api"] == "API"
+    assert calls["handle"] == "H:K" and calls["api"] == "API"
     assert kw["mode"] == "design" and kw["text"] == "hi" and kw["instruction"] == "deep"
     assert kw["seed"] == 3 and kw["cfg_scale"] == 4.0 and kw["temp_dir"] == str(tmp_path)
     assert kw["sampling"] == core.DEFAULT_SAMPLING
@@ -149,9 +158,10 @@ def test_direction_advanced_execute_passes_sampling(monkeypatch, tmp_path):
     calls = _capture(monkeypatch, tmp_path)
     ref = {"waveform": torch.zeros((1, 1, 5)), "sample_rate": 8000}
     gen.ITLBreezeTTSVoiceDirectionAdvanced.execute(
-        model="H", text="hi", reference_audio=ref, reference_text="hi", instruction="fast",
+        model="K", text="hi", reference_audio=ref, reference_text="hi", instruction="fast",
         seed=1, cfg_scale=2.5, temperature=0.5, top_k=10, top_p=0.9, repetition_penalty=1.3, max_new_tokens=300)
     kw = calls["kw"]
+    assert calls["handle"] == "H:K"
     assert kw["mode"] == "direction" and kw["reference_audio"] is ref and kw["reference_text"] == "hi"
     assert kw["sampling"] == core.SamplingConfig(0.5, 10, 0.9, 1.3, 300)
 
@@ -159,8 +169,10 @@ def test_direction_advanced_execute_passes_sampling(monkeypatch, tmp_path):
 def test_clone_normal_execute(monkeypatch, tmp_path):
     calls = _capture(monkeypatch, tmp_path)
     ref = {"waveform": torch.zeros((1, 1, 5)), "sample_rate": 8000}
-    gen.ITLBreezeTTSVoiceClone.execute(model="H", text="hi", reference_audio=ref, reference_text="hi", seed=1, cfg_scale=1.0)
+    gen.ITLBreezeTTSVoiceClone.execute(model="K", text="hi", reference_audio=ref, reference_text="hi", seed=1)
+    assert calls["handle"] == "H:K"
     assert calls["kw"]["mode"] == "clone" and calls["kw"]["instruction"] is None
+    assert calls["kw"]["cfg_scale"] == 1.0
 
 
 def test_api_import_error_names_install_hint(monkeypatch):
@@ -179,11 +191,15 @@ def test_pack_registers_all_seven_breeze_nodes():
     )
     root = importlib.util.module_from_spec(spec)
     sys.modules["itl_pack"] = root
-    spec.loader.exec_module(root)
+    try:
+        spec.loader.exec_module(root)
 
-    ids = ["ITLBreezeTTSLoader", *EXPECTED]
-    for node_id in ids:
-        assert node_id in root.NODE_CLASS_MAPPINGS, node_id
-        assert root.NODE_CLASS_MAPPINGS[node_id].define_schema().node_id == node_id
-        assert node_id in root.NODE_DISPLAY_NAME_MAPPINGS
-    assert root.NODE_DISPLAY_NAME_MAPPINGS["ITLBreezeTTSLoader"] == "ITL Breeze TTS Loader"
+        ids = ["ITLBreezeTTSLoader", *EXPECTED]
+        for node_id in ids:
+            assert node_id in root.NODE_CLASS_MAPPINGS, node_id
+            assert root.NODE_CLASS_MAPPINGS[node_id].define_schema().node_id == node_id
+            assert node_id in root.NODE_DISPLAY_NAME_MAPPINGS
+        assert root.NODE_DISPLAY_NAME_MAPPINGS["ITLBreezeTTSLoader"] == "ITL Breeze TTS Loader"
+    finally:
+        for name in [n for n in sys.modules if n == "itl_pack" or n.startswith("itl_pack.")]:
+            del sys.modules[name]

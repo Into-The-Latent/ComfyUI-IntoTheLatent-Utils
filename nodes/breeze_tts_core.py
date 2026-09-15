@@ -90,10 +90,10 @@ def audio_to_mono_numpy(waveform) -> np.ndarray:
 
 
 def write_reference_wav(audio: dict, directory: str) -> str:
-    """Write an AUDIO dict as a mono PCM_16 WAV the Breeze runtime can load by path."""
+    """Write an AUDIO dict as a mono float32 WAV the Breeze runtime can load by path."""
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f"breeze_ref_{uuid.uuid4().hex}.wav")
-    sf.write(path, audio_to_mono_numpy(audio["waveform"]), int(audio["sample_rate"]), subtype="PCM_16")
+    sf.write(path, audio_to_mono_numpy(audio["waveform"]), int(audio["sample_rate"]), subtype="FLOAT")
     return path
 
 
@@ -177,9 +177,16 @@ def generate_audio(handle: BreezeHandle, api, *, mode: str, text: str, seed: int
                    reference_text: str | None = None, instruction: str | None = None,
                    temp_dir: str) -> dict:
     """One synthesis. `api` exposes the fork's prepare_inputs / select_template_name /
-    get_template / set_all_seeds (injected so this runs under test without the fork)."""
+    get_template / set_all_seeds (injected so this runs under test without the fork).
+
+    `seed` is masked to 32 bits: the fork's set_all_seeds() calls np.random.seed(), which raises
+    on anything outside [0, 2**32 - 1]. torch and Python's random accept the full range, but we
+    mask once here so every consumer of `seed` (both RNG calls below) agrees."""
+    seed = int(seed) & 0xFFFFFFFF
     request = build_request(mode, text, reference_text=reference_text, instruction=instruction,
                             has_reference_audio=reference_audio is not None)
+    if mode == "clone" and float(cfg_scale) != 1.0:
+        raise ValueError("cfg_scale must be 1.0 for voice clone (the clone template has no negative prompt)")
     ref_path = None
     try:
         if mode in ("clone", "direction"):
@@ -189,10 +196,10 @@ def generate_audio(handle: BreezeHandle, api, *, mode: str, text: str, seed: int
         inputs = api.prepare_inputs(handle.tokenizer, handle.audio_tokenizer, handle.model, [request],
                                     template, guidance_scale=float(cfg_scale),
                                     guidance_scale_ref=None, guidance_scale_ins=None)
-        api.set_all_seeds(int(seed))
+        api.set_all_seeds(seed)
         runtime = handle.runtime_for(sampling)
         with torch.inference_mode():
-            chunks = [c.audio for c in runtime.iter_audio_chunks(inputs, request_id=REQUEST_ID, seed=int(seed))]
+            chunks = [c.audio for c in runtime.iter_audio_chunks(inputs, request_id=REQUEST_ID, seed=seed)]
         return chunks_to_audio(chunks, runtime.sample_rate)
     finally:
         if ref_path and os.path.exists(ref_path):

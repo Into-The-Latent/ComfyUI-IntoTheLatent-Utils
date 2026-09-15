@@ -272,6 +272,26 @@ def test_generate_audio_validates_before_touching_runtime(tmp_path):
     assert log == []
 
 
+def test_generate_audio_masks_seed_to_32_bits(tmp_path):
+    log = []
+    handle, api = _stub(log)
+    generate_audio(handle, api, mode="design", text="hi", seed=2**40 + 7, cfg_scale=4.0,
+                   instruction="deep voice", temp_dir=str(tmp_path))
+    assert ("seed", 7) in log
+    iter_entry = next(e for e in log if e[0] == "iter")
+    assert iter_entry[3] == 7
+
+
+def test_generate_audio_rejects_cfg_for_clone(tmp_path):
+    log = []
+    handle, api = _stub(log)
+    ref = {"waveform": torch.zeros((1, 1, 800)), "sample_rate": 8000}
+    with pytest.raises(ValueError, match="cfg_scale"):
+        generate_audio(handle, api, mode="clone", text="hi", seed=1, cfg_scale=2.0,
+                       reference_audio=ref, reference_text="hi", temp_dir=str(tmp_path))
+    assert log == []
+
+
 def test_generate_audio_uses_sampling_for_runtime(tmp_path):
     log = []
     kwargs_seen = []

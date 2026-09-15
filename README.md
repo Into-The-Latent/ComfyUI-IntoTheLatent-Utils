@@ -348,15 +348,19 @@ English + Chinese). Three modes, each as a Normal and an Advanced node:
 
 Inline vocal events work in the text: `(laugh)`, `(sigh)`, `(clears throat)`; Chinese `[笑]`, `[叹气]`.
 Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_new_tokens`
-(defaults equal the Normal nodes). `cfg_scale` defaults to 1.0 for Clone and 4.0 for Design / Direction.
+(defaults equal the Normal nodes). `cfg_scale` (Design / Direction only) defaults to 4.0; Voice
+Clone has no CFG — its prompt template has no negative branch.
 
 **First run** downloads the weights (~7.2 GB) from Hugging Face into `models/breeze_tts/Breeze-TTS-2/`.
 Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (CUDA graphs).
 Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
 
 The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.1`), which
-works with transformers 4.57–5.x and does not change your torch install. If the nodes report
-"Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on this pack (pip needs `git`).
+works with transformers 4.57–5.x and does not change your torch install. Requirements: `git` on
+PATH (pip fetches the fork from GitHub), torch >= 2.9, transformers >= 4.57 (< 6). Users below
+those floors get upgraded by the install; on Windows check that the torch wheel pip picks is a
+CUDA build. If the nodes report "Breeze TTS is not installed", run ComfyUI Manager's *Try fix* on
+this pack (pip needs `git`).
 
 **License:** the node code is GPL-3.0 like the rest of this pack; the Breeze weights are
 *research and non-commercial* (BreezeBlue Research and Non-Commercial License).

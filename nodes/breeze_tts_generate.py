@@ -10,10 +10,12 @@ import folder_paths
 from comfy_api.latest import io
 
 from .breeze_tts_core import DEFAULT_SAMPLING, SamplingConfig, generate_audio
-from .breeze_tts_loader import BREEZE_TTS, INSTALL_HINT
+from .breeze_tts_loader import BREEZE_TTS, INSTALL_HINT, resolve_handle
 
 _MODE_INFO = {
-    "clone": ("Voice Clone", 1.0,
+    # (title, cfg_scale default, blurb). Clone's cfg default is unused — the clone template has no
+    # negative prompt, so Clone nodes don't get a cfg_scale input at all (core rejects != 1.0).
+    "clone": ("Voice Clone", None,
               "Speak `text` in the voice of `reference_audio`. `reference_text` must be that clip's exact transcript."),
     "design": ("Voice Design", 4.0,
                "Speak `text` in a voice described by `instruction` (e.g. 'a warm, low male voice, slow'). No reference audio."),
@@ -51,11 +53,10 @@ def _inputs(mode: str, advanced: bool):
     if mode in ("design", "direction"):
         ins.append(io.String.Input("instruction", multiline=True, default="",
                                    tooltip="Voice description (Design) or delivery direction (Direction): tone, pace, emotion."))
-    ins += [
-        io.Int.Input("seed", default=42, min=0, max=0xFFFFFFFFFFFFFFFF, control_after_generate=True),
-        io.Float.Input("cfg_scale", default=cfg_default, min=0.1, max=10.0, step=0.1,
-                       tooltip="Classifier-free guidance. Upstream suggests 1.0 for clone, ~4 for design / direction."),
-    ]
+    ins.append(io.Int.Input("seed", default=42, min=0, max=0xFFFFFFFF, control_after_generate=True))
+    if mode != "clone":
+        ins.append(io.Float.Input("cfg_scale", default=cfg_default, min=0.1, max=10.0, step=0.1,
+                                  tooltip="Classifier-free guidance. Upstream suggests ~4 for design / direction."))
     if advanced:
         d = DEFAULT_SAMPLING
         ins += [
@@ -91,15 +92,15 @@ def _make_node(mode: str, advanced: bool):
             )
 
         @classmethod
-        def execute(cls, model, text, seed, cfg_scale, reference_audio=None, reference_text=None,
-                    instruction=None, temperature=None, top_k=None, top_p=None, repetition_penalty=None,
+        def execute(cls, model, text, seed, reference_audio=None, reference_text=None, instruction=None,
+                    cfg_scale=1.0, temperature=None, top_k=None, top_p=None, repetition_penalty=None,
                     max_new_tokens=None) -> io.NodeOutput:
             sampling = DEFAULT_SAMPLING
             if advanced:
                 sampling = SamplingConfig(temperature=temperature, top_k=top_k, top_p=top_p,
                                           repetition_penalty=repetition_penalty, max_new_tokens=max_new_tokens)
-            audio = generate_audio(model, _api(), mode=mode, text=text, seed=seed, cfg_scale=cfg_scale,
-                                   sampling=sampling, reference_audio=reference_audio,
+            audio = generate_audio(resolve_handle(model), _api(), mode=mode, text=text, seed=seed,
+                                   cfg_scale=cfg_scale, sampling=sampling, reference_audio=reference_audio,
                                    reference_text=reference_text, instruction=instruction,
                                    temp_dir=folder_paths.get_temp_directory())
             return io.NodeOutput(audio)
