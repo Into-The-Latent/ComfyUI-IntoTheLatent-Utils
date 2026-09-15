@@ -170,3 +170,30 @@ class BreezeHandle:
                                                   sampling.fast_config_kwargs())
             self._runtime_sampling = sampling
         return self._runtime
+
+
+def generate_audio(handle: BreezeHandle, api, *, mode: str, text: str, seed: int, cfg_scale: float,
+                   sampling: SamplingConfig = DEFAULT_SAMPLING, reference_audio: dict | None = None,
+                   reference_text: str | None = None, instruction: str | None = None,
+                   temp_dir: str) -> dict:
+    """One synthesis. `api` exposes the fork's prepare_inputs / select_template_name /
+    get_template / set_all_seeds (injected so this runs under test without the fork)."""
+    request = build_request(mode, text, reference_text=reference_text, instruction=instruction,
+                            has_reference_audio=reference_audio is not None)
+    ref_path = None
+    try:
+        if mode in ("clone", "direction"):
+            ref_path = write_reference_wav(reference_audio, temp_dir)
+            request["ref_audio_path"] = ref_path
+        template = api.get_template(api.select_template_name(request))
+        inputs = api.prepare_inputs(handle.tokenizer, handle.audio_tokenizer, handle.model, [request],
+                                    template, guidance_scale=float(cfg_scale),
+                                    guidance_scale_ref=None, guidance_scale_ins=None)
+        api.set_all_seeds(int(seed))
+        runtime = handle.runtime_for(sampling)
+        with torch.inference_mode():
+            chunks = [c.audio for c in runtime.iter_audio_chunks(inputs, request_id=REQUEST_ID, seed=int(seed))]
+        return chunks_to_audio(chunks, runtime.sample_rate)
+    finally:
+        if ref_path and os.path.exists(ref_path):
+            os.remove(ref_path)

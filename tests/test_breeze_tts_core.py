@@ -1,5 +1,6 @@
 # Tests for the Breeze TTS engine helpers — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ from nodes.breeze_tts_core import (
     build_request,
     cache_key,
     chunks_to_audio,
+    generate_audio,
     missing_snapshot_files,
     snapshot_is_complete,
     write_reference_wav,
@@ -182,3 +184,100 @@ def test_handle_runtime_for_caches_by_sampling():
     r4 = h.runtime_for(SamplingConfig())          # previous config again -> rebuilt (only last is kept)
     assert r4 is not r1 and len(calls) == 3
     assert h.fast_path is False and h.tokenizer == "tok"
+
+
+class _Runtime:
+    sample_rate = 24000
+
+    def __init__(self, log):
+        self.log = log
+
+    def iter_audio_chunks(self, inputs, *, request_id=None, seed=None):
+        self.log.append(("iter", inputs, request_id, seed))
+        yield SimpleNamespace(audio=np.array([0.1, 0.2], np.float32), is_final=False)
+        yield SimpleNamespace(audio=np.array([0.3], np.float32), is_final=True)
+
+
+def _stub(log):
+    handle = BreezeHandle(("p", "sdpa", False), "tok", "model", "atok",
+                          lambda m, a, t, kw: _Runtime(log))
+
+    def prepare_inputs(tokenizer, audio_tokenizer, model, requests, template, *, guidance_scale,
+                       guidance_scale_ref, guidance_scale_ins):
+        log.append(("prepare", requests, template, guidance_scale, guidance_scale_ref, guidance_scale_ins))
+        return {"prepared": True}
+
+    api = SimpleNamespace(
+        prepare_inputs=prepare_inputs,
+        select_template_name=lambda r: "tpl:" + ",".join(sorted(k for k in r if k in ("ref_text", "instruction"))),
+        get_template=lambda name: ("template", name),
+        set_all_seeds=lambda s: log.append(("seed", s)),
+    )
+    return handle, api
+
+
+def test_generate_audio_design_mode(tmp_path):
+    log = []
+    handle, api = _stub(log)
+    out = generate_audio(handle, api, mode="design", text="hi", seed=7, cfg_scale=4.0,
+                         instruction="deep voice", temp_dir=str(tmp_path))
+    assert out["sample_rate"] == 24000 and out["waveform"].shape == (1, 1, 3)
+    kinds = [e[0] for e in log]
+    assert kinds == ["prepare", "seed", "iter"]
+    _, requests, template, cfg, ref, ins = log[0]
+    assert requests == [{"id": "comfyui", "text": "hi", "speaker": "S0", "instruction": "deep voice"}]
+    assert template == ("template", "tpl:instruction") and (cfg, ref, ins) == (4.0, None, None)
+    assert log[1] == ("seed", 7) and log[2][2:] == ("comfyui", 7)
+    assert not list(tmp_path.iterdir())     # no temp file for design mode
+
+
+def test_generate_audio_clone_writes_and_removes_temp_wav(tmp_path):
+    log = []
+    handle, api = _stub(log)
+    seen = {}
+
+    def prepare_inputs(tokenizer, audio_tokenizer, model, requests, template, **kw):
+        path = requests[0]["ref_audio_path"]
+        seen["exists_during"] = os.path.isfile(path)
+        seen["path"] = path
+        return {}
+    api.prepare_inputs = prepare_inputs
+    ref = {"waveform": torch.zeros((1, 1, 800)), "sample_rate": 8000}
+    generate_audio(handle, api, mode="clone", text="hi", seed=1, cfg_scale=1.0,
+                   reference_audio=ref, reference_text="hi", temp_dir=str(tmp_path))
+    assert seen["exists_during"] is True and seen["path"].startswith(str(tmp_path))
+    assert not os.path.exists(seen["path"])
+
+
+def test_generate_audio_removes_temp_wav_on_failure(tmp_path):
+    log = []
+    handle, api = _stub(log)
+
+    def boom(*a, **k):
+        raise RuntimeError("cuda oom")
+    api.prepare_inputs = boom
+    ref = {"waveform": torch.zeros((1, 1, 800)), "sample_rate": 8000}
+    with pytest.raises(RuntimeError, match="cuda oom"):
+        generate_audio(handle, api, mode="direction", text="hi", seed=1, cfg_scale=4.0,
+                       reference_audio=ref, reference_text="hi", instruction="fast", temp_dir=str(tmp_path))
+    assert not list(tmp_path.iterdir())
+
+
+def test_generate_audio_validates_before_touching_runtime(tmp_path):
+    log = []
+    handle, api = _stub(log)
+    with pytest.raises(ValueError, match="reference_audio"):
+        generate_audio(handle, api, mode="clone", text="hi", seed=1, cfg_scale=1.0,
+                       reference_text="hi", temp_dir=str(tmp_path))
+    assert log == []
+
+
+def test_generate_audio_uses_sampling_for_runtime(tmp_path):
+    log = []
+    kwargs_seen = []
+    handle = BreezeHandle(("p", "sdpa", False), "tok", "model", "atok",
+                          lambda m, a, t, kw: (kwargs_seen.append(kw), _Runtime(log))[1])
+    _, api = _stub(log)
+    generate_audio(handle, api, mode="design", text="hi", seed=1, cfg_scale=4.0, instruction="x",
+                   sampling=SamplingConfig(max_new_tokens=300, top_p=0.8), temp_dir=str(tmp_path))
+    assert kwargs_seen[0]["max_new_tokens"] == 300 and kwargs_seen[0]["top_p"] == 0.8
