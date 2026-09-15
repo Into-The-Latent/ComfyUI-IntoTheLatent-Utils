@@ -203,3 +203,13 @@ def test_pack_registers_all_seven_breeze_nodes():
     finally:
         for name in [n for n in sys.modules if n == "itl_pack" or n.startswith("itl_pack.")]:
             del sys.modules[name]
+
+
+def test_fast_path_refused_on_transformers_5(monkeypatch):
+    import transformers
+    monkeypatch.setattr(transformers, "__version__", "5.15.0")
+    loader._require_fast_path_support(False)  # eager path always fine
+    with pytest.raises(RuntimeError, match="fast_path"):
+        loader._require_fast_path_support(True)
+    monkeypatch.setattr(transformers, "__version__", "4.57.3")
+    loader._require_fast_path_support(True)

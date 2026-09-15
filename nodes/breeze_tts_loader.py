@@ -55,6 +55,19 @@ def ensure_snapshot(ckpt_dir: str) -> str:
     return ckpt_dir
 
 
+def _require_fast_path_support(fast_path: bool):
+    """fast_path captures CUDA graphs around transformers' StaticCache. transformers >= 5 advances
+    that cache from a Python integer, which a replayed graph never re-executes, so capture would
+    silently write every step into the same slot. Refuse instead of producing garbage."""
+    if not fast_path:
+        return
+    import transformers
+    major = int(str(transformers.__version__).split(".")[0])
+    if major >= 5:
+        raise RuntimeError("Breeze TTS fast_path needs transformers 4.57.x; this environment has "
+                           f"transformers {transformers.__version__}. Turn fast_path off.")
+
+
 def _require_cuda():
     import torch
     if not torch.cuda.is_available():
@@ -98,6 +111,7 @@ def _evict_all():
 def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
     global _LICENSE_PRINTED
     _require_cuda()
+    _require_fast_path_support(fast_path)
     ckpt_dir = ensure_snapshot(_snapshot_dir())
     key = cache_key(ckpt_dir, attention, fast_path)
     handle = _CACHE.get(key)

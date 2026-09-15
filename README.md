@@ -354,8 +354,9 @@ Clone has no CFG — its prompt template has no negative branch.
 **First run** downloads the weights (~7.2 GB) from Hugging Face into `models/breeze_tts/Breeze-TTS-2/`.
 Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (CUDA graphs).
 Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
+`fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
 
-The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.1`), which
+The model code is installed from our fork (`Into-The-Latent/breeze-tts`, tag `comfyui-v1.2`), which
 works with transformers 4.57–5.x and does not change your torch install. Requirements: `git` on
 PATH (pip fetches the fork from GitHub), torch >= 2.9, transformers >= 4.57 (< 6). Users below
 those floors get upgraded by the install; on Windows check that the torch wheel pip picks is a
