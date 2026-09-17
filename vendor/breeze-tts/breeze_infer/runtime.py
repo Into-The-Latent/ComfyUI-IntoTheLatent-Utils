@@ -14,9 +14,10 @@ from breeze_models.dist_info import get_rank
 
 
 def get_dist_info() -> tuple[int, int, int]:
-    # Asks torch.distributed instead of reading RANK / WORLD_SIZE / LOCAL_RANK: this package is
-    # vendored into a ComfyUI pack and the Comfy registry flags any environment variable access
-    # (tests/test_registry_scanner_clean.py). Single process, as in ComfyUI: (0, 1, 0).
+    # Asks torch.distributed instead of reading RANK / WORLD_SIZE / LOCAL_RANK, because the Comfy
+    # registry flags any environment variable access (see breeze_models/dist_info.py). Without an
+    # initialised process group this is always (0, 1, 0), also under torchrun: multi process
+    # callers must initialise torch.distributed first or pass an explicit device.
     rank = get_rank()
     world_size = 1
     if torch.distributed.is_available() and torch.distributed.is_initialized():

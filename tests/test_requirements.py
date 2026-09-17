@@ -108,6 +108,33 @@ def test_vendored_loader_does_not_need_accelerate():
     assert "accelerate" not in names
 
 
+def _published_python_files():
+    # Only what git tracks gets published, so a gitignored venv/, build/ or dist/ in the repo root
+    # must not fail the scan on site-packages code that never ships. The ignored directory names
+    # are read from .gitignore rather than asked of git: spawning a process from a published file
+    # is itself the kind of thing a registry rule could match, and no file in this pack does it.
+    ignored = {"__pycache__"}
+    for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.endswith("/") and not any(c in line for c in "*?[!#"):
+            ignored.add(line.strip("/"))
+    return [
+        py for py in ROOT.rglob("*.py")
+        if not any(p.startswith(".") or p in ignored for p in py.relative_to(ROOT).parts)
+    ]
+
+
+def test_published_python_files_skip_gitignored_directories(tmp_path, monkeypatch):
+    import sys
+
+    (tmp_path / ".gitignore").write_text("venv/\nbuild/\n*.egg-info/\n", encoding="utf-8")
+    for rel in ("nodes/a.py", "venv/Lib/site-packages/pkg/b.py", "build/c.py", ".git/d.py"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", tmp_path)
+    assert [p.relative_to(tmp_path).as_posix() for p in _published_python_files()] == ["nodes/a.py"]
+
+
 def test_no_python_file_trips_the_registry_env_or_network_rules():
     # 1.10.0 was flagged too, this time for the vendored code itself: rule
     # "python_environment_manipulation" (any environment variable read or write through the os
@@ -117,19 +144,24 @@ def test_no_python_file_trips_the_registry_env_or_network_rules():
     # assembled from pieces so that this file does not contain them either. Findings for a
     # published version:
     # GET https://api.comfy.org/nodes/comfyui-intothelatent-utils/versions?include_status_reason=true
+    #
+    # The registry's rule files are not public, so the list is wider than the five reported hits.
+    # Network modules are matched on their import, so prose ("the json_in socket.") does not trip it.
     o, u = "os" + r"\.", "url"
+    env_names = "(environ|environb|getenv|getenvb|putenv|unsetenv)"
+    net_modules = "|".join(["requests", "httpx", "aiohttp", u + "lib3", "socket", "ftplib", "smtplib",
+                            "telnetlib", "websocket", "websockets"])
     bad = re.compile(
         "|".join([
             o + "environ", o + "getenv", o + "putenv", o + "unsetenv",
+            r"from\s+os\s+import\s+[^#\n]*\b" + env_names + r"\b",
             u + r"lib\.request", u + "open", u + "retrieve",
-            "http" + r"\.client", r"\brequests" + r"\.(get|post|put|request|Session)\b", r"\bhttpx\b",
-            r"\baiohttp\b", r"\bsocket" + r"\.(socket|create_connection)\b",
+            "http" + r"\.client", "http" + r"\.server",
+            r"^\s*(import|from)\s+(" + net_modules + r")\b",
         ])
     )
     offenders = []
-    for py in ROOT.rglob("*.py"):
-        if any(part.startswith(".") or part == "__pycache__" for part in py.relative_to(ROOT).parts):
-            continue
+    for py in _published_python_files():
         for lineno, line in enumerate(py.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             if bad.search(line):
                 offenders.append(f"{py.relative_to(ROOT)}:{lineno}: {line.strip()}")

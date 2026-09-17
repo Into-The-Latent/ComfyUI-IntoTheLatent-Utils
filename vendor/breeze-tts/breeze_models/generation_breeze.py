@@ -671,7 +671,7 @@ class BreezeGenerationMixin(GenerationMixin):
         )
         if compile_forward:
             # HF's _sample also turns TOKENIZERS_PARALLELISM off here. Left out on purpose: the
-            # Comfy registry flags environment writes (tests/test_registry_scanner_clean.py), and
+            # Comfy registry flags environment writes (see breeze_models/dist_info.py), and
             # tokenizers disables its own parallelism (with a warning) if the process ever forks.
             model_forward = self.get_compiled_call(generation_config.compile_config)
 

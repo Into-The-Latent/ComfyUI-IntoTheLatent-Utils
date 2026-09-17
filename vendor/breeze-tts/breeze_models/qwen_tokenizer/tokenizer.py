@@ -119,7 +119,7 @@ class Qwen3TTSTokenizer:
             x (str):
                 A wav file path, or a base64 audio string (raw or data URL). http(s) URLs are
                 refused: upstream qwen-tts downloads them, this copy makes no network requests
-                (the Comfy registry flags them, see tests/test_registry_scanner_clean.py).
+                (the Comfy registry flags them, see breeze_models/dist_info.py).
             target_sr (int):
                 Target sampling rate.
 
