@@ -18,7 +18,7 @@ ComfyUI nodepack by Into The Latent
 - **❤️ Patreon:** [AIKnowledgeCentral](https://patreon.com/AIKnowledgeCentral)
 - **📆 Book a 1-on-1 Session:** [Stable Diffusion Coaching](https://koalendar.com/e/1hr-1-on-1-stable-diffusion)
 - **✉️ Email:** BeyondMatrixDevelopments@gmail.com
-- **🎨 Civitai:** [AIKnowledge2Go](https://civitai.com/user/AIknowlege2go)
+- **🎨 Civitai:** [Into_The_Latent](https://civitai.com/user/Into_The_Latent)
 
 ## Installation
 
