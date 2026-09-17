@@ -1,0 +1,6 @@
+# Files left out of the archive that "comfy node publish" uploads to the Comfy registry.
+# The registry scans every published file and flags a version on any rule hit, which hides it
+# from ComfyUI Manager. The installer scripts clone, download and run pip: exactly what a scanner
+# looks for, and useless inside an installed pack anyway.
+install/
+.comfyignore

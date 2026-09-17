@@ -1,0 +1,6 @@
+# Installer scripts must keep their line endings whatever the platform that checks them out.
+# .sh: LF, or Linux fails with "bad interpreter".
+# .bat: stored byte for byte with CRLF (-text), so a raw download from GitHub has CRLF too.
+*.sh  text eol=lf
+*.ps1 text eol=crlf
+*.bat -text
