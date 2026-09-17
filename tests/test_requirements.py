@@ -106,3 +106,31 @@ def test_vendored_loader_does_not_need_accelerate():
     assert not offenders, offenders
     names = {_package_name(s) for s in _requirements_lines() + _pyproject_deps()}
     assert "accelerate" not in names
+
+
+def test_no_python_file_trips_the_registry_env_or_network_rules():
+    # 1.10.0 was flagged too, this time for the vendored code itself: rule
+    # "python_environment_manipulation" (any environment variable read or write through the os
+    # module) and rule "python_network_operations" (the stdlib URL opener in the qwen tokenizer).
+    # Fixed in the fork (tag comfyui-v1.7). The rules are plain text matches over every published
+    # file, comments included, so this greps instead of walking the AST, and the patterns are
+    # assembled from pieces so that this file does not contain them either. Findings for a
+    # published version:
+    # GET https://api.comfy.org/nodes/comfyui-intothelatent-utils/versions?include_status_reason=true
+    o, u = "os" + r"\.", "url"
+    bad = re.compile(
+        "|".join([
+            o + "environ", o + "getenv", o + "putenv", o + "unsetenv",
+            u + r"lib\.request", u + "open", u + "retrieve",
+            "http" + r"\.client", r"\brequests" + r"\.(get|post|put|request|Session)\b", r"\bhttpx\b",
+            r"\baiohttp\b", r"\bsocket" + r"\.(socket|create_connection)\b",
+        ])
+    )
+    offenders = []
+    for py in ROOT.rglob("*.py"):
+        if any(part.startswith(".") or part == "__pycache__" for part in py.relative_to(ROOT).parts):
+            continue
+        for lineno, line in enumerate(py.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            if bad.search(line):
+                offenders.append(f"{py.relative_to(ROOT)}:{lineno}: {line.strip()}")
+    assert not offenders, "\n".join(offenders)

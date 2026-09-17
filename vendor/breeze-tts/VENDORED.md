@@ -8,8 +8,8 @@ BreezeBlue).
 | | |
 |---|---|
 | Source repo | https://github.com/Into-The-Latent/breeze-tts |
-| Tag | `comfyui-v1.6` |
-| Commit | `cbd9909d34a4ab01666ecbb4d3457bd9808317d0` |
+| Tag | `comfyui-v1.7` |
+| Commit | `ebe5ca2069c818c62524a42a4a617b1516ca1a92` |
 | License | Apache-2.0 (see `LICENSE` here; `breeze_models/qwen_tokenizer/NOTICE` covers the vendored Qwen tokenizer) |
 | Left out | `breeze_infer/api.py` (the fork's FastAPI server; not used by the nodes, needs fastapi/uvicorn) |
 
@@ -36,6 +36,13 @@ the fork's own top-level names `breeze_models` / `breeze_infer` with no source c
 - Nothing in here may pass `device_map=` to `from_pretrained` or import `accelerate`
   (`tests/test_requirements.py` checks): transformers then demands the optional `accelerate`
   package, which a fresh ComfyUI venv does not have. Load on CPU and `.to(device)` instead.
+- Nothing in here may read or write environment variables or make network requests
+  (`tests/test_requirements.py` checks). The registry scanner matches plain text in every
+  published file, and pack 1.10.0 was flagged for exactly that: rules
+  `python_environment_manipulation` (rank lookups, determinism / tokenizer settings) and
+  `python_network_operations` (the qwen tokenizer downloading audio URLs). Fixed in the fork at
+  `comfyui-v1.7`: rank comes from `torch.distributed`, and `load_audio` refuses URLs. To see why a
+  version was flagged: `GET https://api.comfy.org/nodes/comfyui-intothelatent-utils/versions?include_status_reason=true`
 - Do not edit files in this directory by hand. Fix things in the fork, tag it, and re-sync.
 
 ## Re-syncing from the fork

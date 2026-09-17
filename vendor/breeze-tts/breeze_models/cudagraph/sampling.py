@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import random
 from collections.abc import Iterable
 
@@ -87,13 +86,16 @@ def sample_logits(
 
 
 def set_deterministic(seed=42):
-    """Enable full deterministic mode and seed all RNGs for exact reproducibility."""
+    """Enable full deterministic mode and seed all RNGs for exact reproducibility.
+
+    Sets no environment variables (the Comfy registry flags that, see
+    tests/test_registry_scanner_clean.py). For deterministic cuBLAS the caller has to export
+    CUBLAS_WORKSPACE_CONFIG=:4096:8 before starting Python; without it torch only warns.
+    """
     random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     torch.use_deterministic_algorithms(True, warn_only=True)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -671,7 +670,9 @@ class BreezeGenerationMixin(GenerationMixin):
             model_kwargs, generation_config
         )
         if compile_forward:
-            os.environ["TOKENIZERS_PARALLELISM"] = "0"
+            # HF's _sample also turns TOKENIZERS_PARALLELISM off here. Left out on purpose: the
+            # Comfy registry flags environment writes (tests/test_registry_scanner_clean.py), and
+            # tokenizers disables its own parallelism (with a warning) if the process ever forks.
             model_forward = self.get_compiled_call(generation_config.compile_config)
 
         is_prefill = True
