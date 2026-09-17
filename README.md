@@ -22,6 +22,26 @@ ComfyUI nodepack by Into The Latent
 
 ## Installation
 
+### Installer scripts (no git needed)
+
+The [`install/`](install/) folder has a script for each platform. It finds your ComfyUI and the
+Python it runs with (portable `python_embeded`, `venv` or `.venv`; never the system Python), puts
+the pack into `custom_nodes` (or updates the copy that is already there, including one installed by
+ComfyUI Manager), installs the requirements and checks that your torch was not touched. Without
+git it downloads the pack as an archive instead. Close ComfyUI first; running a script again later
+updates the pack.
+
+- **Windows:** download `install-windows.bat` and `install-windows.ps1` into the same folder,
+  ideally your ComfyUI folder, and double click `install-windows.bat`. Works with the Windows
+  PowerShell 5.1 that ships with Windows, needs no admin rights.
+- **Linux:** `bash install-linux.sh` from inside your ComfyUI folder, or
+  `bash install-linux.sh --comfy ~/ComfyUI`. Needs git, or curl/wget plus tar.
+
+If the script cannot find ComfyUI or its Python it asks for the path; both can also be passed
+(`-ComfyPath` / `-PythonPath`, `--comfy` / `--python`, which conda users will need).
+
+### Manual
+
 Clone into your ComfyUI `custom_nodes` directory and restart ComfyUI:
 
 ```bash
