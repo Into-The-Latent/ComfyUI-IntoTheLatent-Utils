@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import random
 from pathlib import Path
 from typing import Any
@@ -11,12 +10,19 @@ from transformers import AutoTokenizer
 
 from breeze_models.breeze import BreezeForConditionalGeneration
 from breeze_models.buffer_compat import reinit_computed_buffers
+from breeze_models.dist_info import get_rank
 
 
 def get_dist_info() -> tuple[int, int, int]:
-    rank = int(os.environ.get("RANK", "0"))
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    local_rank = int(os.environ.get("LOCAL_RANK", str(rank)))
+    # Asks torch.distributed instead of reading RANK / WORLD_SIZE / LOCAL_RANK, because the Comfy
+    # registry flags any environment variable access (see breeze_models/dist_info.py). Without an
+    # initialised process group this is always (0, 1, 0), also under torchrun: multi process
+    # callers must initialise torch.distributed first or pass an explicit device.
+    rank = get_rank()
+    world_size = 1
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        world_size = torch.distributed.get_world_size()
+    local_rank = rank % torch.cuda.device_count() if torch.cuda.is_available() else 0
     return rank, world_size, local_rank
 
 
@@ -81,7 +87,6 @@ def load_runtime(
             raise RuntimeError(
                 "Failed to set CUDA device "
                 f"device={device} rank={rank} world_size={world_size} local_rank={local_rank} "
-                f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')} "
                 f"device_count={torch.cuda.device_count()}"
             ) from exc
     tokenizer = AutoTokenizer.from_pretrained(

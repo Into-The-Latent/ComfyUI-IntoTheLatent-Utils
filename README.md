@@ -18,7 +18,7 @@ ComfyUI nodepack by Into The Latent
 - **❤️ Patreon:** [AIKnowledgeCentral](https://patreon.com/AIKnowledgeCentral)
 - **📆 Book a 1-on-1 Session:** [Stable Diffusion Coaching](https://koalendar.com/e/1hr-1-on-1-stable-diffusion)
 - **✉️ Email:** BeyondMatrixDevelopments@gmail.com
-- **🎨 Civitai:** [AIKnowledge2Go](https://civitai.com/user/AIknowlege2go)
+- **🎨 Civitai:** [Into_The_Latent](https://civitai.com/user/Into_The_Latent)
 
 ## Installation
 
@@ -369,7 +369,7 @@ workflow, turn on `unload_after` on the generate node (or wire the audio through
 Unload**); the next Breeze node reloads the weights (~20 s).
 
 The model code ships inside this pack: `vendor/breeze-tts` is our fork of
-`breezeblue-ai/breeze-tts` (tag `comfyui-v1.6`, Apache-2.0; provenance and re-sync steps in
+`breezeblue-ai/breeze-tts` (tag `comfyui-v1.8`, Apache-2.0; provenance and re-sync steps in
 `vendor/breeze-tts/VENDORED.md`), which works with transformers 4.57–5.x. Nothing is installed from
 GitHub, so `git` is not needed and the Comfy registry's scanner accepts the pack (versions 1.8.0–1.9.1
 were hidden from ComfyUI Manager because they pulled the fork by URL). Requirements: transformers
