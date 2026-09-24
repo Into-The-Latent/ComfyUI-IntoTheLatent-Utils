@@ -213,6 +213,9 @@ image, clip or video somewhere different in the same run. Six nodes, two flavors
   the number of loaded files, the extra files simply aren't reachable (no socket carries them).
 - **Drop the files onto the field, or click it to browse** — same field does both; no separate
   add button.
+- **Hover a thumbnail to see the full image** (image loaders). Rest the pointer on a row's small
+  thumbnail and a popup opens beside it with the picture scaled to fit your screen, plus its
+  filename and pixel size. It closes as soon as the pointer leaves, or on any click, scroll or key.
 - **Rows** show a thumbnail + pixel size (images) or a duration (audio). Drag the ⠿ grip to
   reorder, ✕ to remove, **Sort by name** for folder order. Row order = socket order.
 - **Removing or reordering files shifts what each socket carries** — the node warns you in its

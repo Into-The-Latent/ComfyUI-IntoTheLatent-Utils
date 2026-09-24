@@ -18,6 +18,9 @@
  * Trimming only ever cuts from the end — ComfyUI validates output types by slot position, so
  * used slots must stay contiguous from slot 0.
  * parseFiles mirrors parse_files in nodes/multi_loader_core.py — keep the two in sync.
+ * Image rows get a hover preview: resting the pointer on the 34px thumbnail opens one shared,
+ * page-level popup (see showHover) with the full image scaled to fit the viewport. Thumbnails
+ * stay small on purpose — at 10 files a bigger strip would make the node taller than a screen.
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
@@ -91,8 +94,13 @@ function ensureStyles() {
   .itl-bl .bl-grip{color:#6d6d68;font-size:14px;cursor:grab;user-select:none;flex:none}
   .itl-bl .bl-num{flex:none;width:18px;height:18px;border-radius:50%;background:#333331;
     color:#8b8b86;font:600 10px/18px ui-monospace,Consolas,monospace;text-align:center}
-  .itl-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19}
+  .itl-bl .bl-thumb{flex:none;width:34px;height:34px;border-radius:4px;object-fit:cover;background:#1a1a19;cursor:zoom-in}
   .itl-bl .bl-thumb.bl-off{filter:grayscale(1)}
+  .itl-bl-hover{position:fixed;display:none;z-index:10000;pointer-events:none;box-sizing:border-box;padding:4px;
+    background:#1a1a19;border:1px solid #46b4e6;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+  .itl-bl-hover img{display:block;margin:0 auto;border-radius:4px;background:#111}
+  .itl-bl-hover .bl-hover-cap{padding:4px 2px 0;color:#d3d3d0;font:11px ui-monospace,Consolas,monospace;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .itl-bl .bl-wave{flex:none;width:34px;height:34px;border-radius:4px;background:#13332b;
     color:#46cca8;font-size:15px;line-height:34px;text-align:center}
   .itl-bl .bl-wave.bl-off{background:#2b2b29;color:#6d6d68}
@@ -115,6 +123,78 @@ function ensureStyles() {
     text-transform:uppercase;letter-spacing:.03em}
   `;
   document.head.appendChild(s);
+}
+
+// ---- Hover preview for image rows ----------------------------------------------------------
+// One popup element for the whole page (only one thumbnail can be hovered at a time), appended
+// to <body> so neither the node's bounds nor the canvas transform clip it. It is pointer-events:
+// none, so it never steals a click; it goes away on mouseleave, any mousedown/wheel/keydown
+// (capture phase, so a widget's stopPropagation can't keep it open) and whenever a list
+// re-renders (the hovered <img> may have just been replaced, and a removed element never fires
+// mouseleave). The image URL is the one the thumbnail already loaded, so opening is a cache hit.
+const HOVER_DELAY_MS = 150;      // rest time before the popup opens — sweeping down the list stays quiet
+const HOVER_MAX_FRAC = 0.6;      // longer side capped at this fraction of the viewport; never upscaled
+const HOVER_MARGIN = 8;          // min distance from the viewport edge (CSS px)
+const HOVER_MIN_W = 180;         // box min width so the caption stays readable next to a tiny image
+let hoverEl = null, hoverTimer = 0, hoverToken = 0;
+
+function ensureHoverEl() {
+  if (hoverEl) return hoverEl;
+  hoverEl = document.createElement("div");
+  hoverEl.className = "itl-bl-hover";
+  hoverEl.append(document.createElement("img"), document.createElement("div"));
+  hoverEl.lastChild.className = "bl-hover-cap";
+  document.body.appendChild(hoverEl);
+  for (const ev of ["mousedown", "wheel", "keydown", "dragstart"]) {
+    document.addEventListener(ev, hideHover, { capture: true, passive: true });
+  }
+  return hoverEl;
+}
+
+function hideHover() {
+  clearTimeout(hoverTimer); hoverTimer = 0;
+  hoverToken++;                                   // a load still in flight for the old thumb must not open
+  if (hoverEl) hoverEl.style.display = "none";
+}
+
+// Open the popup next to `thumb` once its full image has decoded. Placement: to the right of the
+// thumbnail, flipping to the left when it wouldn't fit, and slid up so it stays on screen.
+function showHover(thumb, src, name) {
+  const el = ensureHoverEl();
+  const img = el.firstChild, cap = el.lastChild;
+  const token = ++hoverToken;
+  const place = () => {
+    if (token !== hoverToken || !thumb.isConnected) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!nw || !nh) return;                       // broken image: leave the popup closed
+    const scale = Math.min(1, (vw * HOVER_MAX_FRAC) / nw, (vh * HOVER_MAX_FRAC) / nh);
+    const w = Math.max(1, Math.round(nw * scale)), h = Math.max(1, Math.round(nh * scale));
+    img.style.width = w + "px"; img.style.height = h + "px";
+    cap.textContent = `${name} · ${nw}×${nh}`;
+    el.style.width = (Math.max(w, HOVER_MIN_W) + 10) + "px";   // image + padding + border: a long caption ellipsizes, a tiny image still gets a readable caption
+    el.style.display = "block";
+    const r = thumb.getBoundingClientRect();
+    const ew = el.offsetWidth, eh = el.offsetHeight;
+    let x = r.right + 12;
+    if (x + ew > vw - HOVER_MARGIN) x = Math.max(HOVER_MARGIN, r.left - 12 - ew);
+    let y = Math.min(r.top, vh - HOVER_MARGIN - eh);
+    y = Math.max(HOVER_MARGIN, y);
+    el.style.left = x + "px"; el.style.top = y + "px";
+  };
+  img.onload = place;
+  img.onerror = hideHover;
+  if (img.src !== src) img.src = src;
+  if (img.complete) place();                      // cache hit (or same src as last time): onload won't fire
+}
+
+// Wire a row's <img> thumbnail: open after HOVER_DELAY_MS of rest, close as soon as it leaves.
+function attachHover(thumb, name) {
+  thumb.addEventListener("mouseenter", () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => { hoverTimer = 0; showHover(thumb, thumb.src, name); }, HOVER_DELAY_MS);
+  });
+  thumb.addEventListener("mouseleave", hideHover);
 }
 
 // Trim node.outputs to count + slotCount groups; re-add (in schema order) up to the ceiling.
@@ -433,6 +513,7 @@ app.registerExtension({
       }
 
       function render() {
+        hideHover();                                // the hovered thumbnail is about to be replaced
         contentEl.replaceChildren();
         if (!node._blRows.length) {
           const empty = document.createElement("div");
@@ -493,6 +574,7 @@ app.registerExtension({
             preview.className = "bl-thumb" + (f.enabled ? "" : " bl-off");
             preview.src = viewUrl(f);
             preview.addEventListener("load", () => { meta.textContent = `${preview.naturalWidth}×${preview.naturalHeight}`; });
+            attachHover(preview, f.name);
           } else if (cfg.kind === "video") {
             preview = document.createElement("span");
             preview.className = "bl-clap" + (f.enabled ? "" : " bl-off");
