@@ -6,6 +6,8 @@ import pytest
 pytest.importorskip("comfy_api")
 pytest.importorskip("av")
 
+from nodes.multi_loader_core import MAX_FILES, OUTPUT_SLOT_OPTIONS  # noqa: E402  (comfy-free)
+
 
 @pytest.fixture
 def input_dir(tmp_path, monkeypatch):
@@ -67,7 +69,7 @@ def test_simple_layout(input_dir):
     _write_video(input_dir / "one.mp4", fps=24, seconds=1)
     out = _run_video(json.dumps([{"name": "one.mp4"}]), force_rate=0.0, advanced=False)
 
-    assert len(out) == 17 and out[0] == 1
+    assert len(out) == 1 + 2 * MAX_FILES and out[0] == 1
     assert out[1] is not None                 # video_1
     assert out[2] is None or isinstance(out[2], dict)   # audio_1 - no track -> None
     assert out[3] is None                      # padding (video_2)
@@ -79,7 +81,7 @@ def test_advanced_layout_two_clips(input_dir):
     _write_video(input_dir / "b.mp4", fps=24, seconds=1)
     out = _run_video(json.dumps([{"name": "a.mp4"}, {"name": "b.mp4"}]), force_rate=0.0, advanced=True)
 
-    assert len(out) == 25 and out[0] == 2
+    assert len(out) == 1 + 3 * MAX_FILES and out[0] == 2
     assert out[1] is not None and out[3] == "a.mp4"
     assert out[4] is not None and out[6] == "b.mp4"
 
@@ -153,3 +155,26 @@ def test_missing_file_raises(input_dir):
     from nodes.multi_video_loader import _run_video
     with pytest.raises(ValueError, match="gone.mp4"):
         _run_video(json.dumps([{"name": "gone.mp4"}]), force_rate=0.0, advanced=False)
+
+
+def test_ten_clips_fill_the_last_group(input_dir):
+    from nodes.multi_video_loader import _run_video
+    names = [f"c{i}.mp4" for i in range(1, MAX_FILES + 1)]
+    for n in names:
+        _write_video(input_dir / n, fps=24, seconds=1)
+    out = _run_video(json.dumps([{"name": n} for n in names]), force_rate=0.0, advanced=True)
+    assert out[0] == MAX_FILES and len(out) == 1 + 3 * MAX_FILES
+    base = 1 + (MAX_FILES - 1) * 3                    # clip 10's group: video_10/audio_10/filename_10
+    assert out[base] is not None and out[base + 2] == names[-1]   # audio_10 is None: no track
+
+
+@pytest.mark.parametrize("advanced", [False, True])
+def test_schema_outputs_match_padded_return(input_dir, advanced):
+    from nodes.multi_video_loader import ITLMultiVideoLoader, ITLMultiVideoLoaderAdvanced, _run_video
+    _write_video(input_dir / "a.mp4", fps=24, seconds=1)
+    schema = (ITLMultiVideoLoaderAdvanced if advanced else ITLMultiVideoLoader).define_schema()
+    out = _run_video(json.dumps([{"name": "a.mp4"}]), force_rate=0.0, advanced=advanced)
+    assert len(schema.outputs) == len(out)
+    assert schema.outputs[-1].display_name == (f"filename_{MAX_FILES}" if advanced else f"audio_{MAX_FILES}")
+    slots = next(i for i in schema.inputs if i.id == "output_slots")
+    assert list(slots.options) == list(OUTPUT_SLOT_OPTIONS)

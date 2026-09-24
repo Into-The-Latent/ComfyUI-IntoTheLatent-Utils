@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from nodes.multi_loader_core import MAX_FILES, parse_files
+from nodes.multi_loader_core import MAX_FILES, OUTPUT_SLOT_OPTIONS, parse_files
 
 
 def test_parse_valid_list():
@@ -62,8 +62,20 @@ def test_parse_bad_entry_raises(entry):
 
 def test_parse_over_ceiling_raises():
     raw = json.dumps([{"name": f"f{i}.png"} for i in range(MAX_FILES + 1)])
-    with pytest.raises(ValueError, match="at most 8"):
+    with pytest.raises(ValueError, match=f"at most {MAX_FILES}"):
         parse_files(raw)
+
+
+def test_output_slot_options_keep_every_earlier_value():
+    # Backward compat: a workflow saved with any pre-1.11.0 output_slots value ("auto", "1"-"8")
+    # must still find that value in the Combo; the list is "auto" then 1..MAX_FILES in order.
+    assert OUTPUT_SLOT_OPTIONS == ("auto", *(str(i) for i in range(1, MAX_FILES + 1)))
+    assert MAX_FILES >= 8 and {"auto", *map(str, range(1, 9))} <= set(OUTPUT_SLOT_OPTIONS)
+
+
+def test_parse_at_ceiling_ok():
+    raw = json.dumps([{"name": f"f{i}.png"} for i in range(MAX_FILES)])
+    assert len(parse_files(raw)) == MAX_FILES
 
 
 from nodes.multi_loader_core import downscale_size

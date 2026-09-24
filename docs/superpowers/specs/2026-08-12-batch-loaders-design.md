@@ -209,3 +209,19 @@ Registration: four entries appended to `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAM
 - **No audio track → `None`, not an error**: a video file without an audio stream yields `None`
   on that file's `audio_N`, following the same "unplugged OPTIONAL input" rule as a switched-off
   row — safe unless that socket feeds a REQUIRED input.
+
+## Amendments (2026-09-24)
+
+- **Ceiling raised 8 → 10 files per node** (pack 1.11.0). `MAX_FILES` in `nodes/multi_loader_core.py`
+  is the only copy: the loaders declare `1 + 10 × group` outputs, their descriptions and the
+  `output_slots` options (`auto`/1-10) from it, and `web/js/multi_loader.js` no longer carries its own
+  constant — it derives the ceiling from the node definition (`(declared outputs − 1) / group size`).
+  As the "Output slot order" section promised, the new groups are appended, so slot indices 0-8 /
+  0-24 and every saved `output_slots` value are unchanged and existing workflows load as before.
+  Declared outputs are now 11 / 31 (image), 11 / 21 (audio), 21 / 31 (video).
+- **Over-ceiling `files_json` on load is no longer silently truncated.** A workflow saved with more
+  files than the running front-end supports (a 10-file workflow on ≤ 1.10.1, or a hand edit) used to
+  be cut to the ceiling and written back, losing the extra files and their wires without a word. Now
+  the first `MAX_FILES` rows are shown, `files_json` is left untouched, a ⚠ status names the hidden
+  files, and the Python "supports at most N" error still fires on run. This only protects front-ends
+  from 1.11.0 on; workflows with 9-10 files still need 1.11.0+ (README says so).

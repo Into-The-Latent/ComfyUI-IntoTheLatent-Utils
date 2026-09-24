@@ -10,9 +10,10 @@
  * pill toggle, default true) holds its socket position when off — the file is skipped but the
  * slot isn't removed, so later files don't shift up; see nodes/multi_loader_core.py for why
  * feeding None to a connected OPTIONAL input is safe (it is NOT safe for a REQUIRED input).
- * The Python schema declares MAX_FILES
- * output groups; syncOutputs() trims node.outputs to `count` + a slot count and re-adds up to
- * the ceiling when the slot count grows. That slot count is `output_slots` in "auto" mode (it
+ * The Python schema declares MAX_FILES (nodes/multi_loader_core.py) output groups; there is no
+ * second copy of that ceiling here — beforeRegisterNodeDef derives it from the node definition
+ * as (declared outputs - 1) / group size and carries it as cfg.maxFiles. syncOutputs() trims
+ * node.outputs to `count` + a slot count and re-adds up to the ceiling when the slot count grows. That slot count is `output_slots` in "auto" mode (it
  * tracks the file count) or a pinned number, so wires on fixed sockets survive file-list edits.
  * Trimming only ever cuts from the end — ComfyUI validates output types by slot position, so
  * used slots must stay contiguous from slot 0.
@@ -20,8 +21,6 @@
  */
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
-
-const MAX_FILES = 8;
 
 // group: [prefix, TYPE] per output within one file's group, in schema order.
 const NODES = {
@@ -35,18 +34,20 @@ const NODES = {
 
 // ── Mirror of parse_files in nodes/multi_loader_core.py — three intentional deviations:
 // (1) empty files_json is OK here (Python raises "No files loaded" only at run time),
-// (2) entries beyond MAX_FILES are silently ignored here instead of raising (Python rejects
-// the whole list with a "too many files" error), and
+// (2) entries beyond the ceiling are left out of the row list but counted in `dropped` instead of
+// raising (Python rejects the whole list with a "too many files" error) — the rows still render
+// and onConfigure can warn without rewriting files_json, and
 // (3) a non-boolean 'enabled' is coerced to true here instead of raising (Python rejects it) —
 // the row list should still render from a hand-edited/older files_json. ──
-function parseFiles(raw) {
+function parseFiles(raw, maxFiles) {
   const text = (raw || "").trim();
   if (!text) return { ok: true, files: [] }; // empty is fine in the UI; Python rejects at run time
   let data;
   try { data = JSON.parse(text); } catch (e) { return { ok: false, error: "Malformed files_json: " + e.message }; }
   if (!Array.isArray(data)) return { ok: false, error: "Expected a JSON array of files." };
   const files = [];
-  for (let i = 0; i < data.length && i < MAX_FILES; i++) {
+  const limit = Math.min(data.length, maxFiles);
+  for (let i = 0; i < limit; i++) {
     const e = data[i];
     if (!e || typeof e !== "object" || typeof e.name !== "string" || !e.name.trim()) {
       return { ok: false, error: `File #${i + 1}: 'name' must be a non-empty string.` };
@@ -58,7 +59,7 @@ function parseFiles(raw) {
       enabled: typeof e.enabled === "boolean" ? e.enabled : true,
     });
   }
-  return { ok: true, files };
+  return { ok: true, files, dropped: data.length - limit };
 }
 
 const findWidget = (node, name) => node.widgets?.find((w) => w.name === name);
@@ -121,7 +122,7 @@ function ensureStyles() {
 // pinned output_slots value overrides it so sockets (and wires) survive file-list edits.
 // removeOutput disconnects any links on the removed slot — that is the intended behavior.
 function syncOutputs(node, cfg, slotCount) {
-  const want = 1 + Math.min(slotCount, MAX_FILES) * cfg.group.length;
+  const want = 1 + Math.min(slotCount, cfg.maxFiles) * cfg.group.length;
   while (node.outputs.length > want) node.removeOutput(node.outputs.length - 1);
   while (node.outputs.length < want) {
     const slot = node.outputs.length;                     // next slot index to create
@@ -152,8 +153,16 @@ app.registerExtension({
   name: "ITL.MultiLoader",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    const cfg = NODES[nodeData?.name];
-    if (!cfg) return;
+    const base = NODES[nodeData?.name];
+    if (!base) return;
+    // The file ceiling comes from the node definition: outputs are `count` + maxFiles groups.
+    const declared = Array.isArray(nodeData.output) ? nodeData.output.length : 0;
+    const maxFiles = (declared - 1) / base.group.length;
+    if (!Number.isInteger(maxFiles) || maxFiles < 1) {
+      console.error(`[ITL.MultiLoader] ${nodeData.name}: cannot derive the file ceiling from ${declared} declared outputs — leaving the node without the multi-loader UI.`);
+      return;
+    }
+    const cfg = { ...base, maxFiles };
     ensureStyles();
 
     const MIRRORED = ["downscale_mode", "max_size", "output_slots", "force_rate"];   // downscale_mode/max_size are image-only, force_rate is video-only; findWidget just misses on the other kinds
@@ -197,13 +206,13 @@ app.registerExtension({
 
       // Resolve how many sockets to show: "auto" (or a missing/unparsable value — e.g. a
       // restored workflow handing back null) follows the file count; otherwise the pinned
-      // number, clamped to 1..MAX_FILES.
+      // number, clamped to 1..cfg.maxFiles.
       function slotCount() {
         const w = findWidget(node, "output_slots");
         const raw = w?.value;
         if (!raw || raw === "auto") return node._blRows.length;
         const n = parseInt(raw, 10);
-        return Number.isFinite(n) ? Math.max(1, Math.min(MAX_FILES, n)) : node._blRows.length;
+        return Number.isFinite(n) ? Math.max(1, Math.min(cfg.maxFiles, n)) : node._blRows.length;
       }
       node._blSyncOutputs = () => syncOutputs(node, cfg, slotCount());
 
@@ -213,7 +222,7 @@ app.registerExtension({
         const w = findWidget(node, "output_slots");
         const raw = w?.value;
         if (!raw || raw === "auto") return "";
-        const slots = Math.max(1, Math.min(MAX_FILES, parseInt(raw, 10) || 0));
+        const slots = Math.max(1, Math.min(cfg.maxFiles, parseInt(raw, 10) || 0));
         const n = node._blRows.length;
         // Format a range as "a" for a single item, "a-b" for a span.
         const formatRange = (start, end) => (start === end ? String(start) : `${start}-${end}`);
@@ -262,14 +271,14 @@ app.registerExtension({
       async function addFiles(fileList) {
         const files = [...fileList].filter(acceptFile);
         const rejected = fileList.length - files.length;
-        const free = MAX_FILES - node._blRows.length;
+        const free = cfg.maxFiles - node._blRows.length;
         const taking = files.slice(0, free);
         let skipped = files.length - taking.length;
         let failed = null;
         // taking.length is capped against a snapshot of node._blRows.length taken above; if
         // another drop is uploading concurrently (interleaved awaits), that snapshot goes
         // stale. Re-check right before each push so two overlapping drops can't push the
-        // node past MAX_FILES between them.
+        // node past cfg.maxFiles between them.
         for (let idx = 0; idx < taking.length; idx++) {
           const f = taking[idx];
           let uploaded;
@@ -279,7 +288,7 @@ app.registerExtension({
             failed = e.message;
             break;
           }
-          if (node._blRows.length >= MAX_FILES) {
+          if (node._blRows.length >= cfg.maxFiles) {
             skipped += taking.length - idx; // safety net: a concurrent drop filled the node while this file was uploading
             break;
           }
@@ -292,7 +301,7 @@ app.registerExtension({
           setStatus(`❌ ${failed} — ${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded before the error.${offSuffix()}`, "#e0555a");
         } else {
           const parts = [`${node._blRows.length} file${node._blRows.length === 1 ? "" : "s"} loaded`];
-          if (skipped) parts.push(`only ${MAX_FILES} fit — ${skipped} skipped`);
+          if (skipped) parts.push(`only ${cfg.maxFiles} fit — ${skipped} skipped`);
           if (rejected) parts.push(`${rejected} not ${cfg.kind} — ignored`);
           setStatus((skipped || rejected ? "⚠ " : "✅ ") + parts.join("; ") + offSuffix() + slotNote(), skipped || rejected ? "#e0a03c" : "#46b4e6");
         }
@@ -559,14 +568,23 @@ app.registerExtension({
             if (w && mirror[name] !== undefined) w.value = mirror[name];
           }
         }
-        const res = parseFiles(findWidget(node, "files_json")?.value);
+        const res = parseFiles(findWidget(node, "files_json")?.value, cfg.maxFiles);
         node._blRows = res.ok ? res.files : [];
-        if (res.ok) {
-          node._blSyncJson?.();
-        } else {
+        if (!res.ok) {
           // Don't overwrite a possibly hand-edited files_json with "[]" — leave the widget
           // value alone so the user can see and fix what's actually there.
           node._blSetStatus?.(`❌ ${res.error}`, "#e0555a");
+        } else if (res.dropped) {
+          // files_json lists more files than this front-end's ceiling (a workflow saved by a
+          // newer pack with a higher MAX_FILES, or a hand edit). Show the first cfg.maxFiles rows
+          // but leave the widget value alone: writing the shortened list back would silently
+          // delete the extra files from the workflow, and the untouched list lets the Python
+          // side fail the run with its clear "supports at most N" error instead of quietly
+          // running short. Any edit to the rows here does rewrite it — the status says so.
+          const n = res.files.length + res.dropped;
+          node._blSetStatus?.(`⚠ files_json lists ${n} files but this version supports ${cfg.maxFiles} — files ${cfg.maxFiles + 1}-${n} are hidden and will be dropped from the workflow if you edit the list here. Update the pack to keep them.`, "#e0a03c");
+        } else {
+          node._blSyncJson?.();
         }
         node._blSyncOutputs?.();
         node._blRender?.();
