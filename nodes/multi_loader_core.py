@@ -1,13 +1,24 @@
 # Multi Loader core — part of ComfyUI-IntoTheLatent-Utils. GPL-3.0.
 #
-# Pure (comfy-free) logic shared by the four Multi Loader nodes (nodes/multi_image_loader.py,
-# nodes/multi_audio_loader.py). parse_files is mirrored in web/js/multi_loader.js — keep in sync.
+# Pure (comfy-free) logic shared by the six Multi Loader nodes (image/audio/video, simple +
+# Advanced: nodes/multi_image_loader.py, nodes/multi_audio_loader.py, nodes/multi_video_loader.py).
+# parse_files is mirrored in web/js/multi_loader.js — keep in sync. MAX_FILES is the only copy of
+# the ceiling: the loaders declare their output groups, descriptions and output_slots options from
+# it, and the front-end reads it back from the node definition (declared output count).
 #
 # "Multi" here means several files emitted in a single run — distinct from ITLPromptBatch's
 # "Batch", which walks one entry per queued run.
 import json
 
 MAX_FILES = 10
+# output_slots Combo shared by all six loaders (front-end only; see web/js/multi_loader.js).
+OUTPUT_SLOT_OPTIONS = ("auto", *(str(i) for i in range(1, MAX_FILES + 1)))
+OUTPUT_SLOTS_TOOLTIP = (
+    "How many output sockets to show. 'auto' follows the number of loaded files, so sockets appear "
+    "and disappear as you edit the list. Pick a fixed number to keep the sockets (and your wires) in "
+    "place while you swap files around — extra sockets with no file behind them output nothing, so "
+    "don't wire more than you load."
+)
 DOWNSCALE_MODES = ("off", "keep aspect ratio", "crop to square", "stretch to square")
 
 

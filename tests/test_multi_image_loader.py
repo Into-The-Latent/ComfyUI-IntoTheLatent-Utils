@@ -7,6 +7,8 @@ pytest.importorskip("comfy_api")  # only runs inside a ComfyUI environment
 import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 
+from nodes.multi_loader_core import MAX_FILES, OUTPUT_SLOT_OPTIONS  # noqa: E402  (comfy-free)
+
 
 @pytest.fixture
 def input_dir(tmp_path, monkeypatch):
@@ -17,7 +19,6 @@ def input_dir(tmp_path, monkeypatch):
 
 def test_advanced_images_masks_filenames(input_dir):
     from nodes.multi_image_loader import _run_image
-    from nodes.multi_loader_core import MAX_FILES
     Image.new("RGBA", (32, 16), (255, 0, 0, 128)).save(input_dir / "a.png")
     Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "b.png")
     out = _run_image(json.dumps([{"name": "a.png"}, {"name": "b.png"}]), "off", 1200, advanced=True)
@@ -36,7 +37,6 @@ def test_advanced_images_masks_filenames(input_dir):
 
 def test_simple_layout(input_dir):
     from nodes.multi_image_loader import _run_image
-    from nodes.multi_loader_core import MAX_FILES
     Image.new("RGB", (8, 8), (0, 0, 255)).save(input_dir / "c.png")
     out = _run_image(json.dumps([{"name": "c.png"}]), "off", 1200, advanced=False)
     assert len(out) == 1 + MAX_FILES and out[0] == 1
@@ -89,3 +89,34 @@ def test_all_disabled_yields_count_zero(input_dir):
 
     assert out[0] == 0                              # count == 0, not > 0 (no exception)
     assert all(v is None for v in out[1:])          # all output slots None
+
+
+def test_ten_files_fill_the_last_group(input_dir):
+    from nodes.multi_image_loader import _run_image
+    names = [f"f{i}.png" for i in range(1, MAX_FILES + 1)]
+    for i, n in enumerate(names):
+        Image.new("RGB", (8, 8), (i, 0, 0)).save(input_dir / n)
+    files = json.dumps([{"name": n} for n in names])
+
+    out = _run_image(files, "off", 1200, advanced=True)
+    assert out[0] == MAX_FILES and len(out) == 1 + 3 * MAX_FILES
+    base = 1 + (MAX_FILES - 1) * 3                    # file 10's group: image_10/mask_10/filename_10
+    assert base == 28
+    assert out[base].shape == (1, 8, 8, 3) and out[base + 1] is not None and out[base + 2] == names[-1]
+    assert all(o is not None for o in out)            # every declared slot is filled at the ceiling
+
+    out = _run_image(files, "off", 1200, advanced=False)
+    assert out[0] == MAX_FILES and len(out) == 1 + MAX_FILES and out[MAX_FILES].shape == (1, 8, 8, 3)
+
+
+@pytest.mark.parametrize("advanced", [False, True])
+def test_schema_outputs_match_padded_return(input_dir, advanced):
+    # A mismatch between the declared outputs and the padded return would shift every socket.
+    from nodes.multi_image_loader import ITLMultiImageLoader, ITLMultiImageLoaderAdvanced, _run_image
+    Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "a.png")
+    schema = (ITLMultiImageLoaderAdvanced if advanced else ITLMultiImageLoader).define_schema()
+    out = _run_image(json.dumps([{"name": "a.png"}]), "off", 1200, advanced=advanced)
+    assert len(schema.outputs) == len(out)
+    assert schema.outputs[-1].display_name == (f"filename_{MAX_FILES}" if advanced else f"image_{MAX_FILES}")
+    slots = next(i for i in schema.inputs if i.id == "output_slots")
+    assert list(slots.options) == list(OUTPUT_SLOT_OPTIONS)

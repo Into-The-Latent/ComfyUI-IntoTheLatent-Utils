@@ -13,7 +13,7 @@ import torch
 import folder_paths
 from comfy_api.latest import io
 
-from .multi_loader_core import MAX_FILES, parse_files
+from .multi_loader_core import MAX_FILES, OUTPUT_SLOT_OPTIONS, OUTPUT_SLOTS_TOOLTIP, parse_files
 
 
 def _input_path(f):
@@ -110,11 +110,7 @@ def _audio_inputs():
                     "front-end — drop files onto the node instead of editing this.",
         ),
         io.Combo.Input(
-            "output_slots", options=["auto", *(str(i) for i in range(1, MAX_FILES + 1))], default="auto",
-            tooltip="How many output sockets to show. 'auto' follows the number of loaded files, so "
-                    "sockets appear and disappear as you edit the list. Pick a fixed number to keep the "
-                    "sockets (and your wires) in place while you swap files around — extra sockets with "
-                    "no file behind them output nothing, so don't wire more than you load.",
+            "output_slots", options=list(OUTPUT_SLOT_OPTIONS), default="auto", tooltip=OUTPUT_SLOTS_TOOLTIP,
         ),
     ]
 
@@ -136,7 +132,7 @@ class ITLMultiAudioLoader(io.ComfyNode):
             display_name="ITL Multi Audio Loader",
             category="Into The Latent/audio",
             search_aliases=["batch", "load", "audio", "multi", "drop", "upload", "wav", "mp3"],
-            description="Drop up to 10 audio files onto the node; each gets its own audio_N "
+            description=f"Drop up to {MAX_FILES} audio files onto the node; each gets its own audio_N "
                         "output socket (sockets appear/disappear with the list, or pin "
                         "output_slots to a fixed count so wires survive file edits). Each row has "
                         "an on/off toggle: a switched-off row keeps its socket position but "
