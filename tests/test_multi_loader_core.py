@@ -62,8 +62,19 @@ def test_parse_bad_entry_raises(entry):
 
 def test_parse_over_ceiling_raises():
     raw = json.dumps([{"name": f"f{i}.png"} for i in range(MAX_FILES + 1)])
-    with pytest.raises(ValueError, match="at most 8"):
+    with pytest.raises(ValueError, match=f"at most {MAX_FILES}"):
         parse_files(raw)
+
+
+def test_ceiling_is_ten():
+    # The user-facing limit; nodes/multi_image_loader.py etc. and web/js/multi_loader.js
+    # derive their socket count / option list from it.
+    assert MAX_FILES == 10
+
+
+def test_parse_at_ceiling_ok():
+    raw = json.dumps([{"name": f"f{i}.png"} for i in range(MAX_FILES)])
+    assert len(parse_files(raw)) == MAX_FILES
 
 
 from nodes.multi_loader_core import downscale_size

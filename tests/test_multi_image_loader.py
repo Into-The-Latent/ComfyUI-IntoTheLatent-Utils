@@ -17,11 +17,12 @@ def input_dir(tmp_path, monkeypatch):
 
 def test_advanced_images_masks_filenames(input_dir):
     from nodes.multi_image_loader import _run_image
+    from nodes.multi_loader_core import MAX_FILES
     Image.new("RGBA", (32, 16), (255, 0, 0, 128)).save(input_dir / "a.png")
     Image.new("RGB", (8, 8), (0, 255, 0)).save(input_dir / "b.png")
     out = _run_image(json.dumps([{"name": "a.png"}, {"name": "b.png"}]), "off", 1200, advanced=True)
 
-    assert len(out) == 25 and out[0] == 2
+    assert len(out) == 1 + 3 * MAX_FILES and out[0] == 2
     img1, mask1, name1 = out[1], out[2], out[3]
     assert img1.shape == (1, 16, 32, 3)           # [1,H,W,C]
     assert mask1.shape == (1, 16, 32)             # inverted alpha, image-sized
@@ -35,9 +36,10 @@ def test_advanced_images_masks_filenames(input_dir):
 
 def test_simple_layout(input_dir):
     from nodes.multi_image_loader import _run_image
+    from nodes.multi_loader_core import MAX_FILES
     Image.new("RGB", (8, 8), (0, 0, 255)).save(input_dir / "c.png")
     out = _run_image(json.dumps([{"name": "c.png"}]), "off", 1200, advanced=False)
-    assert len(out) == 9 and out[0] == 1
+    assert len(out) == 1 + MAX_FILES and out[0] == 1
     assert out[1].shape == (1, 8, 8, 3) and out[2] is None
 
 

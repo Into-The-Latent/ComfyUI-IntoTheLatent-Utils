@@ -21,7 +21,7 @@
 import { chainCallback } from "./utility.js";
 const { app } = window.comfyAPI.app;
 
-const MAX_FILES = 8;
+const MAX_FILES = 10;
 
 // group: [prefix, TYPE] per output within one file's group, in schema order.
 const NODES = {

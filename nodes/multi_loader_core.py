@@ -7,7 +7,7 @@
 # "Batch", which walks one entry per queued run.
 import json
 
-MAX_FILES = 8
+MAX_FILES = 10
 DOWNSCALE_MODES = ("off", "keep aspect ratio", "crop to square", "stretch to square")
 
 

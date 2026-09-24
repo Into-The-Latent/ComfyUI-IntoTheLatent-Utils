@@ -64,10 +64,11 @@ def _write_video(path, fps=24, seconds=1, color=(200, 100, 50), audio_hz=None, a
 
 def test_simple_layout(input_dir):
     from nodes.multi_video_loader import _run_video
+    from nodes.multi_loader_core import MAX_FILES
     _write_video(input_dir / "one.mp4", fps=24, seconds=1)
     out = _run_video(json.dumps([{"name": "one.mp4"}]), force_rate=0.0, advanced=False)
 
-    assert len(out) == 17 and out[0] == 1
+    assert len(out) == 1 + 2 * MAX_FILES and out[0] == 1
     assert out[1] is not None                 # video_1
     assert out[2] is None or isinstance(out[2], dict)   # audio_1 - no track -> None
     assert out[3] is None                      # padding (video_2)
@@ -75,11 +76,12 @@ def test_simple_layout(input_dir):
 
 def test_advanced_layout_two_clips(input_dir):
     from nodes.multi_video_loader import _run_video
+    from nodes.multi_loader_core import MAX_FILES
     _write_video(input_dir / "a.mp4", fps=24, seconds=1)
     _write_video(input_dir / "b.mp4", fps=24, seconds=1)
     out = _run_video(json.dumps([{"name": "a.mp4"}, {"name": "b.mp4"}]), force_rate=0.0, advanced=True)
 
-    assert len(out) == 25 and out[0] == 2
+    assert len(out) == 1 + 3 * MAX_FILES and out[0] == 2
     assert out[1] is not None and out[3] == "a.mp4"
     assert out[4] is not None and out[6] == "b.mp4"
 

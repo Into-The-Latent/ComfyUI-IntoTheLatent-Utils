@@ -181,7 +181,7 @@ def _video_inputs():
                     "clip's frames to do this, so it costs time and memory — 0 stays free.",
         ),
         io.Combo.Input(
-            "output_slots", options=["auto", "1", "2", "3", "4", "5", "6", "7", "8"], default="auto",
+            "output_slots", options=["auto", *(str(i) for i in range(1, MAX_FILES + 1))], default="auto",
             tooltip="How many output sockets to show. 'auto' follows the number of loaded files, so "
                     "sockets appear and disappear as you edit the list. Pick a fixed number to keep the "
                     "sockets (and your wires) in place while you swap files around — extra sockets with "
@@ -208,7 +208,7 @@ class ITLMultiVideoLoader(io.ComfyNode):
             display_name="ITL Multi Video Loader",
             category="Into The Latent/video",
             search_aliases=["batch", "load", "video", "multi", "drop", "upload", "mp4", "mov"],
-            description="Drop up to 8 video files onto the node; each gets its own video_N and "
+            description="Drop up to 10 video files onto the node; each gets its own video_N and "
                         "audio_N output socket (sockets appear/disappear with the list, or pin "
                         "output_slots to a fixed count so wires survive file edits). Each row has "
                         "an on/off toggle: a switched-off row keeps its socket position but "
