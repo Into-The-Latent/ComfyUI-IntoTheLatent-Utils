@@ -30,6 +30,7 @@ const MOSS_SPEC = {
     setWidgetVal("canvas", LF.CANVASES.includes(scene.canvas) ? scene.canvas : "none");
   },
   hasTags: true, requiresBbox: true,
+  alwaysSidecar: true,                                       // pixel bboxes: the sidecar's fraction boxes make a copy size-independent
   importPrompt: "Paste MOSS-Image layout (or Ideogram 4 caption) JSON:",
   importError: "Not a layout JSON (needs 'items' or 'compositional_deconstruction').",
 };

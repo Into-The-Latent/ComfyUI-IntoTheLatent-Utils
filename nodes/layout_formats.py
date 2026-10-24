@@ -89,11 +89,28 @@ def text(v):
     return ""
 
 
+def num(v):
+    # A coordinate from untrusted JSON: a finite number or numeric string -> float, anything else (bool, None,
+    # NaN, text) -> None.
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        return None
+    try:
+        f = float(v)
+    except ValueError:
+        return None
+    return f if math.isfinite(f) else None
+
+
+def colors(v):
+    # A colour list from untrusted JSON: non-empty strings only, in order.
+    return [c for c in v if isinstance(c, str) and c] if isinstance(v, list) else []
+
+
 def palette(colors):
-    # ["#rrggbb", ...] (or autogrow dict) -> ["#RRGGBB", ...] in order, dropping empties.
+    # ["#rrggbb", ...] (or autogrow dict) -> ["#RRGGBB", ...] in order, dropping empties and non-strings.
     if isinstance(colors, dict):
         colors = colors.values()
-    return [c.upper() for c in colors if c]
+    return [c.upper() for c in colors if isinstance(c, str) and c]
 
 
 def by_id(boxes):
@@ -246,23 +263,27 @@ def unplaced_box(idx):
 def parse_ideogram(cap):
     # Caption dict -> (editor boxes, scene). Boxes: {x,y,w,h, type, text, desc, palette}; bbox assumed on the
     # 0-1000 grid in [ymin, xmin, ymax, xmax] order (the Ideogram defaults — the JSON carries no marker).
-    cd = cap.get("compositional_deconstruction") or {}
+    cd = cap.get("compositional_deconstruction")
+    if not isinstance(cd, dict):
+        cd = {}
+    els = cd.get("elements")
     boxes = []
-    for i, el in enumerate(cd.get("elements") or []):
+    for i, el in enumerate(els if isinstance(els, list) else []):
         if not isinstance(el, dict):
             continue
         box = {"type": "text" if el.get("type") == "text" else "obj",
                "text": text(el.get("text")), "desc": text(el.get("desc")),
-               "palette": list(el.get("color_palette") or [])}
+               "palette": colors(el.get("color_palette"))}
         bb = el.get("bbox")
-        if isinstance(bb, (list, tuple)) and len(bb) == 4:
-            ymin, xmin, ymax, xmax = bb
+        nums = [num(v) for v in bb] if isinstance(bb, (list, tuple)) and len(bb) == 4 else []
+        if nums and all(v is not None for v in nums):
+            ymin, xmin, ymax, xmax = nums
             box.update(x=xmin / 1000.0, y=ymin / 1000.0,
                        w=(xmax - xmin) / 1000.0, h=(ymax - ymin) / 1000.0)
         else:
             box.update(unplaced_box(i))
         boxes.append(box)
-    sd = cap.get("style_description") or {}
+    sd = cap.get("style_description")
     if not isinstance(sd, dict):
         sd = {}
     kind = "photo" if text(sd.get("photo")) or isinstance(sd.get("photo"), str) else         "art_style" if text(sd.get("art_style")) or isinstance(sd.get("art_style"), str) else "none"
@@ -270,7 +291,7 @@ def parse_ideogram(cap):
                            background=text(cd.get("background")), style_kind=kind,
                            photo=text(sd.get("photo")), art_style=text(sd.get("art_style")),
                            aesthetics=text(sd.get("aesthetics")), lighting=text(sd.get("lighting")),
-                           medium=text(sd.get("medium")), palette=sd.get("color_palette") or [])
+                           medium=text(sd.get("medium")), palette=colors(sd.get("color_palette")))
     return boxes, scene
 
 
@@ -287,9 +308,10 @@ MOSS_SPACE, MOSS_FORMAT = "abs_centralized", "yxyx"
 
 def strs(v):
     # A list of non-empty strings; a comma/newline separated string is split (the editor's meta/tags fields).
+    # Entries must be text (str / int / float); null, bool, dict... are dropped, not spelled out.
     if isinstance(v, str):
         v = re.split(r"[,\n]", v)
-    return [str(t).strip() for t in (v if isinstance(v, list) else []) if str(t).strip()]
+    return [text(t).strip() for t in (v if isinstance(v, list) else []) if text(t).strip()]
 
 
 def moss_label(t):
@@ -325,14 +347,12 @@ def from_moss_bbox(bb, width, height, space=MOSS_SPACE, fmt=MOSS_FORMAT):
     # Layout bbox -> editor {x, y, w, h} fractions clamped into the canvas, or None for malformed input.
     # space "abs_centralized" (default) = pixels from the canvas centre; "abs" = plain top-left pixels.
     # fmt "yxyx" (default) or "xyxy".
-    if not isinstance(bb, (list, tuple)) or len(bb) != 4 or any(isinstance(v, bool) for v in bb):
-        return None                                          # numbers or numeric strings only (bools are malformed, not 0/1)
-    try:
-        a, b, c, d = (float(v) for v in bb)
-    except (TypeError, ValueError):
+    if not isinstance(bb, (list, tuple)) or len(bb) != 4:
         return None
-    if not all(math.isfinite(v) for v in (a, b, c, d)):
+    nums = [num(v) for v in bb]                              # numbers or numeric strings only (bool/null/NaN are malformed)
+    if any(v is None for v in nums):
         return None
+    a, b, c, d = nums
     y1, x1, y2, x2 = (b, a, d, c) if str(fmt).lower() == "xyxy" else (a, b, c, d)
     if "central" in str(space or MOSS_SPACE):
         y1, y2, x1, x2 = y1 + height // 2, y2 + height // 2, x1 + width // 2, x2 + width // 2
@@ -387,13 +407,13 @@ def parse_moss(layout, width, height):
             continue
         box = {"type": moss_label(it.get("label")), "text": text(it.get("text")),
                "desc": text(it.get("caption")), "tags": ", ".join(strs(it.get("tags"))),
-               "palette": strs(it.get("palette"))}
+               "palette": colors(it.get("palette"))}
         bb = from_moss_bbox(it.get("bbox"), width, height, space or MOSS_SPACE, fmt or MOSS_FORMAT)
         box.update(bb if bb else unplaced_box(i))
         boxes.append(box)
     s = layout.get("summary") if isinstance(layout.get("summary"), dict) else {}
     return boxes, moss_scene(caption=text(s.get("caption")), meta=s.get("meta"), canvas=s.get("canvas"),
-                             palette=strs(s.get("palette")))
+                             palette=colors(s.get("palette")))
 
 
 # ── detection + conversion ─────────────────────────────────────────────────────────────────────

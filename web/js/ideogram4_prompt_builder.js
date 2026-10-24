@@ -2576,9 +2576,10 @@ app.registerExtension({
       // scenes stay clean. The Python `prompt` output never includes it.
       // The sidecar is needed whenever a box holds something this node's own format can't express: hierarchy,
       // tags, a label from the other builder, a disabled region, or (MOSS, which needs a bbox) an unplaced one —
-      // so a copy/paste or template round trip, within a node or across the two, stays lossless.
+      // so a copy/paste or template round trip, within a node or across the two, stays lossless. A format whose
+      // bboxes are pixels (MOSS) always gets it: the fraction boxes survive a paste into a node of another size.
       function needsSidecar() {
-        return node._boxes.some((b) => b.group || b.parent != null || b.disabled || isUnexported(b) ||
+        return !!spec.alwaysSidecar || node._boxes.some((b) => b.group || b.parent != null || b.disabled || isUnexported(b) ||
           (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
       }
       function buildClipboardCaption() {
@@ -2611,8 +2612,8 @@ app.registerExtension({
       // Apply a parsed layout ({obj, format}) of either format: importLayout restores the ITL sidecar (groups +
       // hierarchy, labels normalised to this node's set) when present, else parses the layout and, when it is the
       // other builder's format, converts it — the same way the Python node reads it (layout_formats.js mirrors it).
-      function applyLayout(parsed, dimsOverride) {           // dimsOverride: the resolved [W, H] from execute (wired width/height)
-        const [W, H] = dimsOverride || dims();
+      function applyLayout(parsed) {
+        const [W, H] = dims();
         const { boxes, scene } = LF.importLayout(parsed.obj, spec.format, W, H);
         node._boxes = boxes;
         selectOnly(node._boxes.length ? 0 : -1);
@@ -2636,12 +2637,12 @@ app.registerExtension({
         return null;
       }
       // Apply a parsed caption to the editor and refresh everything.
-      function loadCaption(cap, dimsOverride) {
+      function loadCaption(cap) {
         closeInlineEditor();
         // Setting the multiline widgets + rebuilding the style sub-widget makes ComfyUI grow the node;
         // an import shouldn't change its size, so restore it (now and after the deferred re-arrange).
         const sz = node.size ? [node.size[0], node.size[1]] : null;
-        applyLayout(cap, dimsOverride);
+        applyLayout(cap);
         if (sz) { node.setSize(sz); requestAnimationFrame(() => node.setSize(sz)); }
         syncCanvasToDims(); commit(); rebuildStylePalette(); fitCanvas();
       }
@@ -2649,7 +2650,9 @@ app.registerExtension({
       function insertCaptionBoxes(cap) {
         closeInlineEditor();
         const [W, H] = dims();
-        const added = LF.importLayout(cap.obj, spec.format, W, H).boxes;
+        const added = LF.importLayout(cap.obj, spec.format, W, H).boxes
+          .filter((b) => !b.group)                          // like Ctrl+V: flat, editable, root, fresh ids
+          .map((b) => { const c = { ...b }; delete c.id; delete c.parent; delete c.locked; return c; });
         if (!added.length) return;
         const start = node._boxes.length;
         node._boxes.push(...added);
@@ -2670,7 +2673,7 @@ app.registerExtension({
 
       // Populate the editor from a caption pushed back by execute() when import_json
       // is connected (a connected socket can't be read in the frontend directly).
-      function applyImported(capStr, resolvedDims) {
+      function applyImported(capStr) {
         if (!capStr) return;
         // "always" mode re-applies even an unchanged import so the editor snaps back to the
         // authoritative JSON after edits; "when empty" keeps the guard so edits stick.
@@ -2679,12 +2682,17 @@ app.registerExtension({
         const cap = tryParseCaption(capStr);
         if (!cap) return;
         node._lastImported = capStr;
-        loadCaption(cap, Array.isArray(resolvedDims) && resolvedDims[0] && resolvedDims[1] ? resolvedDims : undefined);
+        loadCaption(cap);
       }
       chainCallback(node, "onExecuted", function (message) {
-        // The mirror's MOSS bboxes are pixels of the RESOLVED size, so parse with message.dims (the width/height
-        // widgets are stale while those inputs are wired, and dims below is skipped behind a background image).
-        if (message?.caption) applyImported(message.caption[0], message.dims);
+        // Resolved width/height first: the width/height widgets are stale while those inputs are wired, and every
+        // derived view (the import's pixel bboxes, readouts, token estimate, Overview markers) reads them.
+        if (message?.dims) {
+          const [w, h] = message.dims;
+          if (wWidget && w) wWidget.value = w;
+          if (hWidget && h) hWidget.value = h;
+        }
+        if (message?.caption) applyImported(message.caption[0]);
         // Seed regions from the bboxes input only when the editor is empty, so user-drawn/edited
         // regions are never overwritten.
         if (message?.boxes && !node._boxes.length) {
@@ -2695,15 +2703,10 @@ app.registerExtension({
             commit(); fitCanvas();
           }
         }
-        // Reflect resolved width/height (e.g. from connected inputs) in the widgets — every editor path that
-        // computes pixel bboxes (Paste, readouts, clipboard, token estimate) reads them — and in the canvas aspect,
-        // unless a connected background image governs the aspect itself.
+        // The canvas aspect follows the resolved size too, unless a connected background image governs it.
         if (message?.dims) {
-          const [w, h] = message.dims;
-          if (wWidget && w) wWidget.value = w;
-          if (hWidget && h) hWidget.value = h;
           if (!node._bgImg) { syncCanvasToDims(); fitCanvas(); }
-          updateBboxLabel();
+          updateBboxLabel(); updateTokens();
         }
       });
 

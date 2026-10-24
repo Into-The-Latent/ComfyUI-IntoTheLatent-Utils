@@ -22,15 +22,29 @@ export function text(v) {
   return "";
 }
 
+export function num(v) {
+  // A coordinate from untrusted JSON: a finite number or numeric string -> number, anything else (bool, null,
+  // NaN, text) -> null.
+  if (typeof v !== "number" && !(typeof v === "string" && v.trim() !== "")) return null;
+  const f = Number(v);
+  return Number.isFinite(f) ? f : null;
+}
+
+export function colors(v) {
+  // A colour list from untrusted JSON: non-empty strings only, in order.
+  return Array.isArray(v) ? v.filter((c) => typeof c === "string" && c) : [];
+}
+
 export function upperPalette(colors) {
-  // ["#rrggbb", ...] -> ["#RRGGBB", ...] in order, dropping empties.
-  return (colors || []).filter((c) => c).map((c) => String(c).toUpperCase());
+  // ["#rrggbb", ...] -> ["#RRGGBB", ...] in order, dropping empties and non-strings.
+  return (colors || []).filter((c) => typeof c === "string" && c).map((c) => c.toUpperCase());
 }
 
 export function strs(v) {
   // A list of non-empty strings; a comma/newline separated string is split (the editor's meta/tags fields).
+  // Entries must be text (string / number); null, bool, objects... are dropped, not spelled out.
   if (typeof v === "string") v = v.split(/[,\n]/);
-  return (Array.isArray(v) ? v : []).map((t) => String(t).trim()).filter(Boolean);
+  return (Array.isArray(v) ? v : []).map((t) => text(t).trim()).filter(Boolean);
 }
 
 function effDisabled(box, byId) {
@@ -107,25 +121,28 @@ export function buildIdeogram(boxes, scene, { coordMode = "normalized", bboxOrde
 
 export function parseIdeogram(cap) {
   // Caption -> {boxes, scene}; bbox assumed on the 0-1000 grid in [ymin, xmin, ymax, xmax] order.
-  const cd = (cap && cap.compositional_deconstruction) || {};
+  const cdRaw = cap && cap.compositional_deconstruction;
+  const cd = (cdRaw && typeof cdRaw === "object" && !Array.isArray(cdRaw)) ? cdRaw : {};
   const boxes = [];
   (Array.isArray(cd.elements) ? cd.elements : []).forEach((el, i) => {
     if (!el || typeof el !== "object") return;
     const box = { type: el.type === "text" ? "text" : "obj", text: text(el.text), desc: text(el.desc),
-                  palette: Array.isArray(el.color_palette) ? el.color_palette.slice() : [] };
+                  palette: colors(el.color_palette) };
     const bb = el.bbox;
-    if (Array.isArray(bb) && bb.length === 4) {
-      const [ymin, xmin, ymax, xmax] = bb;
+    const nums = (Array.isArray(bb) && bb.length === 4) ? bb.map(num) : [];
+    if (nums.length && nums.every((v) => v !== null)) {
+      const [ymin, xmin, ymax, xmax] = nums;
       Object.assign(box, { x: xmin / 1000, y: ymin / 1000, w: (xmax - xmin) / 1000, h: (ymax - ymin) / 1000 });
     } else Object.assign(box, unplacedBox(i));
     boxes.push(box);
   });
-  const sd = (cap.style_description && typeof cap.style_description === "object") ? cap.style_description : {};
+  const sdRaw = cap.style_description;
+  const sd = (sdRaw && typeof sdRaw === "object" && !Array.isArray(sdRaw)) ? sdRaw : {};
   const kind = (text(sd.photo) || typeof sd.photo === "string") ? "photo"
              : (text(sd.art_style) || typeof sd.art_style === "string") ? "art_style" : "none";
   const scene = ideogramScene({ high_level_description: text(cap.high_level_description), background: text(cd.background),
                                 style_kind: kind, photo: text(sd.photo), art_style: text(sd.art_style), aesthetics: text(sd.aesthetics),
-                                lighting: text(sd.lighting), medium: text(sd.medium), palette: sd.color_palette || [] });
+                                lighting: text(sd.lighting), medium: text(sd.medium), palette: colors(sd.color_palette) });
   return { boxes, scene };
 }
 
@@ -166,9 +183,8 @@ export function mossBbox(box, width, height) {
 export function fromMossBbox(bb, width, height, space = MOSS_SPACE, fmt = MOSS_FORMAT) {
   // Layout bbox -> editor {x, y, w, h} fractions clamped into the canvas, or null for malformed input.
   if (!Array.isArray(bb) || bb.length !== 4) return null;
-  // numbers or numeric strings only (Python float()): null / "" / booleans are malformed, not 0 / 1
-  const n = bb.map((v) => (typeof v === "number" || (typeof v === "string" && v.trim() !== "")) ? Number(v) : NaN);
-  if (n.some((v) => !Number.isFinite(v))) return null;
+  const n = bb.map(num);                                   // numbers or numeric strings only (bool/null/NaN are malformed)
+  if (n.some((v) => v === null)) return null;
   let [y1, x1, y2, x2] = String(fmt).toLowerCase() === "xyxy" ? [n[1], n[0], n[3], n[2]] : n;
   if (String(space || MOSS_SPACE).includes("central")) {
     y1 += Math.floor(height / 2); y2 += Math.floor(height / 2); x1 += Math.floor(width / 2); x2 += Math.floor(width / 2);
@@ -214,12 +230,12 @@ export function parseMoss(layout, width, height) {
   (Array.isArray(layout.items) ? layout.items : []).forEach((it, i) => {
     if (!it || typeof it !== "object") return;
     const box = { type: mossLabel(it.label), text: text(it.text), desc: text(it.caption),
-                  tags: strs(it.tags).join(", "), palette: strs(it.palette) };
+                  tags: strs(it.tags).join(", "), palette: colors(it.palette) };
     Object.assign(box, fromMossBbox(it.bbox, width, height, space || MOSS_SPACE, fmt || MOSS_FORMAT) || unplacedBox(i));
     boxes.push(box);
   });
   const s = (layout.summary && typeof layout.summary === "object") ? layout.summary : {};
-  return { boxes, scene: mossScene({ caption: text(s.caption), meta: s.meta, canvas: s.canvas, palette: strs(s.palette) }) };
+  return { boxes, scene: mossScene({ caption: text(s.caption), meta: s.meta, canvas: s.canvas, palette: colors(s.palette) }) };
 }
 
 // ── conversion ───────────────────────────────────────────────────────────────────────────────

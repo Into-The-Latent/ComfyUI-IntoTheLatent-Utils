@@ -93,3 +93,12 @@ def test_strs_and_label():
     assert strs("a, b\n c,,") == ["a", "b", "c"] and strs(["x", " ", 3]) == ["x", "3"] and strs(None) == []
     assert moss_label("obj") == "object" and moss_label("character") == "character" and moss_label(None) == "object"
     assert moss_label("text") == "text" and moss_label("object") == "object"
+
+
+def test_hostile_moss_json_never_raises():
+    layout = {"summary": {"caption": "c", "meta": [None, 1, {"a": 1}], "palette": [1, "#fff", None]},
+              "items": [{"label": "object", "caption": "p", "palette": 7, "tags": {"x": 1}, "bbox": [0, 0, 100, 100]}, {"label": "text", "text": {"a": 1}, "bbox": [0, 0, 100, 100]}]}
+    boxes, scene = parse_moss(layout, 1024, 1024)
+    assert scene["meta"] == ["1"] and scene["palette"] == ["#fff"] and boxes[0]["palette"] == [] and boxes[0]["tags"] == "" and boxes[1]["text"] == ""
+    out = build_moss(boxes, scene, 1024, 1024)
+    assert out["summary"] == {"meta": ["1"], "caption": "c", "palette": ["#FFF"]} and "palette" not in out["items"][0]

@@ -108,3 +108,22 @@ def test_unknown_format_raises():
         import_layout({"caption": "x"}, "moss", 1024, 1024)
     with pytest.raises(ValueError):
         import_layout(IDEO, "qwen", 1024, 1024)
+
+
+def test_hostile_ideogram_json_never_raises():
+    from nodes.layout_formats import parse_ideogram, strs
+    cap = {"compositional_deconstruction": {"background": "b", "elements": [
+        {"type": "obj", "desc": "s", "bbox": ["200", "100", "600", "400"], "color_palette": 5},
+        {"type": "obj", "desc": "n", "bbox": [None, 100, 600, 400], "color_palette": [123, None, "#abc"]},
+        {"type": "obj", "desc": "nan", "bbox": [float("nan"), 0, 1, 1]},
+        {"type": "obj", "desc": "bool", "bbox": [True, 0, 1, 1]}]}}
+    boxes, scene = parse_ideogram(cap)
+    assert boxes[0]["x"] == 0.1 and boxes[0]["palette"] == [] and "nobbox" not in boxes[0]      # numeric strings are numbers
+    assert boxes[1]["nobbox"] is True and boxes[1]["palette"] == ["#abc"]                        # null entry → unplaced; only strings are colours
+    assert boxes[2]["nobbox"] is True and boxes[3]["nobbox"] is True
+    assert compact(build_ideogram(boxes, scene)).count('"bbox"') == 1
+    for bad in ({"compositional_deconstruction": "oops"}, {"compositional_deconstruction": [1]}, {"compositional_deconstruction": {"elements": "x"}},
+                {"compositional_deconstruction": {}, "style_description": [1]}):
+        b, sc = parse_ideogram(bad)
+        assert b == [] and sc["background"] == "" and compact(build_ideogram(b, sc))
+    assert strs([None, 1, {"a": 1}, "x", 2.5, True]) == ["1", "x", "2.5"]                        # str / int / float only

@@ -209,8 +209,10 @@ Toolbar:
                 io.Image.Input("image", optional=True,
                                tooltip="Optional reference image shown as the editor background (and behind the preview)."),
                 io.String.Input("import_json", default="", optional=True, force_input=True,
-                                tooltip="Optional: a full caption JSON. When connected, it loads into the editor "
-                                        "and drives the output per 'import_mode'."),
+                                tooltip="Optional: a full caption JSON (Ideogram 4, or a MOSS-Image layout, which is "
+                                        "converted). When connected, it loads into the editor and drives the output per "
+                                        "'import_mode'. An Ideogram caption passes through as-is (coord_mode / bbox_order "
+                                        "do not apply to it); a MOSS layout is rebuilt with them."),
                 io.String.Input("style_palette_data", default="", socketless=True, advanced=True,
                                 tooltip="Serialized style color palette from the editor (managed by the node UI)."),
                 io.String.Input("elements_data", default="", socketless=True, advanced=True,
