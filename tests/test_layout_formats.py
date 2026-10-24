@@ -65,7 +65,7 @@ def test_same_format_import_is_not_converted():
     assert not conv and boxes[0]["type"] == "character" and scene["caption"] == "P."
 
 
-def test_tags_and_character_survive_editor_roundtrip():
+def test_tags_survive_editor_roundtrip_and_character_becomes_obj():
     moss = {"summary": {"caption": "P."}, "items": [{"label": "character", "caption": "hero", "tags": ["anime"], "bbox": [-100, -100, 100, 100]}]}
     boxes, scene, _ = import_layout(moss, "ideogram", 1024, 1024)
     assert boxes[0]["type"] == "obj" and boxes[0]["tags"] == "anime"

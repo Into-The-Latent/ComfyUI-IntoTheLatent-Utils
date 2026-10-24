@@ -271,7 +271,6 @@ Toolbar:
         if used_import and src == "ideogram":
             caption = {k: v for k, v in imported.items() if k != "_itl"}   # strip the editor-only sidecar from the prompt output
             boxes, _ = lf.parse_ideogram(imported)
-            mirror = imported
         else:
             if used_import:                                 # a MOSS-Image layout: convert, then build like editor output
                 boxes, scene, _ = lf.import_layout(imported, "ideogram", width, height)
@@ -283,7 +282,6 @@ Toolbar:
                                           palette=lf.parse_json_list(style_palette_data))
             caption = lf.build_ideogram(boxes, scene, coord_mode=coord_mode, bbox_order=bbox_order,
                                         width=width, height=height)
-            mirror = caption
         preview = _render_preview(boxes, width, height, _bg_image(image), bg_brightness)
         bboxes_out = lf.bbox_outputs(boxes, width, height)
 
@@ -292,6 +290,6 @@ Toolbar:
         ui = {"dims": [width, height]}
         if boxes_seeded:
             ui["boxes"] = [json.dumps(boxes)]
-        if used_import:                                       # mirror the import in the editor (only when used)
-            ui["caption"] = [lf.dumps(mirror)]
+        if used_import:                                       # mirror the raw import in the editor (only when used); the editor
+            ui["caption"] = [lf.dumps(imported)]              # converts a MOSS layout itself (layout_formats.js), keeping unplaced
         return io.NodeOutput(dump(caption), preview, bboxes_out, width, height, ui=ui)

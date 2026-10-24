@@ -200,8 +200,11 @@ so a layout can go Ideogram → MOSS → Ideogram inside the editor without losi
 has `group` or `parent`. It is now emitted whenever any box holds something the node's native
 format cannot express: `group`, `parent`, a non-empty `tags`, or a label outside the node's own set
 (`character` on the Ideogram node). Plain scenes stay clean, and the `prompt` output is untouched —
-the anti-goal covers the prompt, not the clipboard form. That is what makes `tags` and the label
-survive a copy/paste or template round trip through the other node.
+the anti-goal covers the prompt, not the clipboard form. That is what makes `tags` (and hierarchy)
+survive a copy/paste or template round trip through the other node. Labels are normalised to the
+receiving node's set on restore (the type picker only knows its own labels), so `character` becomes
+`obj` on the Ideogram node and comes back as `object`, not `character` — accepted loss (post-review
+ruling).
 
 **Labels on the box:** `box.type` stays the storage field. Ideogram boxes hold `obj`/`text`, MOSS
 boxes hold `object`/`character`/`text`. `apply` normalises to the receiving node's label set

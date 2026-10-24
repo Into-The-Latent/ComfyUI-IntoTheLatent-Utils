@@ -54,7 +54,11 @@ def test_ideogram_node_converts_moss_import():
     out = json.loads(res.args[0])
     assert out["compositional_deconstruction"]["background"] == "Poster."
     assert out["compositional_deconstruction"]["elements"][0] == {"type": "obj", "bbox": [94, 125, 219, 875], "desc": "hero"}
-    assert json.loads(res.ui["caption"][0]) == out                        # the editor mirrors the converted caption
+    assert json.loads(res.ui["caption"][0]) == json.loads(moss)           # the editor gets the raw import and converts it itself
+    res = Ideo.execute(1024, 1024, "", {"style": "none"}, import_json=moss, import_mode="always", output_format="compact",
+                       coord_mode="absolute", bbox_order="xy")             # the output honours the toggles; the mirror is unaffected
+    assert json.loads(res.args[0])["compositional_deconstruction"]["elements"][0]["bbox"] == [128, 96, 896, 224]
+    assert json.loads(res.ui["caption"][0]) == json.loads(moss)
     # a non-layout JSON object is ignored like prose: the editor output wins
     assert Ideo.execute(1024, 1024, "Editor wins.", {"style": "none"}, import_json='{"caption": "x"}', import_mode="always",
                         output_format="compact").args[0] == '{"compositional_deconstruction":{"background":"Editor wins.","elements":[]}}'
@@ -71,15 +75,15 @@ def test_moss_node_builds_layout_and_converts_ideogram_import():
     assert tuple(res.args[1].shape[1:]) == (1024, 1024, 3) and res.ui == {"dims": [1024, 1024]}
     assert Moss.execute(1024, 1024, "Just prose.").args[0] == "Just prose."                         # no items → plain text
     assert Moss.execute(1024, 1024, "Editor wins.", import_json="not json at all").args[0] == "Editor wins."
-    ideo = '{"compositional_deconstruction":{"background":"A beach","elements":[{"type":"obj","bbox":[200,100,600,400],"desc":"a crab"}]}}'
+    ideo = ('{"compositional_deconstruction":{"background":"A beach","elements":[{"type":"obj","bbox":[200,100,600,400],"desc":"a crab"},'
+            '{"type":"text","text":"later","desc":"unplaced"}]},"_itl":{"v":1,"boxes":[]}}')
     res = Moss.execute(1024, 1024, "ignored", import_json=ideo, import_mode="always")
     conv = json.loads(res.args[0])
-    assert conv["summary"]["caption"] == "A beach" and conv["items"][0]["label"] == "object"
-    assert json.loads(res.ui["caption"][0]) == conv
-    empty = '{"compositional_deconstruction":{"background":"Only a scene.","elements":[]}}'   # no items → plain prompt, layout mirror
+    assert conv["summary"]["caption"] == "A beach" and [i["label"] for i in conv["items"]] == ["object"] and "_itl" not in res.args[0]
+    assert json.loads(res.ui["caption"][0]) == json.loads(ideo)       # the editor gets the raw import and converts it itself (keeps the unplaced element)
+    empty = '{"compositional_deconstruction":{"background":"Only a scene.","elements":[]}}'   # no items → plain prompt
     res = Moss.execute(1024, 1024, "ignored", import_json=empty, import_mode="always")
-    assert res.args[0] == "Only a scene." and json.loads(res.ui["caption"][0]) == {
-        "summary": {"caption": "Only a scene."}, "items": [], "bbox_coord_space": "abs_centralized", "bbox_format": "yxyx"}
+    assert res.args[0] == "Only a scene." and json.loads(res.ui["caption"][0]) == json.loads(empty)
     moss_in = json.dumps(conv)                                                                       # same-format import: passthrough
     assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=moss_in, import_mode="always").args[0]) == conv
     assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins

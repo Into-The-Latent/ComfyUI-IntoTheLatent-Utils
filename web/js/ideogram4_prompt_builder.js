@@ -2567,9 +2567,11 @@ app.registerExtension({
       // restore the hierarchy losslessly. Added only when there's hierarchy/groups worth preserving, so plain
       // scenes stay clean. The Python `prompt` output never includes it.
       // The sidecar is needed whenever a box holds something this node's own format can't express: hierarchy,
-      // tags, or a label from the other builder — so a cross-node copy/paste or template round trip stays lossless.
+      // tags, a label from the other builder, a disabled region, or (MOSS, which needs a bbox) an unplaced one —
+      // so a copy/paste or template round trip, within a node or across the two, stays lossless.
       function needsSidecar() {
-        return node._boxes.some((b) => b.group || b.parent != null || (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
+        return node._boxes.some((b) => b.group || b.parent != null || b.disabled || (spec.requiresBbox && b.nobbox) ||
+          (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
       }
       function buildClipboardCaption() {
         const cap = buildCaptionObject();
@@ -2601,8 +2603,8 @@ app.registerExtension({
       // Apply a parsed layout ({obj, format}) of either format: the ITL sidecar restores the full editor layout
       // (groups + hierarchy, labels normalised to this node's set); otherwise the layout is parsed and, when it is
       // the other builder's format, converted (layout_formats.js mirrors the Python conversion).
-      function applyLayout(parsed) {
-        const [W, H] = dims();
+      function applyLayout(parsed, dimsOverride) {           // dimsOverride: the resolved [W, H] from execute (wired width/height)
+        const [W, H] = dimsOverride || dims();
         const { boxes, scene } = LF.importLayout(parsed.obj, spec.format, W, H);
         const side = parsed.obj._itl;
         if (side && Array.isArray(side.boxes) && side.boxes.some((b) => b && typeof b.x === "number")) {
@@ -2631,12 +2633,12 @@ app.registerExtension({
         return null;
       }
       // Apply a parsed caption to the editor and refresh everything.
-      function loadCaption(cap) {
+      function loadCaption(cap, dimsOverride) {
         closeInlineEditor();
         // Setting the multiline widgets + rebuilding the style sub-widget makes ComfyUI grow the node;
         // an import shouldn't change its size, so restore it (now and after the deferred re-arrange).
         const sz = node.size ? [node.size[0], node.size[1]] : null;
-        applyLayout(cap);
+        applyLayout(cap, dimsOverride);
         if (sz) { node.setSize(sz); requestAnimationFrame(() => node.setSize(sz)); }
         syncCanvasToDims(); commit(); rebuildStylePalette(); fitCanvas();
       }
@@ -2665,7 +2667,7 @@ app.registerExtension({
 
       // Populate the editor from a caption pushed back by execute() when import_json
       // is connected (a connected socket can't be read in the frontend directly).
-      function applyImported(capStr) {
+      function applyImported(capStr, dims) {
         if (!capStr) return;
         // "always" mode re-applies even an unchanged import so the editor snaps back to the
         // authoritative JSON after edits; "when empty" keeps the guard so edits stick.
@@ -2674,10 +2676,12 @@ app.registerExtension({
         const cap = tryParseCaption(capStr);
         if (!cap) return;
         node._lastImported = capStr;
-        loadCaption(cap);
+        loadCaption(cap, Array.isArray(dims) && dims[0] && dims[1] ? dims : undefined);
       }
       chainCallback(node, "onExecuted", function (message) {
-        if (message?.caption) applyImported(message.caption[0]);
+        // The mirror's MOSS bboxes are pixels of the RESOLVED size, so parse with message.dims (the width/height
+        // widgets are stale while those inputs are wired, and dims below is skipped behind a background image).
+        if (message?.caption) applyImported(message.caption[0], message.dims);
         // Seed regions from the bboxes input only when the editor is empty, so user-drawn/edited
         // regions are never overwritten.
         if (message?.boxes && !node._boxes.length) {
