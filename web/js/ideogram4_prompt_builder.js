@@ -2126,7 +2126,8 @@ app.registerExtension({
       // Paste the clipboard regions as a group, centered under the cursor, keeping their layout.
       function pasteBoxes() {
         if (!copiedBoxes || !copiedBoxes.length) return;
-        const clones = copiedBoxes.map((b) => { const c = JSON.parse(JSON.stringify(b)); delete c.locked; delete c.id; delete c.parent; return c; });  // pasted = editable, fresh id, root
+        const clones = LF.boxesToLabels(copiedBoxes, spec.format)   // the internal clipboard is shared across nodes: this node's labels
+          .map((b) => { const c = JSON.parse(JSON.stringify(b)); delete c.locked; delete c.id; delete c.parent; return c; });  // pasted = editable, fresh id, root
         let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
         for (const b of clones) {
           minx = Math.min(minx, b.x); miny = Math.min(miny, b.y);
@@ -2344,6 +2345,16 @@ app.registerExtension({
         if (node._layerMenu) { node._layerMenu.remove(); node._layerMenu = null; }
         node._layerDismiss?.disarm(); node._layerDismiss = null;
       }
+      // On a builder that needs a bbox (MOSS): an unplaced or zero-area region is drawn and listed but never exported —
+      // say so on its Overview row (both renderers).
+      function isUnexported(b) {
+        return !!spec.requiresBbox && !b.group && (!!b.nobbox || !spec.outBbox(b, ...dims()).length);
+      }
+      function decorateUnexported(txt, b, label) {
+        if (!isUnexported(b)) return;
+        txt.textContent += " ⚠ unplaced";
+        txt.title = (label ? label + " — " : "") + "unplaced: MOSS-Image needs a box with area, so this item is not exported. Move or resize it to place it.";
+      }
       function rowLabel(b) {
         if (b.group) return "📁 " + (b.name || "Group");
         if (b.type === "text") {
@@ -2390,10 +2401,7 @@ app.registerExtension({
             txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
             txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
             txt.title = label;
-            if (spec.requiresBbox && b.nobbox && !b.group) {      // MOSS needs a bbox: say why this row won't be exported
-              txt.textContent += " ⚠ unplaced";
-              txt.title = (label ? label + " — " : "") + "unplaced: MOSS-Image needs a box, so this item is not exported. Move or resize it to place it.";
-            }
+            decorateUnexported(txt, b, label);
             const lock = document.createElement("button");
             lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
             lock.textContent = b.locked ? "🔒" : "🔓";
@@ -2570,7 +2578,7 @@ app.registerExtension({
       // tags, a label from the other builder, a disabled region, or (MOSS, which needs a bbox) an unplaced one —
       // so a copy/paste or template round trip, within a node or across the two, stays lossless.
       function needsSidecar() {
-        return node._boxes.some((b) => b.group || b.parent != null || b.disabled || (spec.requiresBbox && b.nobbox) ||
+        return node._boxes.some((b) => b.group || b.parent != null || b.disabled || isUnexported(b) ||
           (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
       }
       function buildClipboardCaption() {
@@ -2600,18 +2608,13 @@ app.registerExtension({
         const w = findW(name);
         if (w) { w.value = val; w.callback?.(val); }
       }
-      // Apply a parsed layout ({obj, format}) of either format: the ITL sidecar restores the full editor layout
-      // (groups + hierarchy, labels normalised to this node's set); otherwise the layout is parsed and, when it is
-      // the other builder's format, converted (layout_formats.js mirrors the Python conversion).
+      // Apply a parsed layout ({obj, format}) of either format: importLayout restores the ITL sidecar (groups +
+      // hierarchy, labels normalised to this node's set) when present, else parses the layout and, when it is the
+      // other builder's format, converts it — the same way the Python node reads it (layout_formats.js mirrors it).
       function applyLayout(parsed, dimsOverride) {           // dimsOverride: the resolved [W, H] from execute (wired width/height)
         const [W, H] = dimsOverride || dims();
         const { boxes, scene } = LF.importLayout(parsed.obj, spec.format, W, H);
-        const side = parsed.obj._itl;
-        if (side && Array.isArray(side.boxes) && side.boxes.some((b) => b && typeof b.x === "number")) {
-          node._boxes = LF.boxesToLabels(side.boxes.filter((b) => b && typeof b.x === "number"), spec.format);
-        } else {
-          node._boxes = boxes;
-        }
+        node._boxes = boxes;
         selectOnly(node._boxes.length ? 0 : -1);
         spec.applyScene(scene, { setWidgetVal, findW });
         node._stylePalette = (scene.palette || []).slice();
@@ -2667,7 +2670,7 @@ app.registerExtension({
 
       // Populate the editor from a caption pushed back by execute() when import_json
       // is connected (a connected socket can't be read in the frontend directly).
-      function applyImported(capStr, dims) {
+      function applyImported(capStr, resolvedDims) {
         if (!capStr) return;
         // "always" mode re-applies even an unchanged import so the editor snaps back to the
         // authoritative JSON after edits; "when empty" keeps the guard so edits stick.
@@ -2676,7 +2679,7 @@ app.registerExtension({
         const cap = tryParseCaption(capStr);
         if (!cap) return;
         node._lastImported = capStr;
-        loadCaption(cap, Array.isArray(dims) && dims[0] && dims[1] ? dims : undefined);
+        loadCaption(cap, Array.isArray(resolvedDims) && resolvedDims[0] && resolvedDims[1] ? resolvedDims : undefined);
       }
       chainCallback(node, "onExecuted", function (message) {
         // The mirror's MOSS bboxes are pixels of the RESOLVED size, so parse with message.dims (the width/height
@@ -2687,18 +2690,20 @@ app.registerExtension({
         if (message?.boxes && !node._boxes.length) {
           const seeded = JSON.parse(message.boxes[0]);
           if (Array.isArray(seeded) && seeded.length) {
-            node._boxes = seeded.filter((b) => b && typeof b.x === "number" && typeof b.w === "number");
+            node._boxes = LF.boxesToLabels(seeded.filter((b) => b && typeof b.x === "number" && typeof b.w === "number"), spec.format);
             selectOnly(node._boxes.length ? 0 : -1);
             commit(); fitCanvas();
           }
         }
-        // Reflect resolved width/height (e.g. from connected inputs) in the canvas aspect.
-        // A connected background image governs the aspect itself, so skip then.
-        if (message?.dims && !node._bgImg) {
+        // Reflect resolved width/height (e.g. from connected inputs) in the widgets — every editor path that
+        // computes pixel bboxes (Paste, readouts, clipboard, token estimate) reads them — and in the canvas aspect,
+        // unless a connected background image governs the aspect itself.
+        if (message?.dims) {
           const [w, h] = message.dims;
           if (wWidget && w) wWidget.value = w;
           if (hWidget && h) hWidget.value = h;
-          syncCanvasToDims(); fitCanvas();
+          if (!node._bgImg) { syncCanvasToDims(); fitCanvas(); }
+          updateBboxLabel();
         }
       });
 
@@ -3027,10 +3032,7 @@ app.registerExtension({
           txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
           txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
           txt.title = label;
-          if (spec.requiresBbox && b.nobbox && !b.group) {      // MOSS needs a bbox: say why this row won't be exported
-            txt.textContent += " ⚠ unplaced";
-            txt.title = (label ? label + " — " : "") + "unplaced: MOSS-Image needs a box, so this item is not exported. Move or resize it to place it.";
-          }
+          decorateUnexported(txt, b, label);
           const lock = document.createElement("button");
           lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
           lock.textContent = b.locked ? "🔒" : "🔓";

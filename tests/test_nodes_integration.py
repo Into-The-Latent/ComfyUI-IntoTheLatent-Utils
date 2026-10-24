@@ -84,6 +84,14 @@ def test_moss_node_builds_layout_and_converts_ideogram_import():
     empty = '{"compositional_deconstruction":{"background":"Only a scene.","elements":[]}}'   # no items → plain prompt
     res = Moss.execute(1024, 1024, "ignored", import_json=empty, import_mode="always")
     assert res.args[0] == "Only a scene." and json.loads(res.ui["caption"][0]) == json.loads(empty)
-    moss_in = json.dumps(conv)                                                                       # same-format import: passthrough
+    moss_in = json.dumps(conv)                                                                       # same-format import: rebuilt at the node's size
     assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=moss_in, import_mode="always").args[0]) == conv
+    rebuilt = json.loads(Moss.execute(1024, 768, "ignored", import_json=moss_in, import_mode="always").args[0])
+    assert rebuilt["items"][0]["bbox"] == [-308, -410, 103, -102]   # pixels from the centre: inside 1024×768, so unchanged
+    oversize = '{"summary":{"caption":"O."},"items":[{"label":"object","caption":"o","bbox":[-600,-600,600,600]}]}'
+    assert json.loads(Moss.execute(1024, 768, "ignored", import_json=oversize, import_mode="always").args[0])["items"][0]["bbox"] == [-384, -512, 384, 512]
+    draft = '{"summary":{"caption":"D."},"items":[{"label":"object","caption":"o","bbox":[128,96,896,224]}],"bbox_coord_space":"abs","bbox_format":"xyxy"}'
+    assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=draft, import_mode="always").args[0])["items"][0]["bbox"] == [-416, -384, -288, 384]
+    no_items = '{"summary":{"caption":"Only a caption."},"items":[]}'
+    assert Moss.execute(1024, 1024, "ignored", import_json=no_items, import_mode="always").args[0] == "Only a caption."
     assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins

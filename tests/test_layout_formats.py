@@ -74,10 +74,33 @@ def test_tags_survive_editor_roundtrip_and_character_becomes_obj():
     assert boxes2[0]["type"] == "object" and "tags" not in boxes2[0]
 
 
-def test_sidecar_never_reaches_moss():
-    ideo = dict(IDEO, _itl={"v": 1, "boxes": [{"x": 0, "y": 0, "w": 1, "h": 1, "type": "obj", "group": True, "id": "g"}]})
+def test_sidecar_boxes_drive_the_import_and_never_reach_the_prompt():
+    # A clipboard/template sidecar carries the full editor layout: tags, foreign labels, groups, disabled flags.
+    # The import uses those boxes (labels normalised) so the prompt agrees with what the editor shows.
+    side = [{"id": "g", "x": 0, "y": 0, "w": 1, "h": 1, "type": "obj", "group": True, "name": "G"},
+            {"id": "a", "parent": "g", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4, "type": "character", "desc": "hero", "tags": "anime", "palette": []},
+            {"id": "b", "x": 0.5, "y": 0.5, "w": 0.25, "h": 0.1, "type": "text", "text": "HELLO", "desc": "title", "disabled": True}]
+    ideo = dict(IDEO, _itl={"v": 1, "boxes": side})
     boxes, scene, _ = import_layout(ideo, "moss", 1024, 1024)
-    assert "_itl" not in compact(build_moss(boxes, scene, 1024, 1024)) and len(boxes) == 2
+    assert [b["type"] for b in boxes] == ["object", "character", "text"] and boxes[0]["group"] is True   # labels normalised to MOSS
+    out = build_moss(boxes, scene, 1024, 1024)
+    assert "_itl" not in compact(out) and out["items"] == [{"label": "character", "caption": "hero", "tags": ["anime"], "bbox": [-308, -410, 103, -102]}]
+    boxes, _, _ = import_layout(ideo, "ideogram", 1024, 1024)
+    assert [b["type"] for b in boxes] == ["obj", "obj", "text"] and boxes[1]["tags"] == "anime"
+    assert len(import_layout(dict(IDEO, _itl={"v": 1, "boxes": []}), "moss", 1024, 1024)[0]) == 2   # empty sidecar → the plain elements
+
+
+def test_non_string_scene_values_are_ignored_not_fatal():
+    from nodes.layout_formats import parse_ideogram, parse_moss, ideogram_scene_to_moss
+    cap = {"high_level_description": ["Sunset"], "style_description": {"photo": 5, "aesthetics": {"x": 1}, "lighting": "soft"},
+           "compositional_deconstruction": {"background": None, "elements": [{"type": "text", "text": 7, "desc": ["d"], "bbox": [0, 0, 100, 100]}]}}
+    boxes, scene = parse_ideogram(cap)
+    assert scene["high_level_description"] == "" and scene["photo"] == "5" and scene["aesthetics"] == "" and scene["lighting"] == "soft"
+    assert boxes[0]["text"] == "7" and boxes[0]["desc"] == ""
+    assert compact(build_ideogram(boxes, scene)).startswith('{"style_description":{"aesthetics":"","lighting":"soft","photo":"5"')
+    assert ideogram_scene_to_moss(scene)["caption"] == "Style: 5, soft."
+    _, ms = parse_moss({"summary": {"caption": ["x"], "meta": "a,b", "canvas": 3}, "items": []}, 1024, 1024)
+    assert ms == {"caption": "", "meta": ["a", "b"], "canvas": "none", "palette": []}
 
 
 def test_unknown_format_raises():

@@ -15,6 +15,13 @@ export function detectFormat(obj) {
   return null;
 }
 
+export function text(v) {
+  // A caption/text field from untrusted JSON: strings pass, numbers are spelled out, anything else is "".
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return "";
+}
+
 export function upperPalette(colors) {
   // ["#rrggbb", ...] -> ["#RRGGBB", ...] in order, dropping empties.
   return (colors || []).filter((c) => c).map((c) => String(c).toUpperCase());
@@ -104,7 +111,7 @@ export function parseIdeogram(cap) {
   const boxes = [];
   (Array.isArray(cd.elements) ? cd.elements : []).forEach((el, i) => {
     if (!el || typeof el !== "object") return;
-    const box = { type: el.type === "text" ? "text" : "obj", text: el.text || "", desc: el.desc || "",
+    const box = { type: el.type === "text" ? "text" : "obj", text: text(el.text), desc: text(el.desc),
                   palette: Array.isArray(el.color_palette) ? el.color_palette.slice() : [] };
     const bb = el.bbox;
     if (Array.isArray(bb) && bb.length === 4) {
@@ -114,10 +121,11 @@ export function parseIdeogram(cap) {
     boxes.push(box);
   });
   const sd = (cap.style_description && typeof cap.style_description === "object") ? cap.style_description : {};
-  const kind = typeof sd.photo === "string" ? "photo" : typeof sd.art_style === "string" ? "art_style" : "none";
-  const scene = ideogramScene({ high_level_description: cap.high_level_description || "", background: cd.background || "",
-                                style_kind: kind, photo: sd.photo || "", art_style: sd.art_style || "", aesthetics: sd.aesthetics || "",
-                                lighting: sd.lighting || "", medium: sd.medium || "", palette: sd.color_palette || [] });
+  const kind = (text(sd.photo) || typeof sd.photo === "string") ? "photo"
+             : (text(sd.art_style) || typeof sd.art_style === "string") ? "art_style" : "none";
+  const scene = ideogramScene({ high_level_description: text(cap.high_level_description), background: text(cd.background),
+                                style_kind: kind, photo: text(sd.photo), art_style: text(sd.art_style), aesthetics: text(sd.aesthetics),
+                                lighting: text(sd.lighting), medium: text(sd.medium), palette: sd.color_palette || [] });
   return { boxes, scene };
 }
 
@@ -158,7 +166,8 @@ export function mossBbox(box, width, height) {
 export function fromMossBbox(bb, width, height, space = MOSS_SPACE, fmt = MOSS_FORMAT) {
   // Layout bbox -> editor {x, y, w, h} fractions clamped into the canvas, or null for malformed input.
   if (!Array.isArray(bb) || bb.length !== 4) return null;
-  const n = bb.map(Number);
+  // numbers or numeric strings only (Python float()): null / "" / booleans are malformed, not 0 / 1
+  const n = bb.map((v) => (typeof v === "number" || (typeof v === "string" && v.trim() !== "")) ? Number(v) : NaN);
   if (n.some((v) => !Number.isFinite(v))) return null;
   let [y1, x1, y2, x2] = String(fmt).toLowerCase() === "xyxy" ? [n[1], n[0], n[3], n[2]] : n;
   if (String(space || MOSS_SPACE).includes("central")) {
@@ -204,13 +213,13 @@ export function parseMoss(layout, width, height) {
   const boxes = [];
   (Array.isArray(layout.items) ? layout.items : []).forEach((it, i) => {
     if (!it || typeof it !== "object") return;
-    const box = { type: mossLabel(it.label), text: String(it.text || ""), desc: String(it.caption || ""),
+    const box = { type: mossLabel(it.label), text: text(it.text), desc: text(it.caption),
                   tags: strs(it.tags).join(", "), palette: strs(it.palette) };
     Object.assign(box, fromMossBbox(it.bbox, width, height, space || MOSS_SPACE, fmt || MOSS_FORMAT) || unplacedBox(i));
     boxes.push(box);
   });
   const s = (layout.summary && typeof layout.summary === "object") ? layout.summary : {};
-  return { boxes, scene: mossScene({ caption: String(s.caption || ""), meta: s.meta, canvas: s.canvas, palette: strs(s.palette) }) };
+  return { boxes, scene: mossScene({ caption: text(s.caption), meta: s.meta, canvas: s.canvas, palette: strs(s.palette) }) };
 }
 
 // ── conversion ───────────────────────────────────────────────────────────────────────────────
@@ -237,13 +246,23 @@ export function boxesToLabels(boxes, target) {
   return boxes.map((b) => ({ ...b, type: target === "ideogram" ? (b.type === "text" ? "text" : "obj") : mossLabel(b.type) }));
 }
 
+export function sidecarBoxes(obj) {
+  // The editor's `_itl` clipboard/template sidecar: the full box list (groups, hierarchy, tags, disabled,
+  // foreign labels). [] when absent or empty.
+  const boxes = obj && obj._itl && Array.isArray(obj._itl.boxes) ? obj._itl.boxes : [];
+  return boxes.filter((b) => b && typeof b === "object" && typeof b.x === "number");
+}
+
 export function importLayout(obj, target, width, height) {
   // Parse a layout of either format into {boxes, scene, converted} for the `target` builder ("ideogram" | "moss");
-  // scene + labels are converted when the formats differ. Throws when the object is not a layout.
+  // scene + labels are converted when the formats differ. When the object carries the editor's `_itl` sidecar its
+  // boxes are used (labels normalised to the target), so the prompt agrees with what the editor restores.
+  // Throws when the object is not a layout.
   const src = detectFormat(obj);
   if (!src || (target !== "ideogram" && target !== "moss")) throw new Error("not a layout JSON (needs 'items' or 'compositional_deconstruction')");
-  const { boxes, scene } = src === "ideogram" ? parseIdeogram(obj) : parseMoss(obj, width, height);
-  if (src === target) return { boxes, scene, converted: false };
-  return { boxes: boxesToLabels(boxes, target), converted: true,
-           scene: target === "moss" ? ideogramSceneToMoss(scene) : mossSceneToIdeogram(scene) };
+  let { boxes, scene } = src === "ideogram" ? parseIdeogram(obj) : parseMoss(obj, width, height);
+  const side = sidecarBoxes(obj);
+  if (side.length) boxes = side;
+  if (src !== target) scene = target === "moss" ? ideogramSceneToMoss(scene) : mossSceneToIdeogram(scene);
+  return { boxes: (side.length || src !== target) ? boxesToLabels(boxes, target) : boxes, scene, converted: src !== target };
 }

@@ -32,6 +32,9 @@ def test_from_moss_bbox_spaces_and_orders():
     assert from_moss_bbox([-900, -900, 900, 900], 1024, 1024) == {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}   # oversize → clamped
     assert from_moss_bbox([100, 100, -100, -100], 1024, 1024)["w"] > 0                                   # reversed edges → positive size
     assert from_moss_bbox("nope", 1024, 1024) is None and from_moss_bbox([1, "x", 3, 4], 1024, 1024) is None
+    assert from_moss_bbox([float("nan"), 0, 10, 10], 1024, 1024) is None and from_moss_bbox([0, 0, float("inf"), 10], 1024, 1024) is None
+    assert from_moss_bbox([None, 0, 10, 10], 1024, 1024) is None and from_moss_bbox(["-416", "-384", "-288", "384"], 1024, 1024) == FRACS
+    assert from_moss_bbox([True, 0, 10, 10], 1024, 1024) is None
 
 
 def test_build_key_order_and_compact():

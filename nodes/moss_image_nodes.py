@@ -104,18 +104,15 @@ Same editor as the Ideogram 4 Prompt Builder: see that node for the canvas, Over
         src = lf.detect_format(imported)                     # None -> not a layout: ignored like prose
         used_import = src is not None and (import_mode == "always" or not boxes)
 
-        if used_import and src == "moss":
-            layout = {k: v for k, v in imported.items() if k != "_itl"}   # same-format import passes through, minus the sidecar
-            boxes, _ = lf.parse_moss(imported, width, height)
-            prompt = dump(layout)
+        if used_import:
+            # Either format is parsed (a MOSS layout at THIS node's width/height, an Ideogram caption converted)
+            # and rebuilt like editor output, so the prompt's pixel bboxes always match the width/height outputs.
+            boxes, scene, _ = lf.import_layout(imported, "moss", width, height)
         else:
-            if used_import:                                 # an Ideogram caption: convert, then build like editor output
-                boxes, scene, _ = lf.import_layout(imported, "moss", width, height)
-            else:
-                scene = lf.moss_scene(caption=caption, meta=meta, canvas=canvas,
-                                      palette=lf.parse_json_list(style_palette_data))
-            layout = lf.build_moss(boxes, scene, width, height)
-            prompt = dump(layout) if layout is not None else scene["caption"]   # no placed items -> plain text
+            scene = lf.moss_scene(caption=caption, meta=meta, canvas=canvas,
+                                  palette=lf.parse_json_list(style_palette_data))
+        layout = lf.build_moss(boxes, scene, width, height)
+        prompt = dump(layout) if layout is not None else scene["caption"]       # no placed items -> plain text
         preview = _render_preview(boxes, width, height, _bg_image(image), bg_brightness)
         bboxes_out = lf.bbox_outputs(boxes, width, height)
 

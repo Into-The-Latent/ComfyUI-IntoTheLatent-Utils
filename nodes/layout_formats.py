@@ -80,6 +80,15 @@ def loads_layout(s):
     return None
 
 
+def text(v):
+    # A caption/text field from untrusted JSON: strings pass, numbers are spelled out, anything else is "".
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return str(v)
+    return ""
+
+
 def palette(colors):
     # ["#rrggbb", ...] (or autogrow dict) -> ["#RRGGBB", ...] in order, dropping empties.
     if isinstance(colors, dict):
@@ -243,7 +252,7 @@ def parse_ideogram(cap):
         if not isinstance(el, dict):
             continue
         box = {"type": "text" if el.get("type") == "text" else "obj",
-               "text": el.get("text", "") or "", "desc": el.get("desc", "") or "",
+               "text": text(el.get("text")), "desc": text(el.get("desc")),
                "palette": list(el.get("color_palette") or [])}
         bb = el.get("bbox")
         if isinstance(bb, (list, tuple)) and len(bb) == 4:
@@ -256,12 +265,12 @@ def parse_ideogram(cap):
     sd = cap.get("style_description") or {}
     if not isinstance(sd, dict):
         sd = {}
-    kind = "photo" if isinstance(sd.get("photo"), str) else "art_style" if isinstance(sd.get("art_style"), str) else "none"
-    scene = ideogram_scene(high_level_description=cap.get("high_level_description") or "",
-                           background=cd.get("background") or "", style_kind=kind,
-                           photo=sd.get("photo") or "", art_style=sd.get("art_style") or "",
-                           aesthetics=sd.get("aesthetics") or "", lighting=sd.get("lighting") or "",
-                           medium=sd.get("medium") or "", palette=sd.get("color_palette") or [])
+    kind = "photo" if text(sd.get("photo")) or isinstance(sd.get("photo"), str) else         "art_style" if text(sd.get("art_style")) or isinstance(sd.get("art_style"), str) else "none"
+    scene = ideogram_scene(high_level_description=text(cap.get("high_level_description")),
+                           background=text(cd.get("background")), style_kind=kind,
+                           photo=text(sd.get("photo")), art_style=text(sd.get("art_style")),
+                           aesthetics=text(sd.get("aesthetics")), lighting=text(sd.get("lighting")),
+                           medium=text(sd.get("medium")), palette=sd.get("color_palette") or [])
     return boxes, scene
 
 
@@ -316,11 +325,13 @@ def from_moss_bbox(bb, width, height, space=MOSS_SPACE, fmt=MOSS_FORMAT):
     # Layout bbox -> editor {x, y, w, h} fractions clamped into the canvas, or None for malformed input.
     # space "abs_centralized" (default) = pixels from the canvas centre; "abs" = plain top-left pixels.
     # fmt "yxyx" (default) or "xyxy".
-    if not isinstance(bb, (list, tuple)) or len(bb) != 4:
-        return None
+    if not isinstance(bb, (list, tuple)) or len(bb) != 4 or any(isinstance(v, bool) for v in bb):
+        return None                                          # numbers or numeric strings only (bools are malformed, not 0/1)
     try:
         a, b, c, d = (float(v) for v in bb)
     except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in (a, b, c, d)):
         return None
     y1, x1, y2, x2 = (b, a, d, c) if str(fmt).lower() == "xyxy" else (a, b, c, d)
     if "central" in str(space or MOSS_SPACE):
@@ -374,14 +385,14 @@ def parse_moss(layout, width, height):
     for i, it in enumerate(layout.get("items") or []):
         if not isinstance(it, dict):
             continue
-        box = {"type": moss_label(it.get("label")), "text": str(it.get("text") or ""),
-               "desc": str(it.get("caption") or ""), "tags": ", ".join(strs(it.get("tags"))),
+        box = {"type": moss_label(it.get("label")), "text": text(it.get("text")),
+               "desc": text(it.get("caption")), "tags": ", ".join(strs(it.get("tags"))),
                "palette": strs(it.get("palette"))}
         bb = from_moss_bbox(it.get("bbox"), width, height, space or MOSS_SPACE, fmt or MOSS_FORMAT)
         box.update(bb if bb else unplaced_box(i))
         boxes.append(box)
     s = layout.get("summary") if isinstance(layout.get("summary"), dict) else {}
-    return boxes, moss_scene(caption=str(s.get("caption") or ""), meta=s.get("meta"), canvas=s.get("canvas"),
+    return boxes, moss_scene(caption=text(s.get("caption")), meta=s.get("meta"), canvas=s.get("canvas"),
                              palette=strs(s.get("palette")))
 
 
@@ -429,15 +440,26 @@ def boxes_to_labels(boxes, target):
     return out
 
 
+def sidecar_boxes(obj):
+    # The editor's `_itl` clipboard/template sidecar: the full box list (groups, hierarchy, tags, disabled,
+    # foreign labels). [] when absent or empty.
+    side = obj.get("_itl") if isinstance(obj, dict) else None
+    boxes = side.get("boxes") if isinstance(side, dict) else None
+    return [b for b in boxes if isinstance(b, dict) and isinstance(b.get("x"), (int, float))] if isinstance(boxes, list) else []
+
+
 def import_layout(obj, target, width, height):
     # Parse a layout of either format into (boxes, scene, converted) for the `target` node ("ideogram" | "moss");
-    # scene + labels are converted when the formats differ. An `_itl` sidecar is ignored. ValueError when
-    # the object is not a layout or the target is unknown.
+    # scene + labels are converted when the formats differ. When the object carries the editor's `_itl` sidecar
+    # its boxes are used (labels normalised to the target), so the prompt agrees with what the editor restores.
+    # ValueError when the object is not a layout or the target is unknown.
     src = detect_format(obj)
     if src is None or target not in ("ideogram", "moss"):
         raise ValueError("not a layout JSON (needs 'items' or 'compositional_deconstruction')")
     boxes, scene = parse_ideogram(obj) if src == "ideogram" else parse_moss(obj, width, height)
-    if src == target:
-        return boxes, scene, False
-    scene = ideogram_scene_to_moss(scene) if target == "moss" else moss_scene_to_ideogram(scene)
-    return boxes_to_labels(boxes, target), scene, True
+    side = sidecar_boxes(obj)
+    if side:
+        boxes = side
+    if src != target:
+        scene = ideogram_scene_to_moss(scene) if target == "moss" else moss_scene_to_ideogram(scene)
+    return (boxes_to_labels(boxes, target) if side or src != target else boxes), scene, src != target
