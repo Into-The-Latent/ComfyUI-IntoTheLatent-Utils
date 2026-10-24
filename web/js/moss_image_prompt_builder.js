@@ -30,7 +30,17 @@ const MOSS_SPEC = {
     setWidgetVal("canvas", LF.CANVASES.includes(scene.canvas) ? scene.canvas : "none");
   },
   hasTags: true, requiresBbox: true,
-  alwaysSidecar: true,                                       // pixel bboxes: the sidecar's fraction boxes make a copy size-independent
+  alwaysSidecar: true,
+  // Per-box weight: the caption is sent as (caption:w); KJNodes' MOSS-Image Prompt Weight does the weighting.
+  weights: [
+    { value: 0.5, label: "Weak", sign: "<<", tip: "this box's caption counts about half as much" },
+    { value: 1, label: "Normal", sign: "=", tip: "no weighting" },
+    { value: 1.5, label: "Strong", sign: ">", tip: "the image attends more to this box's caption (subtle)" },
+    { value: 2, label: "Very strong", sign: ">>", tip: "clearly bigger / more prominent; the rest of the image may shift too" },
+  ],
+  weightTip: "Per-box emphasis through KJNodes' MOSS-Image Prompt Weight (wire this node's prompt into it): the box caption is " +
+    "sent as (caption:weight). It is not limited to the box area — the rest of the image can change too. To remove a box, " +
+    "disable it (eye) instead.",                                       // pixel bboxes: the sidecar's fraction boxes make a copy size-independent
   importPrompt: "Paste MOSS-Image layout (or Ideogram 4 caption) JSON:",
   importError: "Not a layout JSON (needs 'items' or 'compositional_deconstruction').",
 };

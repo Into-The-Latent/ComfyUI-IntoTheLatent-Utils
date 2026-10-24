@@ -102,3 +102,29 @@ def test_hostile_moss_json_never_raises():
     assert scene["meta"] == ["1"] and scene["palette"] == ["#fff"] and boxes[0]["palette"] == [] and boxes[0]["tags"] == "" and boxes[1]["text"] == ""
     out = build_moss(boxes, scene, 1024, 1024)
     assert out["summary"] == {"meta": ["1"], "caption": "c", "palette": ["#FFF"]} and "palette" not in out["items"][0]
+
+
+def test_box_weight_wraps_the_caption_for_kj_prompt_weight():
+    from nodes.layout_formats import weighted_caption
+    # trailing punctuation stays outside the brackets: '."' would merge into one token and break KJ's phrase match
+    assert weighted_caption("A red vintage bicycle leaning against the cafe wall.", 2) == "(A red vintage bicycle leaning against the cafe wall:2)."
+    assert weighted_caption("A smiling barista, holding a cup", 1.5) == "(A smiling barista, holding a cup:1.5)"
+    assert weighted_caption("  Hello there!  ", 0.5) == "  (Hello there:0.5)!  "
+    for unchanged in (("A bike.", 1), ("A bike.", None), ("A bike.", 0), ("A bike.", -1), ("A bike.", "2"),
+                      ("Sign: OPEN.", 2), ("A bike (red).", 2), ("", 2), ("...", 2)):
+        assert weighted_caption(*unchanged) == unchanged[0], unchanged    # normal / invalid / not expressible -> no markup
+
+
+def test_build_moss_applies_box_weights_to_captions_only():
+    boxes = [{"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.2, "type": "text", "text": "OPEN", "desc": "Neon sign.", "weight": 2, "palette": []},
+             {"x": 0.1, "y": 0.5, "w": 0.5, "h": 0.2, "type": "object", "desc": "A bike.", "weight": 1, "palette": []},
+             {"x": 0.6, "y": 0.5, "w": 0.3, "h": 0.2, "type": "object", "desc": "A cat.", "weight": 0.5, "palette": []}]
+    items = build_moss(boxes, SCENE, 1024, 1024)["items"]
+    assert [i["caption"] for i in items] == ["(Neon sign:2).", "A bike.", "(A cat:0.5)."] and items[0]["text"] == "OPEN"
+    assert list(items[0]) == ["label", "caption", "text", "bbox"]                                   # no weight key in the prompt
+
+
+def test_ideogram_ignores_box_weights():
+    from nodes.layout_formats import build_ideogram, ideogram_scene
+    box = {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.2, "type": "obj", "desc": "A bike.", "weight": 2, "palette": []}
+    assert build_ideogram([box], ideogram_scene(background="b"))["compositional_deconstruction"]["elements"][0]["desc"] == "A bike."

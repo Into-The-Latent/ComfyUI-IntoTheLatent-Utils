@@ -198,6 +198,18 @@ export function fromMossBbox(bb, width, height, space = MOSS_SPACE, fmt = MOSS_F
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }
 
+const WEIGHT_SPLIT = /^(\s*)([\s\S]*?)([\s.!?;,…]*)$/;
+
+export function weightedCaption(caption, weight) {
+  // A box weight other than 1 -> the caption wrapped as `(caption:w)` for KJNodes' MOSS-Image Prompt Weight.
+  // Trailing punctuation stays outside: '."' merges into one Qwen token and the phrase would not be found.
+  // Weight 1 / missing / not a positive number, or a caption KJ's syntax can't hold ( ( ) : ) -> unchanged.
+  if (typeof weight !== "number" || !Number.isFinite(weight) || weight <= 0 || weight === 1 || !caption) return caption;
+  const [, lead, core, tail] = WEIGHT_SPLIT.exec(caption);
+  if (!core || /[():]/.test(core)) return caption;
+  return `${lead}(${core}:${weight})${tail}`;
+}
+
 export function buildMoss(boxes, scene, width, height, { allowEmpty = false } = {}) {
   // Editor boxes + scene -> layout, or null when no item survives (the node then emits the caption as plain
   // text). allowEmpty keeps an items-less layout object for the editor's clipboard/templates.
@@ -207,7 +219,7 @@ export function buildMoss(boxes, scene, width, height, { allowEmpty = false } = 
     const bb = mossBbox(b, width, height);
     if (!bb) continue;
     const label = mossLabel(b.type);
-    const item = { label, caption: b.desc || "" };
+    const item = { label, caption: weightedCaption(b.desc || "", b.weight) };
     if (label === "text") item.text = b.text || "";
     const tags = strs(b.tags), pal = upperPalette(b.palette);
     if (tags.length) item.tags = tags;

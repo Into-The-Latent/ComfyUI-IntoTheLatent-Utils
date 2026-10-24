@@ -118,6 +118,13 @@ live preview — producing **MOSS-Image's layout JSON** instead:
   layout is read at the node's current width/height too. The inspector's `out:` field shows these
   centred pixels and is editable.
 - **Outputs:** `prompt`, `preview`, `bboxes`, `width`, `height` — the same as the Ideogram node.
+- **Per-region weight** — **Weak `<<` (0.5) · Normal `=` (1) · Strong `>` (1.5) · Very strong `>>` (2)**, set with
+  the `weight:` buttons under the region type, or from the Overview's right-click menu (applies to the whole
+  selection); the Overview shows the sign on every row. A weight other than Normal sends that region's caption as
+  `(caption:weight)`, which [KJNodes](https://github.com/kijai/ComfyUI-KJNodes)' **MOSS-Image Prompt Weight**
+  turns into attention weighting — wire the builder's `prompt` into that node (the editor warns when it isn't
+  connected; without it the brackets reach the model as plain text). The effect is on the region's object, not
+  confined to its area: the rest of the image can shift too. To drop a region entirely, disable it (eye) instead.
 
 #### Ideogram 4 ⇄ MOSS-Image
 
