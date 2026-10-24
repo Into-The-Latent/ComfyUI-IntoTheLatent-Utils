@@ -135,6 +135,38 @@ def test_published_python_files_skip_gitignored_directories(tmp_path, monkeypatc
     assert [p.relative_to(tmp_path).as_posix() for p in _published_python_files()] == ["nodes/a.py"]
 
 
+def _registry_rule_pattern():
+    # See test_no_python_file_trips_the_registry_env_or_network_rules. Patterns are assembled from pieces so that
+    # this file does not contain them either.
+    o, u = "os" + r"\.", "url"
+    env_names = "(environ|environb|getenv|getenvb|putenv|unsetenv)"
+    spawn_names = "(system|popen|spawn\\w*|posix_spawn\\w*|exec[lv]\\w*|fork\\w*)"
+    net_modules = "|".join(["requests", "httpx", "aiohttp", u + "lib3", "socket", "ftplib", "smtplib",
+                            "telnetlib", "websocket", "websockets"])
+    return re.compile(
+        "|".join([
+            o + "environ", o + "getenv", o + "putenv", o + "unsetenv",
+            r"from\s+os\s+import\s+[^#\n]*\b" + env_names + r"\b",
+            u + r"lib\.request", u + "open", u + "retrieve",
+            "http" + r"\.client", "http" + r"\.server",
+            r"^\s*(import|from)\s+(" + net_modules + r")\b",
+            # process spawning: "no file in this pack does it" (see _published_python_files)
+            "sub" + "process", o + spawn_names + r"\(",
+            r"from\s+os\s+import\s+[^#\n]*\b" + spawn_names + r"\b",
+        ])
+    )
+
+
+def test_registry_rule_pattern_catches_process_spawning():
+    # samples assembled from pieces: this file is scanned by the guard too
+    bad = _registry_rule_pattern()
+    spawning = ["import " + "sub" + "process", "from " + "os import " + "pop" + "en, path", "x = os." + "posix" + "_spawn(a)",
+                "os." + "fo" + "rk()", "from " + "os import " + "sys" + "tem", "os." + "exec" + "vp(p, a)", "os." + "sys" + "tem(c)"]
+    assert [s for s in spawning if not bad.search(s)] == []
+    harmless = ["import os", "from os import path, sep", "# the system prompt", "a popen-like helper", "os.path.join(a)"]
+    assert [s for s in harmless if bad.search(s)] == []
+
+
 def test_no_python_file_trips_the_registry_env_or_network_rules():
     # 1.10.0 was flagged too, this time for the vendored code itself: rule
     # "python_environment_manipulation" (any environment variable read or write through the os
@@ -147,19 +179,7 @@ def test_no_python_file_trips_the_registry_env_or_network_rules():
     #
     # The registry's rule files are not public, so the list is wider than the five reported hits.
     # Network modules are matched on their import, so prose ("the json_in socket.") does not trip it.
-    o, u = "os" + r"\.", "url"
-    env_names = "(environ|environb|getenv|getenvb|putenv|unsetenv)"
-    net_modules = "|".join(["requests", "httpx", "aiohttp", u + "lib3", "socket", "ftplib", "smtplib",
-                            "telnetlib", "websocket", "websockets"])
-    bad = re.compile(
-        "|".join([
-            o + "environ", o + "getenv", o + "putenv", o + "unsetenv",
-            r"from\s+os\s+import\s+[^#\n]*\b" + env_names + r"\b",
-            u + r"lib\.request", u + "open", u + "retrieve",
-            "http" + r"\.client", "http" + r"\.server",
-            r"^\s*(import|from)\s+(" + net_modules + r")\b",
-        ])
-    )
+    bad = _registry_rule_pattern()
     offenders = []
     for py in _published_python_files():
         for lineno, line in enumerate(py.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):

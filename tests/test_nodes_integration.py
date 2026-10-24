@@ -103,3 +103,12 @@ def test_moss_node_builds_layout_and_converts_ideogram_import():
     assert Moss.execute(1024, 1024, "ignored", import_json=no_items, import_mode="always").args[0] == "Only a caption."
     assert Moss.execute(1024, 1024, "\n  Padded.\n").args[0] == "Padded."                      # plain prompt is stripped like summary.caption
     assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins
+
+
+def test_moss_style_wizard_node_is_inert_at_run_time():
+    # The wizard writes into the MOSS builder in the frontend; its output only anchors the link, so it must stay
+    # empty at run time (a wired import_json that is empty is ignored by the builder).
+    from nodes.moss_image_style_wizard import ITLMossImageStyleWizard as Wiz
+    s = Wiz.define_schema()
+    assert s.node_id == "ITLMossImageStyleWizard" and [o.display_name for o in s.outputs] == ["style"]
+    assert Wiz.execute(wizard_data='{"lighting": "neon lighting"}').args == ("",)

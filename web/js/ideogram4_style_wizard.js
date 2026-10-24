@@ -4,15 +4,15 @@
  * Companion to the Ideogram 4 Prompt Builder. GPL-3.0, like the rest of the pack.
  * Upstream lineage: https://github.com/kijai/ComfyUI-KJNodes
  *
- * A "click-together" wizard for the Ideogram 4 style_description fields. A button on the node opens a
- * fullscreen chip-picker (5 categories). On close the picked values are written straight into a
- * connected ITL Ideogram 4 Prompt Builder's style widgets — the node's own data output stays empty
- * so it never overwrites the builder's bounding boxes / palette / high_level_description.
+ * A "click-together" style wizard. A button on the node opens a fullscreen chip-picker (5 categories). On close
+ * the picked values are written straight into the connected prompt builder — the node's own data output stays
+ * empty so it never overwrites the builder's bounding boxes / palette / caption. One implementation drives two
+ * nodes (WIZARDS below): the Ideogram 4 wizard fills the builder's style_description widgets, the MOSS-Image
+ * wizard writes meta tags + a "Style: ..." caption sentence (moss_style.js). Both share the chip presets.
  */
 import { chainCallback } from "./utility.js";
+import { mossMetaTags, mossStyleSentence, applyMossStyle } from "./moss_style.js";
 const { app } = window.comfyAPI.app;
-
-const BUILDER_TYPE = "ITLIdeogram4PromptBuilder";
 
 // Built-in chip lists (values are exactly what lands in the JSON). Sourced from the research report.
 // These are the fallback / "restore defaults" content; the live lists are read from an editable
@@ -57,7 +57,7 @@ const ALLOWED_KEYS = ["aesthetics", "lighting", "medium", "photo", "art_style"];
 const DEFAULT_LABELS = Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c.key, c.label]));
 // File body written by "Restore defaults": a documented, hand-editable shape.
 const DEFAULT_PRESETS_FILE = {
-  _comment: "ITL Ideogram 4 Style Wizard presets. Edit 'chips' freely; 'key' must be one of " +
+  _comment: "ITL Style Wizard presets (Ideogram 4 and MOSS-Image). Edit 'chips' freely; 'key' must be one of " +
     ALLOWED_KEYS.join(", ") + ". Delete this file or use the wizard's 'Restore defaults' to reset.",
   version: 1,
   categories: DEFAULT_CATEGORIES.map((c) => ({ key: c.key, label: c.label, chips: c.chips.slice() })),
@@ -227,11 +227,71 @@ function buildStyleDescription(wiz) {
   return sd;
 }
 
+// Restore the picks from the persisted widget value.
+function hydrateWiz(node, wizWidget) {
+  node._wiz = BLANK();
+  try {
+    const v = JSON.parse(wizWidget?.value || "{}");
+    if (v && typeof v === "object") for (const k of Object.keys(node._wiz)) if (typeof v[k] === "string") node._wiz[k] = v[k];
+  } catch (e) {}
+}
+
+function setWidget(target, name, val) {
+  const w = target.widgets?.find((x) => x.name === name);
+  if (w) { w.value = val; w.callback?.(val); }
+}
+
+// ── Per-node targets ── which builder a wizard writes into, and how (apply(target, wiz, { force })). `force` is
+// only set by the Apply button; every close (Apply & close, Esc, ✕, backdrop) applies without it.
+const WIZARDS = {
+  ITLIdeogram4StyleWizard: {
+    builderType: "ITLIdeogram4PromptBuilder", builderLabel: "ITL Ideogram 4 Prompt Builder", title: "Style Wizard",
+    preview: (wiz) => JSON.stringify({ style_description: buildStyleDescription(wiz) }, null, 2),
+    warn: (wiz) => (wiz.photo.trim() && wiz.art_style.trim()
+      ? "⚠ Ideogram allows only photo OR art_style — only photo will be applied to the builder." : ""),
+    apply(target, wiz) {
+      const set = (name, val) => setWidget(target, name, val);
+      // Mirror the wizard exactly, including clears: photo -> "photo", else art_style -> "art_style",
+      // else "none". Setting "none" rebuilds the combo without a photo/art_style sub-widget, so a
+      // cleared wizard actually clears the builder's photo/art_style (was the "stays filled" bug).
+      const p = wiz.photo.trim(), ar = wiz.art_style.trim();
+      const kind = p ? "photo" : (ar ? "art_style" : "none");
+      const styleW = target.widgets?.find((x) => x.name === "style");
+      if (styleW) styleW.value = kind;                   // DynamicCombo setter rebuilds sub-widgets
+      if (kind === "photo") set("style.photo", p);
+      else if (kind === "art_style") set("style.art_style", ar);
+      set("aesthetics", wiz.aesthetics.trim());
+      set("lighting", wiz.lighting.trim());
+      set("medium", wiz.medium.trim());
+    },
+  },
+  ITLMossImageStyleWizard: {
+    builderType: "ITLMossImagePromptBuilder", builderLabel: "ITL MOSS-Image Prompt Builder", title: "MOSS-Image Style Wizard",
+    preview(wiz) {
+      const tags = mossMetaTags(wiz), sentence = mossStyleSentence(wiz);
+      return "meta tags      + " + (tags.length ? tags.join(", ") : "(none)") + "\n" +
+             "caption ends + " + (sentence || "(no style sentence)");
+    },
+    warn: () => "",
+    // What the wizard last wrote is recorded on the builder node itself (properties are saved with the workflow
+    // and copied with the node), so a pasted builder keeps it and a cloned wizard doesn't inherit someone else's.
+    apply(target, wiz, { force } = {}) {
+      const get = (name) => target.widgets?.find((x) => x.name === name)?.value ?? "";
+      target.properties = target.properties || {};
+      const r = applyMossStyle({ caption: get("caption"), meta: get("meta") }, target.properties.itlStyleWizard, wiz, { force });
+      if (r.caption !== get("caption")) setWidget(target, "caption", r.caption);
+      if (r.meta !== get("meta")) setWidget(target, "meta", r.meta);
+      target.properties.itlStyleWizard = r.record;
+    },
+  },
+};
+
 app.registerExtension({
   name: "ITL.Ideogram4StyleWizard",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "ITLIdeogram4StyleWizard") return;
+    const spec = WIZARDS[nodeData?.name];
+    if (!spec) return;
     injectWizStyle();
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
@@ -242,15 +302,7 @@ app.registerExtension({
       const i = node.inputs?.findIndex((inp) => inp.name === "wizard_data");
       if (i != null && i !== -1) node.removeInput(i);
 
-      node._wiz = BLANK();
-      function hydrate() {
-        node._wiz = BLANK();
-        try {
-          const v = JSON.parse(wizWidget?.value || "{}");
-          if (v && typeof v === "object") for (const k of Object.keys(node._wiz)) if (typeof v[k] === "string") node._wiz[k] = v[k];
-        } catch (e) {}
-      }
-      hydrate();
+      hydrateWiz(node, wizWidget);
 
       function persist() {
         if (wizWidget) wizWidget.value = JSON.stringify(node._wiz);
@@ -265,36 +317,25 @@ app.registerExtension({
           const link = node.graph?.links?.get ? node.graph.links.get(id) : node.graph?.links?.[id];
           if (!link) continue;
           const t = node.graph.getNodeById(link.target_id);
-          if (t && t.type === BUILDER_TYPE) out.push(t);
+          if (t && t.type === spec.builderType) out.push(t);
         }
         return out;
       }
 
-      // Write the picked style fields into every connected Prompt Builder. `notify` controls the
-      // "nothing connected" alert (shown on an explicit Apply, not on Esc/backdrop close). Returns count.
-      function applyToBuilder(notify) {
+      // Write the picked style fields into every connected Prompt Builder. `notify` controls the "nothing
+      // connected" alert (an explicit button, not Esc / backdrop); `force` (the Apply button) writes even with
+      // unchanged picks, e.g. to restore a deleted Style sentence. Returns count.
+      function applyToBuilder(notify, force = false) {
         const targets = builderTargets();
         for (const target of targets) {
-          const set = (name, val) => {
-            const w = target.widgets?.find((x) => x.name === name);
-            if (w) { w.value = val; w.callback?.(val); }
-          };
-          // Mirror the wizard exactly, including clears: photo -> "photo", else art_style -> "art_style",
-          // else "none". Setting "none" rebuilds the combo without a photo/art_style sub-widget, so a
-          // cleared wizard actually clears the builder's photo/art_style (was the "stays filled" bug).
-          const p = node._wiz.photo.trim(), ar = node._wiz.art_style.trim();
-          const kind = p ? "photo" : (ar ? "art_style" : "none");
-          const styleW = target.widgets?.find((x) => x.name === "style");
-          if (styleW) styleW.value = kind;                   // DynamicCombo setter rebuilds sub-widgets
-          if (kind === "photo") set("style.photo", p);
-          else if (kind === "art_style") set("style.art_style", ar);
-          set("aesthetics", node._wiz.aesthetics.trim());
-          set("lighting", node._wiz.lighting.trim());
-          set("medium", node._wiz.medium.trim());
+          spec.apply(target, node._wiz, { force });
           target.setDirtyCanvas?.(true, true);
         }
+        // the click's mouseup already fired before these writes: nudge the change tracker again so the write
+        // marks the workflow modified and becomes an undo step
+        if (targets.length) window.dispatchEvent(new MouseEvent("mouseup"));
         if (!targets.length && notify) {
-          window.alert("Wire this node's \"style\" output into an ITL Ideogram 4 Prompt Builder's \"import_json\" input, then reopen the wizard.");
+          window.alert(`Wire this node's "style" output into an ${spec.builderLabel}'s "import_json" input, then reopen the wizard.`);
         }
         return targets.length;
       }
@@ -319,7 +360,7 @@ app.registerExtension({
         ov.appendChild(panel);
 
         const head = document.createElement("div"); head.className = "itl-wiz-head";
-        const title = document.createElement("span"); title.className = "itl-wiz-title"; title.textContent = "Style Wizard";
+        const title = document.createElement("span"); title.className = "itl-wiz-title"; title.textContent = spec.title;
         const tabs = document.createElement("div"); tabs.className = "itl-wiz-tabs";
         const pickTabBtn = document.createElement("button"); pickTabBtn.className = "itl-wiz-tab"; pickTabBtn.textContent = "Pick styles";
         const editTabBtn = document.createElement("button"); editTabBtn.className = "itl-wiz-tab"; editTabBtn.textContent = "Edit presets";
@@ -379,16 +420,15 @@ app.registerExtension({
           foot.append(status, warn, prev, footRow);
 
           function updatePreview() {
-            prev.textContent = JSON.stringify({ style_description: buildStyleDescription(node._wiz) }, null, 2);
-            const both = node._wiz.photo.trim() && node._wiz.art_style.trim();
-            warn.textContent = both ? "⚠ Ideogram allows only photo OR art_style — only photo will be applied to the builder." : "";
+            prev.textContent = spec.preview(node._wiz);
+            warn.textContent = spec.warn(node._wiz);
           }
           function updateStatus() {
             const ts = builderTargets();
             status.classList.toggle("off", !ts.length);
             status.textContent = ts.length
               ? "→ writing to: " + ts.map((t) => (t.title || t.type) + " #" + t.id).join(", ")
-              : "⚠ Not connected — wire the \"style\" output into a Prompt Builder's import_json.";
+              : `⚠ Not connected — wire the "style" output into an ${spec.builderLabel}'s import_json.`;
           }
           function buildCatBlock(cat) {
             const block = document.createElement("div"); block.className = "itl-wiz-cat";
@@ -436,7 +476,9 @@ app.registerExtension({
           const applied = (n) => { if (n) toast("Applied to " + n + " builder" + (n > 1 ? "s" : "") + " ✓"); updateStatus(); };
           clearBtn.addEventListener("click", clearWiz);
           clearApplyBtn.addEventListener("click", () => { clearWiz(); close(true, true); });
-          applyBtn.addEventListener("click", () => applied(applyToBuilder(true)));
+          applyBtn.title = "Write the picks into the builder now and keep the wizard open — also re-writes unchanged picks (restores a deleted Style sentence)";
+          doneBtn.title = "Write the picks and close (unchanged picks leave your own edits in the builder alone)";
+          applyBtn.addEventListener("click", () => applied(applyToBuilder(true, true)));
           doneBtn.addEventListener("click", () => close(true, true));
         }
 
@@ -547,12 +589,7 @@ app.registerExtension({
 
     // Re-hydrate after a saved workflow loads (widget value is restored before onConfigure fires).
     chainCallback(nodeType.prototype, "onConfigure", function () {
-      const wizWidget = this.widgets?.find((w) => w.name === "wizard_data");
-      this._wiz = BLANK();
-      try {
-        const v = JSON.parse(wizWidget?.value || "{}");
-        if (v && typeof v === "object") for (const k of Object.keys(this._wiz)) if (typeof v[k] === "string") this._wiz[k] = v[k];
-      } catch (e) {}
+      hydrateWiz(this, this.widgets?.find((w) => w.name === "wizard_data"));
     });
 
     // Tidy up an open modal if the node is removed.
