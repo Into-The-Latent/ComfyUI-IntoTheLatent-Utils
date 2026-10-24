@@ -105,4 +105,20 @@ t("removing a sentence on its own line leaves no blank line", () => {
   assert.equal(S.applyCaptionSentence("A cafe.\nStyle: x.\nMore.", "Style: x.", ""), "A cafe.\nMore.");
 });
 
+t("the previous sentence only matches as a whole sentence, never inside the user's own words", () => {
+  assert.equal(S.applyCaptionSentence("My Style: neon lighting.", "Style: neon lighting.", "Style: moonlight."),
+    "My Style: neon lighting. Style: moonlight.");
+  assert.equal(S.applyCaptionSentence("Style: x.y", "Style: x.", ""), "Style: x.y");
+  assert.equal(S.applyCaptionSentence("A. Style: x.\nB.", "Style: x.", "Style: y."), "A. Style: y.\nB.");
+});
+
+t("first apply adopts an identical sentence already in the caption (pasted / template) instead of duplicating", () => {
+  const r = S.applyMossStyle({ caption: "A cafe. Style: neon lighting.", meta: "" }, null, wiz({ lighting: "neon lighting" }));
+  assert.equal(r.caption, "A cafe. Style: neon lighting.");
+  assert.equal(r.record.sentence, "Style: neon lighting.");
+  // ... and then owns it: a later change replaces it
+  const r2 = S.applyMossStyle({ caption: r.caption, meta: "" }, r.record, wiz({ lighting: "moonlight" }));
+  assert.equal(r2.caption, "A cafe. Style: moonlight.");
+});
+
 console.log(`\n${n} checks passed`);

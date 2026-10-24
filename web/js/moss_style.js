@@ -31,12 +31,25 @@ export function mossStyleSentence(wiz) {
   return parts.length ? "Style: " + parts.join(", ") + "." : "";
 }
 
+// Last position of `sentence` in `text` as a whole sentence: it starts the text, a line, or follows the end of a
+// previous sentence, and is followed by the end / whitespace — so "My Style: x." or "Style: x.y" (the user's own
+// words) never count. -1 when absent.
+function findSentence(text, sentence) {
+  if (!sentence) return -1;
+  for (let i = text.lastIndexOf(sentence); i !== -1; i = i ? text.lastIndexOf(sentence, i - 1) : -1) {
+    const pre = text.slice(0, i), end = i + sentence.length;
+    const startsSentence = !pre.trim() || (/\s$/.test(pre) && /(\n|[.!?…])\s*$/.test(pre));
+    if (startsSentence && (end === text.length || /\s/.test(text[end]))) return i;
+  }
+  return -1;
+}
+
 // Put `next` (the wizard's sentence, or "" for none) into `caption`. The previous wizard sentence `prev` is
 // replaced where it stands; if it isn't found verbatim (the user edited or removed it) it's no longer the
 // wizard's, so it's left alone and `next` is appended. Nothing else in the caption is touched.
 export function applyCaptionSentence(caption, prev, next) {
   let text = String(caption || "");
-  const at = prev ? text.lastIndexOf(prev) : -1;           // the wizard appends, so its copy is the last one
+  const at = findSentence(text, prev);                      // the wizard appends, so its copy is the last one
   if (at !== -1) {
     const before = text.slice(0, at), after = text.slice(at + prev.length);
     if (next) return before + next + after;
@@ -88,6 +101,8 @@ export function applyMossStyle(fields, record, wiz, { force = false } = {}) {
     return { caption: fields.caption, meta: fields.meta, record: prev };
   }
   const m = applyMetaTags(fields.meta, prev.added, tags);
-  return { caption: applyCaptionSentence(fields.caption, prev.sentence, sentence), meta: m.meta,
+  // nothing recorded yet but the caption already has exactly this sentence (a pasted / template caption): adopt it
+  const prevSentence = prev.sentence || (findSentence(String(fields.caption || ""), sentence) !== -1 ? sentence : "");
+  return { caption: applyCaptionSentence(fields.caption, prevSentence, sentence), meta: m.meta,
            record: { sentence, tags, added: m.owned } };
 }

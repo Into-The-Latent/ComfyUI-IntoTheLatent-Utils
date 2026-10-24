@@ -242,7 +242,7 @@ function setWidget(target, name, val) {
 }
 
 // ── Per-node targets ── which builder a wizard writes into, and how (apply(target, wiz, { force })). `force` is
-// set for an explicit Apply click; closing with Esc / ✕ / the backdrop applies without it.
+// only set by the Apply button; every close (Apply & close, Esc, ✕, backdrop) applies without it.
 const WIZARDS = {
   ITLIdeogram4StyleWizard: {
     builderType: "ITLIdeogram4PromptBuilder", builderLabel: "ITL Ideogram 4 Prompt Builder", title: "Style Wizard",
@@ -322,14 +322,18 @@ app.registerExtension({
         return out;
       }
 
-      // Write the picked style fields into every connected Prompt Builder. `notify` marks an explicit Apply: it
-      // shows the "nothing connected" alert and forces the write (not on an Esc / backdrop close). Returns count.
-      function applyToBuilder(notify) {
+      // Write the picked style fields into every connected Prompt Builder. `notify` controls the "nothing
+      // connected" alert (an explicit button, not Esc / backdrop); `force` (the Apply button) writes even with
+      // unchanged picks, e.g. to restore a deleted Style sentence. Returns count.
+      function applyToBuilder(notify, force = false) {
         const targets = builderTargets();
         for (const target of targets) {
-          spec.apply(target, node._wiz, { force: !!notify });
+          spec.apply(target, node._wiz, { force });
           target.setDirtyCanvas?.(true, true);
         }
+        // the click's mouseup already fired before these writes: nudge the change tracker again so the write
+        // marks the workflow modified and becomes an undo step
+        if (targets.length) window.dispatchEvent(new MouseEvent("mouseup"));
         if (!targets.length && notify) {
           window.alert(`Wire this node's "style" output into an ${spec.builderLabel}'s "import_json" input, then reopen the wizard.`);
         }
@@ -472,7 +476,9 @@ app.registerExtension({
           const applied = (n) => { if (n) toast("Applied to " + n + " builder" + (n > 1 ? "s" : "") + " ✓"); updateStatus(); };
           clearBtn.addEventListener("click", clearWiz);
           clearApplyBtn.addEventListener("click", () => { clearWiz(); close(true, true); });
-          applyBtn.addEventListener("click", () => applied(applyToBuilder(true)));
+          applyBtn.title = "Write the picks into the builder now and keep the wizard open — also re-writes unchanged picks (restores a deleted Style sentence)";
+          doneBtn.title = "Write the picks and close (unchanged picks leave your own edits in the builder alone)";
+          applyBtn.addEventListener("click", () => applied(applyToBuilder(true, true)));
           doneBtn.addEventListener("click", () => close(true, true));
         }
 
