@@ -43,3 +43,63 @@ def test_basic_node_writes_parameters_chunk(tmp_path, monkeypatch):
     assert "Negative prompt: blur" in params
     assert "Steps: 25" in params and "Seed: 42" in params and "Size: 48x64" in params
     assert "workflow" not in text  # save_workflow was off
+
+
+def test_ideogram_node_converts_moss_import():
+    import json
+    from nodes.ideogram4_nodes import ITLIdeogram4PromptBuilder as Ideo
+    moss = ('{"summary":{"caption":"Poster."},"items":[{"label":"character","caption":"hero","bbox":[-416,-384,-288,384]}],'
+            '"bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}')
+    res = Ideo.execute(1024, 1024, "", {"style": "none"}, import_json=moss, import_mode="always", output_format="compact")
+    out = json.loads(res.args[0])
+    assert out["compositional_deconstruction"]["background"] == "Poster."
+    assert out["compositional_deconstruction"]["elements"][0] == {"type": "obj", "bbox": [94, 125, 219, 875], "desc": "hero"}
+    assert json.loads(res.ui["caption"][0]) == json.loads(moss)           # the editor gets the raw import and converts it itself
+    # a same-format import with a sidecar: the prompt passes through, preview/bboxes follow the sidecar like the editor does
+    side = ('{"compositional_deconstruction":{"background":"b","elements":[{"type":"obj","bbox":[200,100,600,400],"desc":"a"},'
+            '{"type":"obj","bbox":[500,500,600,750],"desc":"d"}]},"_itl":{"v":1,"boxes":['
+            '{"id":"a","x":0.1,"y":0.2,"w":0.3,"h":0.4,"type":"obj","desc":"a"},{"id":"d","x":0.5,"y":0.5,"w":0.25,"h":0.1,"type":"obj","desc":"d","disabled":true}]}}')
+    res = Ideo.execute(1024, 1024, "", {"style": "none"}, import_json=side, import_mode="always", output_format="compact")
+    assert '"_itl"' not in res.args[0] and res.args[0].count('"bbox"') == 2                    # passthrough minus the sidecar
+    assert res.args[2] == [[{"x": 102, "y": 205, "width": 307, "height": 410}]]               # bboxes: the disabled one is skipped
+    res = Ideo.execute(1024, 1024, "", {"style": "none"}, import_json=moss, import_mode="always", output_format="compact",
+                       coord_mode="absolute", bbox_order="xy")             # the output honours the toggles; the mirror is unaffected
+    assert json.loads(res.args[0])["compositional_deconstruction"]["elements"][0]["bbox"] == [128, 96, 896, 224]
+    assert json.loads(res.ui["caption"][0]) == json.loads(moss)
+    # a non-layout JSON object is ignored like prose: the editor output wins
+    assert Ideo.execute(1024, 1024, "Editor wins.", {"style": "none"}, import_json='{"caption": "x"}', import_mode="always",
+                        output_format="compact").args[0] == '{"compositional_deconstruction":{"background":"Editor wins.","elements":[]}}'
+
+
+def test_moss_node_builds_layout_and_converts_ideogram_import():
+    import json
+    from nodes.moss_image_nodes import ITLMossImagePromptBuilder as Moss
+    boxes = json.dumps([{"x": 0.125, "y": 0.09375, "w": 0.75, "h": 0.125, "type": "text", "text": "EXPLORE", "desc": "Large title.", "palette": []}])
+    res = Moss.execute(1024, 1024, "Poster.", elements_data=boxes)
+    out = json.loads(res.args[0])
+    assert out["items"][0]["bbox"] == [-416, -384, -288, 384] and out["summary"] == {"caption": "Poster."}
+    assert res.args[2] == [[{"x": 128, "y": 96, "width": 768, "height": 128}]] and res.args[3:5] == (1024, 1024)
+    assert tuple(res.args[1].shape[1:]) == (1024, 1024, 3) and res.ui == {"dims": [1024, 1024]}
+    assert Moss.execute(1024, 1024, "Just prose.").args[0] == "Just prose."                         # no items → plain text
+    assert Moss.execute(1024, 1024, "Editor wins.", import_json="not json at all").args[0] == "Editor wins."
+    ideo = ('{"compositional_deconstruction":{"background":"A beach","elements":[{"type":"obj","bbox":[200,100,600,400],"desc":"a crab"},'
+            '{"type":"text","text":"later","desc":"unplaced"}]},"_itl":{"v":1,"boxes":[]}}')
+    res = Moss.execute(1024, 1024, "ignored", import_json=ideo, import_mode="always")
+    conv = json.loads(res.args[0])
+    assert conv["summary"]["caption"] == "A beach" and [i["label"] for i in conv["items"]] == ["object"] and "_itl" not in res.args[0]
+    assert json.loads(res.ui["caption"][0]) == json.loads(ideo)       # the editor gets the raw import and converts it itself (keeps the unplaced element)
+    empty = '{"compositional_deconstruction":{"background":"Only a scene.","elements":[]}}'   # no items → plain prompt
+    res = Moss.execute(1024, 1024, "ignored", import_json=empty, import_mode="always")
+    assert res.args[0] == "Only a scene." and json.loads(res.ui["caption"][0]) == json.loads(empty)
+    moss_in = json.dumps(conv)                                                                       # same-format import: rebuilt at the node's size
+    assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=moss_in, import_mode="always").args[0]) == conv
+    rebuilt = json.loads(Moss.execute(1024, 768, "ignored", import_json=moss_in, import_mode="always").args[0])
+    assert rebuilt["items"][0]["bbox"] == [-308, -410, 103, -102]   # pixels from the centre: inside 1024×768, so unchanged
+    oversize = '{"summary":{"caption":"O."},"items":[{"label":"object","caption":"o","bbox":[-600,-600,600,600]}]}'
+    assert json.loads(Moss.execute(1024, 768, "ignored", import_json=oversize, import_mode="always").args[0])["items"][0]["bbox"] == [-384, -512, 384, 512]
+    draft = '{"summary":{"caption":"D."},"items":[{"label":"object","caption":"o","bbox":[128,96,896,224]}],"bbox_coord_space":"abs","bbox_format":"xyxy"}'
+    assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=draft, import_mode="always").args[0])["items"][0]["bbox"] == [-416, -384, -288, 384]
+    no_items = '{"summary":{"caption":"Only a caption."},"items":[]}'
+    assert Moss.execute(1024, 1024, "ignored", import_json=no_items, import_mode="always").args[0] == "Only a caption."
+    assert Moss.execute(1024, 1024, "\n  Padded.\n").args[0] == "Padded."                      # plain prompt is stripped like summary.caption
+    assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins
