@@ -127,3 +127,20 @@ def test_hostile_ideogram_json_never_raises():
         b, sc = parse_ideogram(bad)
         assert b == [] and sc["background"] == "" and compact(build_ideogram(b, sc))
     assert strs([None, 1, {"a": 1}, "x", 2.5, True]) == ["1", "x", "2.5"]                        # str / int / float only
+
+
+def test_hostile_sidecar_and_null_sections_never_raise():
+    from nodes.layout_formats import sidecar_boxes, num
+    ideo = {"compositional_deconstruction": {"background": "b", "elements": []},
+            "_itl": {"v": 1, "boxes": [{"x": 0.1, "y": "0.2", "w": 0.3, "h": 0.4, "type": "obj"},      # numeric string: fine
+                                       {"x": 0.1, "y": 0.2, "w": "abc", "h": 0.4, "type": "obj"},      # dropped
+                                       {"x": 0.1, "y": 0.2, "w": None, "h": 0.4, "type": "obj"},       # dropped
+                                       {"x": 0.5, "y": 0.5, "w": 0.2, "h": 0.2, "type": "text", "text": "ok"}]}}
+    assert [b["type"] for b in sidecar_boxes(ideo)] == ["obj", "text"] and sidecar_boxes(ideo)[0]["y"] == 0.2
+    boxes, scene, _ = import_layout(ideo, "moss", 1024, 1024)
+    assert len(build_moss(boxes, scene, 1024, 1024)["items"]) == 2
+    boxes, scene, _ = import_layout(ideo, "ideogram", 1024, 1024)
+    assert len(build_ideogram(boxes, scene)["compositional_deconstruction"]["elements"]) == 2
+    assert detect_format({"compositional_deconstruction": None}) is None and detect_format({"compositional_deconstruction": [1]}) is None
+    assert detect_format({"items": None}) is None and detect_format({"items": {"a": 1}}) is None
+    assert num("0x10") is None and num("1_000") is None and num(" 12.5 ") == 12.5 and num("-3e2") == -300.0 and num("") is None

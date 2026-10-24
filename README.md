@@ -129,7 +129,8 @@ convert it to their own format:
   <medium>.` (empty fields dropped); the style palette becomes the summary palette; `obj` → `object`.
 - MOSS → Ideogram: `summary.caption` becomes `background`; `character` → `obj`; `meta`, `canvas` and
   `tags` have no Ideogram field (tags stay on the region in the editor and come back when you paste
-  into a MOSS node).
+  into a MOSS node). The summary palette lands in the *Style colors* row — Ideogram only exports a
+  palette inside `style_description`, so pick a style (photo / art style) to send it.
 - Wire the Ideogram node's `prompt` into the MOSS node's `import_json` with `import_mode = always` and
   you have a live converter. Leave the Ideogram node's *absolute pixels* / *xy order* toggles at their
   defaults for that: the caption JSON carries no marker for them, so the converter assumes the 0–1000

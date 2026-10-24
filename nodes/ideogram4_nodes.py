@@ -272,7 +272,7 @@ Toolbar:
 
         if used_import and src == "ideogram":
             caption = {k: v for k, v in imported.items() if k != "_itl"}   # strip the editor-only sidecar from the prompt output
-            boxes, _ = lf.parse_ideogram(imported)
+            boxes, _, _ = lf.import_layout(imported, "ideogram", width, height)   # preview/bboxes follow the sidecar, like the editor
         else:
             if used_import:                                 # a MOSS-Image layout: convert, then build like editor output
                 boxes, scene, _ = lf.import_layout(imported, "ideogram", width, height)

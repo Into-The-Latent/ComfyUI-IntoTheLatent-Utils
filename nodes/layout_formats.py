@@ -89,16 +89,21 @@ def text(v):
     return ""
 
 
+_NUM = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")   # plain decimal grammar, same in both mirrors
+
+
 def num(v):
-    # A coordinate from untrusted JSON: a finite number or numeric string -> float, anything else (bool, None,
-    # NaN, text) -> None.
-    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+    # A coordinate from untrusted JSON: a finite number, or a plain decimal string ("12", " -3e2 "), -> float;
+    # anything else (bool, None, NaN, text, "0x10", "1_000") -> None.
+    if isinstance(v, bool):
         return None
-    try:
-        f = float(v)
-    except ValueError:
+    if isinstance(v, str):
+        if not _NUM.match(v.strip()):
+            return None
+        v = float(v.strip())
+    if not isinstance(v, (int, float)):
         return None
-    return f if math.isfinite(f) else None
+    return float(v) if math.isfinite(v) else None
 
 
 def colors(v):
@@ -424,7 +429,7 @@ def detect_format(obj):
         return None
     if isinstance(obj.get("items"), list):
         return "moss"
-    if "compositional_deconstruction" in obj:
+    if isinstance(obj.get("compositional_deconstruction"), dict):
         return "ideogram"
     return None
 
@@ -465,7 +470,15 @@ def sidecar_boxes(obj):
     # foreign labels). [] when absent or empty.
     side = obj.get("_itl") if isinstance(obj, dict) else None
     boxes = side.get("boxes") if isinstance(side, dict) else None
-    return [b for b in boxes if isinstance(b, dict) and isinstance(b.get("x"), (int, float))] if isinstance(boxes, list) else []
+    out = []
+    for b in (boxes if isinstance(boxes, list) else []):
+        if not isinstance(b, dict):
+            continue
+        nums = [num(b.get(k)) for k in ("x", "y", "w", "h")]
+        if any(v is None for v in nums):
+            continue                                         # a box without four usable coordinates is dropped
+        out.append(dict(b, x=nums[0], y=nums[1], w=nums[2], h=nums[3]))
+    return out
 
 
 def import_layout(obj, target, width, height):

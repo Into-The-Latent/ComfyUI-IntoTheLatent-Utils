@@ -112,7 +112,7 @@ Same editor as the Ideogram 4 Prompt Builder: see that node for the canvas, Over
             scene = lf.moss_scene(caption=caption, meta=meta, canvas=canvas,
                                   palette=lf.parse_json_list(style_palette_data))
         layout = lf.build_moss(boxes, scene, width, height)
-        prompt = dump(layout) if layout is not None else scene["caption"]       # no placed items -> plain text
+        prompt = dump(layout) if layout is not None else scene["caption"].strip()   # no placed items -> plain text (stripped like summary.caption)
         preview = _render_preview(boxes, width, height, _bg_image(image), bg_brightness)
         bboxes_out = lf.bbox_outputs(boxes, width, height)
 

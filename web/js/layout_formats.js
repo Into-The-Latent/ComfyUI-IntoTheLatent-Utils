@@ -11,7 +11,8 @@ export function detectFormat(obj) {
   // "moss" (an items list), "ideogram" (compositional_deconstruction), else null.
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
   if (Array.isArray(obj.items)) return "moss";
-  if ("compositional_deconstruction" in obj) return "ideogram";
+  const cd = obj.compositional_deconstruction;
+  if (cd && typeof cd === "object" && !Array.isArray(cd)) return "ideogram";
   return null;
 }
 
@@ -22,12 +23,14 @@ export function text(v) {
   return "";
 }
 
+const NUM = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;   // plain decimal grammar, same in both mirrors
+
 export function num(v) {
-  // A coordinate from untrusted JSON: a finite number or numeric string -> number, anything else (bool, null,
-  // NaN, text) -> null.
-  if (typeof v !== "number" && !(typeof v === "string" && v.trim() !== "")) return null;
-  const f = Number(v);
-  return Number.isFinite(f) ? f : null;
+  // A coordinate from untrusted JSON: a finite number, or a plain decimal string ("12", " -3e2 "), -> number;
+  // anything else (bool, null, NaN, text, "0x10", "1_000") -> null.
+  if (typeof v === "string") { if (!NUM.test(v.trim())) return null; v = Number(v.trim()); }
+  if (typeof v !== "number") return null;
+  return Number.isFinite(v) ? v : null;
 }
 
 export function colors(v) {
@@ -266,7 +269,14 @@ export function sidecarBoxes(obj) {
   // The editor's `_itl` clipboard/template sidecar: the full box list (groups, hierarchy, tags, disabled,
   // foreign labels). [] when absent or empty.
   const boxes = obj && obj._itl && Array.isArray(obj._itl.boxes) ? obj._itl.boxes : [];
-  return boxes.filter((b) => b && typeof b === "object" && typeof b.x === "number");
+  const out = [];
+  for (const b of boxes) {
+    if (!b || typeof b !== "object") continue;
+    const n = ["x", "y", "w", "h"].map((k) => num(b[k]));
+    if (n.some((v) => v === null)) continue;               // a box without four usable coordinates is dropped
+    out.push({ ...b, x: n[0], y: n[1], w: n[2], h: n[3] });
+  }
+  return out;
 }
 
 export function importLayout(obj, target, width, height) {
