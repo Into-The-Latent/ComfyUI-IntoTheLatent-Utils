@@ -17,6 +17,7 @@ with bbox on a 0-1000 grid as ``[ymin, xmin, ymax, xmax]``.
 
 import json
 import logging
+import math
 import re
 
 
@@ -262,3 +263,123 @@ def parse_ideogram(cap):
                            aesthetics=sd.get("aesthetics") or "", lighting=sd.get("lighting") or "",
                            medium=sd.get("medium") or "", palette=sd.get("color_palette") or [])
     return boxes, scene
+
+
+# ── MOSS-Image ─────────────────────────────────────────────────────────────────────────────────
+# Layout prompt (OpenMOSS/MOSS-Image USERGUIDE.md; same output as ComfyUI core's nodes_moss_image.py):
+# {"summary": {meta?, canvas?, caption, palette?}, "items": [{label, caption, text?, tags?, palette?, bbox}],
+#  "bbox_coord_space": "abs_centralized", "bbox_format": "yxyx"} — bbox = [ymin, xmin, ymax, xmax] in absolute
+# pixels measured from the canvas centre, so the prompt is only right at the width/height it was built for.
+
+CANVASES = ("single", "multi_panel", "collage")
+MOSS_LABELS = ("object", "character", "text")
+MOSS_SPACE, MOSS_FORMAT = "abs_centralized", "yxyx"
+
+
+def strs(v):
+    # A list of non-empty strings; a comma/newline separated string is split (the editor's meta/tags fields).
+    if isinstance(v, str):
+        v = re.split(r"[,\n]", v)
+    return [str(t).strip() for t in (v if isinstance(v, list) else []) if str(t).strip()]
+
+
+def moss_label(t):
+    # Editor box type -> item label: "text"/"character" pass through, anything else ("obj", "object", None) is an object.
+    return t if t in ("text", "character") else "object"
+
+
+def moss_scene(caption="", meta=None, canvas="none", palette=None):
+    return {"caption": caption, "meta": strs(meta), "canvas": canvas if canvas in CANVASES else "none",
+            "palette": list(palette or [])}
+
+
+def _edges(box):
+    # {x, y, w, h} fractions -> clamped (x1, y1, x2, y2) fractions, negative sizes normalized.
+    x, y, w, h = (float(box.get(k, 0.0) or 0.0) for k in ("x", "y", "w", "h"))
+    x1, x2 = sorted((x, x + w))
+    y1, y2 = sorted((y, y + h))
+    return tuple(max(0.0, min(1.0, v)) for v in (x1, y1, x2, y2))
+
+
+def moss_bbox(box, width, height):
+    # Editor box -> [ymin, xmin, ymax, xmax]: whole-pixel edges enclosing the box (floor the mins, ceil the maxes,
+    # round(…, 9) first so float noise never ceils 307.0000000001 to 308), origin moved to the canvas centre.
+    # None when the box has no area after rounding — MOSS consumers reject zero-size boxes.
+    x1, y1, x2, y2 = _edges(box)
+    hx, hy = width // 2, height // 2
+    bb = [math.floor(round(y1 * height, 9)) - hy, math.floor(round(x1 * width, 9)) - hx,
+          math.ceil(round(y2 * height, 9)) - hy, math.ceil(round(x2 * width, 9)) - hx]
+    return bb if bb[0] < bb[2] and bb[1] < bb[3] else None
+
+
+def from_moss_bbox(bb, width, height, space=MOSS_SPACE, fmt=MOSS_FORMAT):
+    # Layout bbox -> editor {x, y, w, h} fractions clamped into the canvas, or None for malformed input.
+    # space "abs_centralized" (default) = pixels from the canvas centre; "abs" = plain top-left pixels.
+    # fmt "yxyx" (default) or "xyxy".
+    if not isinstance(bb, (list, tuple)) or len(bb) != 4:
+        return None
+    try:
+        a, b, c, d = (float(v) for v in bb)
+    except (TypeError, ValueError):
+        return None
+    y1, x1, y2, x2 = (b, a, d, c) if str(fmt).lower() == "xyxy" else (a, b, c, d)
+    if "central" in str(space or MOSS_SPACE):
+        y1, y2, x1, x2 = y1 + height // 2, y2 + height // 2, x1 + width // 2, x2 + width // 2
+    x1, x2 = sorted(max(0.0, min(1.0, v / width)) for v in (x1, x2))
+    y1, y2 = sorted(max(0.0, min(1.0, v / height)) for v in (y1, y2))
+    return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
+
+
+def build_moss(boxes, scene, width, height):
+    # Editor boxes + scene -> layout dict, or None when no item survives (the caller then uses the caption as
+    # plain text, like ComfyUI core). Skips groups, disabled, unplaced and zero-area boxes.
+    items = []
+    for box in exported_boxes(boxes):
+        if box.get("nobbox"):
+            continue
+        bb = moss_bbox(box, width, height)
+        if bb is None:
+            continue
+        label = moss_label(box.get("type"))
+        item = {"label": label, "caption": box.get("desc", "") or ""}
+        if label == "text":
+            item["text"] = box.get("text", "") or ""
+        tags, pal = strs(box.get("tags")), palette(box.get("palette") or [])
+        if tags:
+            item["tags"] = tags
+        if pal:
+            item["palette"] = pal[:5]
+        item["bbox"] = bb
+        items.append(item)
+    if not items:
+        return None
+    summary = {}
+    meta = strs(scene.get("meta"))
+    if meta:
+        summary["meta"] = meta
+    if scene.get("canvas") in CANVASES:
+        summary["canvas"] = scene["canvas"]
+    summary["caption"] = (scene.get("caption") or "").strip()
+    pal = palette(scene.get("palette") or [])
+    if pal:
+        summary["palette"] = pal[:16]
+    return {"summary": summary, "items": items, "bbox_coord_space": MOSS_SPACE, "bbox_format": MOSS_FORMAT}
+
+
+def parse_moss(layout, width, height):
+    # Layout dict -> (editor boxes, scene). The layout carries no canvas size, so bboxes are read against the
+    # given width/height. Items without a usable bbox become unplaced placeholders.
+    space, fmt = layout.get("bbox_coord_space"), layout.get("bbox_format")
+    boxes = []
+    for i, it in enumerate(layout.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        box = {"type": moss_label(it.get("label")), "text": str(it.get("text") or ""),
+               "desc": str(it.get("caption") or ""), "tags": ", ".join(strs(it.get("tags"))),
+               "palette": strs(it.get("palette"))}
+        bb = from_moss_bbox(it.get("bbox"), width, height, space or MOSS_SPACE, fmt or MOSS_FORMAT)
+        box.update(bb if bb else unplaced_box(i))
+        boxes.append(box)
+    s = layout.get("summary") if isinstance(layout.get("summary"), dict) else {}
+    return boxes, moss_scene(caption=str(s.get("caption") or ""), meta=s.get("meta"), canvas=s.get("canvas"),
+                             palette=strs(s.get("palette")))
