@@ -455,6 +455,9 @@ function injectStyle() {
     .itl-ideo-lnum { font:bold 11px monospace; color:#888; flex:0 0 auto; width:18px; }
     .itl-ideo-ltext { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .itl-ideo-ltext.empty { color:#777; font-style:italic; }
+    .itl-ideo-lweight { font:bold 10px monospace; color:#e6a23c; flex:0 0 auto; min-width:12px; margin:0 -2px; text-align:center; cursor:default; }
+    .itl-ideo-lweight.normal { color:#666; font-weight:normal; }
+    .itl-ideo-warn { color:#e6a23c; font:11px sans-serif; }
     .itl-ideo-lbtn { background:none; border:none; color:#999; cursor:pointer; font:13px sans-serif; line-height:1; padding:2px 5px; border-radius:3px; flex:0 0 auto; }
     .itl-ideo-lbtn:hover { color:#fff; background:#444; }
     .itl-ideo-lbtn.del:hover { color:#fff; background:#a33; }
@@ -1913,7 +1916,7 @@ app.registerExtension({
         }
         commit();
       }
-      // Right-click menu for the Overview (one item for now: group the selection).
+      // Right-click menu for the Overview: group the selection, move to root, and (MOSS) the box weight.
       function closeOverviewMenu() {
         if (node._ovMenu) { node._ovMenu.remove(); node._ovMenu = null; }
         node._ovDismiss?.disarm(); node._ovDismiss = null;
@@ -1946,6 +1949,19 @@ app.registerExtension({
             if (nested.length) node._activeIdx = node._boxes.indexOf(nested[nested.length - 1]);
             commit();
           });
+        const weighable = targets.filter((b) => !b.group);
+        if (spec.weights) {
+          const hdr = document.createElement("div");
+          hdr.className = "itl-ideo-mhdr"; hdr.textContent = weighable.length > 1 ? `Weight (${weighable.length})` : "Weight";
+          hdr.title = spec.weightTip;
+          menu.appendChild(hdr);
+          const same = weighable.length && weighable.every((b) => weightOf(b).value === weightOf(weighable[0]).value) ? weightOf(weighable[0]).value : null;
+          for (const w of spec.weights) {
+            addItem(`${same === w.value ? "✓" : "  "} ${w.sign}  ${w.label}`, weighable.length > 0, () => setWeight(weighable, w.value));
+            menu.lastChild.title = `${w.label} (weight ${w.value}) — ${w.tip}`;
+            menu.lastChild.style.whiteSpace = "pre";
+          }
+        }
         document.body.appendChild(menu);
         node._ovMenu = menu;
         const r = menu.getBoundingClientRect();
@@ -2350,6 +2366,48 @@ app.registerExtension({
       function isUnexported(b) {
         return !!spec.requiresBbox && !b.group && (!!b.nobbox || !spec.outBbox(b, ...dims()).length);
       }
+      // ── per-box weight (MOSS: spec.weights) ── the caption is sent as (caption:w) for KJNodes' MOSS-Image Prompt Weight
+      function weightOf(b) {                                 // the preset for this box; an off-preset value (older save, import) -> nearest
+        const v = typeof b.weight === "number" ? Math.min(b.weight, LF.MAX_EMPHASIS) : 1;
+        return (spec.weights || []).reduce((best, w) => (Math.abs(w.value - v) < Math.abs(best.value - v) ? w : best));
+      }
+      function weightSign(b) {                               // the Overview label: << = > >>
+        if (!spec.weights || b.group) return null;
+        const w = weightOf(b), s = document.createElement("span");
+        s.className = "itl-ideo-lweight" + (w.value === 1 ? " normal" : "");
+        s.textContent = w.sign; s.title = `${w.label} (weight ${w.value}) — ${w.tip}`;
+        return s;
+      }
+      function setWeight(targets, value) {
+        for (const t of targets) if (t && !t.group) { if (value === 1) delete t.weight; else t.weight = value; }
+        commit();
+      }
+      // The weighting only happens in KJNodes' MOSS-Image Prompt Weight: look for it on the prompt output (through reroutes).
+      function promptFeedsWeightNode() {
+        const g = node.graph; if (!g) return false;
+        const links = g.links, getLink = (id) => (links?.get ? links.get(id) : links?.[id]);
+        const seen = new Set(), stack = [[node, node.outputs?.findIndex((o) => o.name === "prompt") ?? -1]];
+        while (stack.length) {
+          const [n, slot] = stack.pop();
+          for (const id of (n.outputs?.[slot]?.links || [])) {
+            const l = getLink(id), t = l && g.getNodeById(l.target_id);
+            if (!t || seen.has(t.id)) continue;
+            seen.add(t.id);
+            if (t.type === "MossImagePromptWeight") return true;
+            if (/reroute/i.test(t.type || "")) stack.push([t, 0]);
+          }
+        }
+        return false;
+      }
+      function weightWarnings(b) {
+        const out = [];
+        if (!spec.weights || b.group || (b.weight ?? 1) === 1) return out;
+        if (LF.weightedCaption(b.desc || "", b.weight) === (b.desc || ""))
+          out.push("caption contains ( ) or : or is empty — the weight can't be applied");
+        if (!promptFeedsWeightNode())
+          out.push("connect prompt → KJNodes' MOSS-Image Prompt Weight, or the (…:w) brackets reach the model as plain text");
+        return out;
+      }
       function decorateUnexported(txt, b, label) {
         if (!isUnexported(b)) return;
         txt.textContent += " ⚠ unplaced";
@@ -2402,6 +2460,7 @@ app.registerExtension({
             txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
             txt.title = label;
             decorateUnexported(txt, b, label);
+            const wsign = weightSign(b);
             const lock = document.createElement("button");
             lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
             lock.textContent = b.locked ? "🔒" : "🔓";
@@ -2413,7 +2472,7 @@ app.registerExtension({
             del.className = "itl-ideo-lbtn del"; del.textContent = "✕";
             del.title = b.locked ? "Unlock to delete" : "Delete region";
             del.disabled = !!b.locked;
-            row.append(sw, num, txt, lock, dup, del);
+            row.append(...[sw, num, txt, wsign, lock, dup, del].filter(Boolean));
             list.appendChild(row);
 
             lock.addEventListener("click", (e) => {
@@ -2580,7 +2639,7 @@ app.registerExtension({
       // bboxes are pixels (MOSS) always gets it: the fraction boxes survive a paste into a node of another size.
       function needsSidecar() {
         return !!spec.alwaysSidecar || node._boxes.some((b) => b.group || b.parent != null || b.disabled || isUnexported(b) ||
-          (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
+          (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type) || (b.weight != null && b.weight !== 1));
       }
       function buildClipboardCaption() {
         const cap = buildCaptionObject();
@@ -2955,6 +3014,31 @@ app.registerExtension({
         typeRow.appendChild(bboxGrid);
         updateBboxLabel();
         panel.appendChild(typeRow);
+        if (spec.weights) {                                  // per-box weight buttons (apply to every selected region)
+          const wRow = document.createElement("div");
+          wRow.className = "itl-ideo-row";
+          const wl = document.createElement("span"); wl.textContent = "weight:"; wl.title = spec.weightTip; wRow.appendChild(wl);
+          const cur = weightOf(b).value;
+          for (const w of spec.weights) {
+            const btn = document.createElement("button");
+            btn.className = "itl-ideo-btn" + (cur === w.value ? " active" : "");
+            btn.textContent = w.label;
+            btn.title = `${w.sign}  ${w.label} (weight ${w.value}) — ${w.tip}`;
+            stopProp(btn);
+            btn.addEventListener("click", () => {
+              const sel = [...node._selection].map((i) => node._boxes[i]).filter(Boolean);
+              setWeight(sel.includes(b) ? sel : [b], w.value);
+            });
+            wRow.appendChild(btn);
+          }
+          panel.appendChild(wRow);
+          for (const msg of weightWarnings(b)) {
+            const warn = document.createElement("div");
+            warn.className = "itl-ideo-warn"; warn.textContent = "⚠ " + msg;
+            panel.appendChild(warn);
+          }
+        }
+
 
         // text (only for text type)
         if (b.type === "text") {
@@ -2968,7 +3052,6 @@ app.registerExtension({
           panel.appendChild(makeArea("tags", b.tags || "", "tags, comma-separated (optional)",
             function () { b.tags = this.value; touch(); }));
         }
-
         // palette
         const palRow = document.createElement("div");
         palRow.className = "itl-ideo-row";
@@ -3036,6 +3119,7 @@ app.registerExtension({
           txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
           txt.title = label;
           decorateUnexported(txt, b, label);
+          const wsign = weightSign(b);
           const lock = document.createElement("button");
           lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
           lock.textContent = b.locked ? "🔒" : "🔓";
@@ -3048,7 +3132,7 @@ app.registerExtension({
           del.className = "itl-ideo-lbtn del"; del.textContent = "✕";
           del.title = b.locked ? "Unlock to delete" : "Delete region (children promote to its parent)";
           del.disabled = !!b.locked;
-          row.append(tri, enableBtn, sw, num, txt, lock, dup, del);
+          row.append(...[tri, enableBtn, sw, num, txt, wsign, lock, dup, del].filter(Boolean));
           exList.appendChild(row);
 
           if (hasKids) tri.addEventListener("click", (e) => {

@@ -366,6 +366,26 @@ def from_moss_bbox(bb, width, height, space=MOSS_SPACE, fmt=MOSS_FORMAT):
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
+# KJ's emphasis adds an attention bias to every token of the phrase, for every image position, in every block: above
+# 1.5 one long caption (or a few weighted regions) outweighs the bbox tokens and the layout breaks (2026-10-24 sweep).
+MAX_EMPHASIS = 1.5
+_WEIGHT_SPLIT = re.compile(r"^(\s*)(.*?)([\s.!?;,…]*)$", re.S)
+
+
+def weighted_caption(caption, weight):
+    # A box weight other than 1 -> the caption wrapped as `(caption:w)` for KJNodes' MOSS-Image Prompt Weight.
+    # Trailing punctuation stays outside: '."' merges into one Qwen token and the phrase would not be found.
+    # Weight 1 / missing / not a positive number, or a caption KJ's syntax can't hold ( ( ) : ) -> unchanged.
+    # Emphasis is capped at MAX_EMPHASIS.
+    if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight <= 0 or weight == 1 or not caption:
+        return caption
+    weight = min(weight, MAX_EMPHASIS)
+    lead, core, tail = _WEIGHT_SPLIT.match(caption).groups()
+    if not core or re.search(r"[():]", core):
+        return caption
+    return f"{lead}({core}:{weight:g}){tail}"
+
+
 def build_moss(boxes, scene, width, height):
     # Editor boxes + scene -> layout dict, or None when no item survives (the caller then uses the caption as
     # plain text, like ComfyUI core). Skips groups, disabled, unplaced and zero-area boxes.
@@ -377,7 +397,7 @@ def build_moss(boxes, scene, width, height):
         if bb is None:
             continue
         label = moss_label(box.get("type"))
-        item = {"label": label, "caption": box.get("desc", "") or ""}
+        item = {"label": label, "caption": weighted_caption(box.get("desc", "") or "", box.get("weight"))}
         if label == "text":
             item["text"] = box.get("text", "") or ""
         tags, pal = strs(box.get("tags")), palette(box.get("palette") or [])
