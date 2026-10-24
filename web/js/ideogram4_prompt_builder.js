@@ -6,11 +6,15 @@
  * Upstream: https://github.com/kijai/ComfyUI-KJNodes
  */
 import { chainCallback, addMiddleClickPan, addWheelPassthrough, cursorForBboxMode, watchImageInputs, captureVideoFrame, makeUUID } from './utility.js';
+import * as LF from './layout_formats.js';
 const { app } = window.comfyAPI.app;
 
 const HANDLE = 8;            // hit radius (canvas px) for corners/edges
-const MAX_ELEM_COLORS = 5;   // Ideogram 4 per-element palette cap
-const MAX_STYLE_COLORS = 16; // Ideogram 4 style palette cap
+// Per-node layout specs: what differs between the Ideogram 4 and MOSS-Image builders (scene widgets, labels, bbox
+// readout, serializer, caps); the editor itself is shared. IDEOGRAM_SPEC is at the bottom of this file, the MOSS spec
+// in moss_image_prompt_builder.js. Specs register at module load, before ComfyUI registers node defs.
+export const SPECS = new Map();
+export function registerLayoutSpec(spec) { SPECS.set(spec.nodeName, spec); }
 const DOCK_MINW = 300, DOCK_MINH = 240;   // dock min size — kept in sync with the .itl-ideo-dock CSS below
 let copiedBoxes = null;      // internal clipboard for copy/paste of regions (array; shared across nodes)
 
@@ -515,10 +519,11 @@ function injectStyle() {
 }
 
 app.registerExtension({
-  name: "ITL.Ideogram4PromptBuilder",
+  name: "ITL.LayoutPromptBuilder",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== "ITLIdeogram4PromptBuilder") return;
+    const spec = SPECS.get(nodeData?.name);                   // one editor, one spec per node type
+    if (!spec) return;
     injectStyle();
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
@@ -592,7 +597,7 @@ app.registerExtension({
       clearBtn.title = "Reset the whole node — boxes, style palette, and every caption text field";
       const tokenSpan = document.createElement("span");
       tokenSpan.style.cssText = "color:#888; white-space:nowrap;";
-      tokenSpan.title = "Rough token estimate (~chars/4). Grey <256, green healthy, orange nearing, red ≥2048 (model cap — will error)";
+      tokenSpan.title = `Rough token estimate (~chars/4). Grey <256, green healthy, orange nearing, red ≥${spec.tokenCap} (model cap — will error)`;
       // Output-settings dropdown (formatting + bbox coordinate space/order) — writes the hidden widgets.
       const outBtn = document.createElement("button");
       outBtn.className = "itl-ideo-btn"; outBtn.textContent = "Output ▾";
@@ -610,19 +615,19 @@ app.registerExtension({
       const compactLbl = outToggle(
         () => (formatWidget?.value) !== "pretty",
         (on) => { if (formatWidget) formatWidget.value = on ? "compact" : "pretty"; },
-        "compact JSON", "Compact output (the format Ideogram 4 expects). Uncheck for pretty/indented.");
-      const absLbl = outToggle(
+        "compact JSON", "Compact one-line output (what the model reads). Uncheck for pretty/indented.");
+      const absLbl = !spec.toolbar.coordToggle ? null : outToggle(
         () => (coordWidget?.value) === "absolute",
         (on) => { if (coordWidget) coordWidget.value = on ? "absolute" : "normalized"; },
         "absolute pixels", "bbox in absolute pixels (scaled by width/height) instead of the 0-1000 grid. NON-STANDARD for Ideogram 4.");
-      const xyLbl = outToggle(
+      const xyLbl = !spec.toolbar.orderToggle ? null : outToggle(
         () => (orderWidget?.value) === "xy",
         (on) => { if (orderWidget) orderWidget.value = on ? "xy" : "yx"; },
         "xy order (Qwen)", "bbox axis order [xmin,ymin,xmax,ymax] (x1,y1,x2,y2, as Qwen-VL uses) instead of Ideogram's [ymin,xmin,ymax,xmax].");
       const outMenu = document.createElement("div");
       outMenu.className = "itl-ideo-menu itl-ideo-bgmenu";
       outMenu.style.display = "none";
-      for (const l of [compactLbl, absLbl, xyLbl]) { const r = document.createElement("div"); r.className = "itl-ideo-bgrow"; r.appendChild(l); outMenu.appendChild(r); }
+      for (const l of [compactLbl, absLbl, xyLbl].filter(Boolean)) { const r = document.createElement("div"); r.className = "itl-ideo-bgrow"; r.appendChild(l); outMenu.appendChild(r); }
       document.body.appendChild(outMenu);
       node._outMenu = outMenu;
       const outDismiss = outsideDismiss(outMenu, () => closeOutMenu(), outBtn);
@@ -901,7 +906,7 @@ app.registerExtension({
       const styleBar = document.createElement("div");
       styleBar.className = "itl-ideo-bar";
       const styleLbl = document.createElement("span");
-      styleLbl.textContent = "Style colors:";
+      styleLbl.textContent = spec.paletteLabel;
       styleBar.appendChild(styleLbl);
 
       const canvasEl = document.createElement("canvas");
@@ -1166,7 +1171,7 @@ app.registerExtension({
         addMiddleClickPan(fl);   // middle-click pans the graph from anywhere in the dock (bubbles up from inner elements)
         fl.addEventListener("mousedown", (e) => { if (e.button === 1) e.stopPropagation(); });   // ...but don't let it reach the node behind
         const head = document.createElement("div"); head.className = "itl-ideo-dock-head";
-        const title = document.createElement("span"); title.textContent = "Ideogram 4 editor"; title.style.flex = "1";
+        const title = document.createElement("span"); title.textContent = spec.title; title.style.flex = "1";
         const minBtn = document.createElement("button"); minBtn.className = "itl-ideo-btn";
         stopProp(minBtn);
         const applyMin = (on) => {                            // collapse the editor to just the header bar
@@ -1857,7 +1862,7 @@ app.registerExtension({
         minx = clamp01(minx - pad); miny = clamp01(miny - pad); maxx = clamp01(maxx + pad); maxy = clamp01(maxy + pad);
         const parents = new Set(idxs.map((i) => node._boxes[i].parent ?? null));
         const groupParent = parents.size === 1 ? [...parents][0] : null;   // sits where the selection lived, else root
-        const group = { id: makeUUID(), group: true, name, type: "obj", text: "", desc: "", palette: [],
+        const group = { id: makeUUID(), group: true, name, type: spec.defaultLabel, text: "", desc: "", palette: [],
           x: minx, y: miny, w: Math.max(0, maxx - minx), h: Math.max(0, maxy - miny), parent: groupParent };
         node._boxes.push(group);                              // appended → drawn behind its children (a container)
         const selIds = new Set(idxs.map((i) => node._boxes[i].id));
@@ -2008,7 +2013,7 @@ app.registerExtension({
           }
         } else {
           node._dragMode = "draw";
-          const nb = { x: mN.x, y: mN.y, w: 0, h: 0, type: "obj", text: "", desc: "", palette: [] };
+          const nb = { x: mN.x, y: mN.y, w: 0, h: 0, type: spec.defaultLabel, text: "", desc: "", palette: [] };
           node._boxes.push(nb);
           node._activeIdx = node._boxes.length - 1;
           node._selection = new Set([node._activeIdx]);
@@ -2515,9 +2520,9 @@ app.registerExtension({
         clearCanvas();
         node._stylePalette = [];
         node._lastImported = "";   // a wired import re-seeds on the next run (serializeValue cache-busts)
-        for (const name of ["background", "high_level_description", "aesthetics", "lighting", "medium", "style"]) {
+        for (const name of spec.sceneFields) {
           const w = findW(name);
-          if (w) { w.value = ""; w.callback?.(w.value, app.canvas, node); }
+          if (w) { w.value = spec.sceneDefaults?.[name] ?? ""; w.callback?.(w.value, app.canvas, node); }
         }
         commit(); rebuildStylePalette(); updateTokens();
       };
@@ -2544,69 +2549,37 @@ app.registerExtension({
         return "{\n" + keys.map((k) => pad + JSON.stringify(k) + ": " + pyJson(v[k], lvl + 1)).join(",\n") + "\n" + end + "}";
       }
       function getW(name) { const w = findW(name); return w ? w.value : ""; }
-      function cleanPalette(arr) { return (arr || []).filter((c) => c).map((c) => c.toUpperCase()); }
-      function normBboxJS(b) {
-        const c = (v) => Math.max(0, Math.min(1000, Math.round(v * 1000)));
-        let ymin = c(b.y), xmin = c(b.x), ymax = c(b.y + b.h), xmax = c(b.x + b.w);
-        if (ymin > ymax) [ymin, ymax] = [ymax, ymin];
-        if (xmin > xmax) [xmin, xmax] = [xmax, xmin];
-        return [ymin, xmin, ymax, xmax];
+      function buildOpts() {
+        const [width, height] = dims();
+        return { coordMode: coordWidget?.value, bboxOrder: orderWidget?.value, width, height };
       }
-      // Caption bbox: 0-1000 grid (default) or absolute pixels (scaled by width/height) — must match the
-      // Python output. normBboxJS stays 0-1000 for the editor's grid input field, so keep this separate.
-      function captionBboxJS(b) {
-        const abs = (coordWidget?.value) === "absolute", xy = (orderWidget?.value) === "xy";
-        const sx = abs ? (wWidget?.value || 1000) : 1000, sy = abs ? (hWidget?.value || 1000) : 1000;
-        const cx = (v) => Math.max(0, Math.min(sx, Math.round(v * sx)));
-        const cy = (v) => Math.max(0, Math.min(sy, Math.round(v * sy)));
-        let ymin = cy(b.y), xmin = cx(b.x), ymax = cy(b.y + b.h), xmax = cx(b.x + b.w);
-        if (ymin > ymax) [ymin, ymax] = [ymax, ymin];
-        if (xmin > xmax) [xmin, xmax] = [xmax, xmin];
-        return xy ? [xmin, ymin, xmax, ymax] : [ymin, xmin, ymax, xmax];
-      }
-      function buildCaptionObject() {
-        const cap = {};
-        if ((getW("high_level_description") || "").trim()) cap.high_level_description = getW("high_level_description");
-        const styleW = findW("style");
-        const kind = styleW ? styleW.value : "none";
-        if (kind !== "none") {
-          const sd = { aesthetics: getW("aesthetics"), lighting: getW("lighting") };
-          if (kind === "photo") { sd.photo = getW("style.photo") || ""; sd.medium = getW("medium"); }
-          else { sd.medium = getW("medium"); sd.art_style = getW("style.art_style") || ""; }
-          const pal = cleanPalette(node._stylePalette);
-          if (pal.length) sd.color_palette = pal;
-          cap.style_description = sd;
-        }
-        const elements = node._boxes.filter((b) => !b.group && !isDisabled(b)).map((b) => {   // skip groups (editor-only) + disabled regions
-          const etype = b.type === "text" ? "text" : "obj";
-          const el = { type: etype };
-          if (!b.nobbox) el.bbox = captionBboxJS(b);         // unplaced elements omit bbox
-          if (etype === "text") el.text = b.text || "";
-          el.desc = b.desc || "";
-          const pal = cleanPalette(b.palette).slice(0, MAX_ELEM_COLORS);
-          if (pal.length) el.color_palette = pal;
-          return el;
-        });
-        cap.compositional_deconstruction = { background: getW("background"), elements };
-        return cap;
-      }
+      function sceneFromWidgets() { return spec.sceneFromWidgets({ getW, findW, stylePalette: node._stylePalette }); }
+      // The layout object the Python node emits for this editor state (layout_formats.js mirrors layout_formats.py).
+      function buildCaptionObject() { return spec.build(node._boxes, sceneFromWidgets(), buildOpts()); }
       function stringifyCaption(cap) { return (formatWidget?.value) === "pretty" ? pyJson(cap) : JSON.stringify(cap); }  // compact by default; matches the node output
       function buildCaption() { return stringifyCaption(buildCaptionObject()); }   // clean caption — token estimate + Python-matching
       // Clipboard / template form: the clean caption PLUS an "_itl" sidecar carrying the full editor layout
       // (groups + parent/id/name/etc). KJNodes and the model ignore the unknown key; OUR Paste reads it to
       // restore the hierarchy losslessly. Added only when there's hierarchy/groups worth preserving, so plain
       // scenes stay clean. The Python `prompt` output never includes it.
+      // The sidecar is needed whenever a box holds something this node's own format can't express: hierarchy,
+      // tags, or a label from the other builder — so a cross-node copy/paste or template round trip stays lossless.
+      function needsSidecar() {
+        return node._boxes.some((b) => b.group || b.parent != null || (b.tags && String(b.tags).trim()) || !spec.nativeLabels.has(b.type));
+      }
       function buildClipboardCaption() {
         const cap = buildCaptionObject();
-        if (node._boxes.some((b) => b.group || b.parent != null)) cap._itl = { v: 1, boxes: node._boxes };
+        if (needsSidecar()) cap._itl = { v: 1, boxes: node._boxes };
         return stringifyCaption(cap);
       }
       // Rough token estimate (~chars/4); exact count needs the Qwen tokenizer.
       function updateTokens() {
-        const n = Math.ceil(buildCaption().length / 4);
+        const obj = buildCaptionObject();
+        const txt = spec.plainPrompt?.(obj) ?? stringifyCaption(obj);   // e.g. MOSS with no placed items: the plain caption
+        const n = Math.ceil(txt.length / 4), cap = spec.tokenCap;
         tokenSpan.textContent = "~" + n + " tok";
-        // grey <256 (sparse) · green healthy · orange nearing · red ≥2048 (model hard cap)
-        tokenSpan.style.color = n >= 2048 ? "#e05555" : n >= 1792 ? "#e6a23c" : n >= 256 ? "#6cc06c" : "#888";
+        // grey <256 (sparse) · green healthy · orange nearing · red ≥cap (model hard cap)
+        tokenSpan.style.color = n >= cap ? "#e05555" : n >= cap - 256 ? "#e6a23c" : n >= 256 ? "#6cc06c" : "#888";
       }
       async function doCopy() {
         const txt = buildClipboardCaption();   // includes the _itl layout sidecar when there are groups/parents
@@ -2621,47 +2594,21 @@ app.registerExtension({
         const w = findW(name);
         if (w) { w.value = val; w.callback?.(val); }
       }
-      function bboxElemToBox(el, idx) {
-        if (!el || typeof el !== "object") return null;
-        const box = { type: el.type === "text" ? "text" : "obj",
-          text: el.text || "", desc: el.desc || "",
-          palette: Array.isArray(el.color_palette) ? el.color_palette.slice() : [] };
-        const bb = el.bbox;
-        if (Array.isArray(bb) && bb.length === 4) {
-          const [ymin, xmin, ymax, xmax] = bb;
-          box.x = xmin / 1000; box.y = ymin / 1000; box.w = (xmax - xmin) / 1000; box.h = (ymax - ymin) / 1000;
-        } else {
-          // No bbox: "unplaced" element — small placeholder, flagged so export omits bbox.
-          const k = (idx || 0) % 6;
-          box.x = 0.03 + k * 0.035; box.y = 0.03 + k * 0.035; box.w = 0.22; box.h = 0.14;
-          box.nobbox = true;
-        }
-        return box;
-      }
-      function applyCaption(cap) {
-        const cd = (cap && cap.compositional_deconstruction) || {};
-        const els = Array.isArray(cd.elements) ? cd.elements : [];
-        const side = cap && cap._itl;
+      // Apply a parsed layout ({obj, format}) of either format: the ITL sidecar restores the full editor layout
+      // (groups + hierarchy, labels normalised to this node's set); otherwise the layout is parsed and, when it is
+      // the other builder's format, converted (layout_formats.js mirrors the Python conversion).
+      function applyLayout(parsed) {
+        const [W, H] = dims();
+        const { boxes, scene } = LF.importLayout(parsed.obj, spec.format, W, H);
+        const side = parsed.obj._itl;
         if (side && Array.isArray(side.boxes) && side.boxes.some((b) => b && typeof b.x === "number")) {
-          node._boxes = side.boxes.filter((b) => b && typeof b.x === "number");   // ITL sidecar → full restore (groups + hierarchy)
+          node._boxes = LF.boxesToLabels(side.boxes.filter((b) => b && typeof b.x === "number"), spec.format);
         } else {
-          node._boxes = els.map((el, i) => bboxElemToBox(el, i)).filter(Boolean);  // plain caption (KJ / Ideogram) → flat regions
+          node._boxes = boxes;
         }
         selectOnly(node._boxes.length ? 0 : -1);
-        setWidgetVal("high_level_description", cap.high_level_description || "");
-        setWidgetVal("background", cd.background || "");
-        const sd = cap.style_description || {};
-        let kind = "none";
-        if (typeof sd.photo === "string") kind = "photo";
-        else if (typeof sd.art_style === "string") kind = "art_style";
-        const styleW = findW("style");
-        if (styleW) styleW.value = kind;            // setter synchronously rebuilds sub-widgets
-        if (kind === "photo") setWidgetVal("style.photo", sd.photo || "");
-        else if (kind === "art_style") setWidgetVal("style.art_style", sd.art_style || "");
-        setWidgetVal("aesthetics", sd.aesthetics || "");
-        setWidgetVal("lighting", sd.lighting || "");
-        setWidgetVal("medium", sd.medium || "");
-        node._stylePalette = Array.isArray(sd.color_palette) ? sd.color_palette.slice() : [];
+        spec.applyScene(scene, { setWidgetVal, findW });
+        node._stylePalette = (scene.palette || []).slice();
       }
       // Lenient fixer: slice the outermost {...} (drops ``` fences / prose), then strip trailing
       // commas before } or ] — the string alt matches first so quoted commas are left untouched.
@@ -2670,10 +2617,11 @@ app.registerExtension({
         const t = (i !== -1 && j > i) ? s.slice(i, j + 1) : s;
         return t.replace(/("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g, (m, str, close) => str || close);
       }
+      // -> {obj, format} for an Ideogram 4 caption or a MOSS-Image layout (either is accepted on both nodes), else null.
       function tryParseCaption(t) {
         if (!t) return null;
         for (const cand of [t, repairJson(t)]) {
-          try { const o = JSON.parse(cand); if (o && typeof o === "object" && o.compositional_deconstruction) return o; }
+          try { const o = JSON.parse(cand); const format = LF.detectFormat(o); if (format) return { obj: o, format }; }
           catch (e) {}
         }
         return null;
@@ -2684,16 +2632,15 @@ app.registerExtension({
         // Setting the multiline widgets + rebuilding the style sub-widget makes ComfyUI grow the node;
         // an import shouldn't change its size, so restore it (now and after the deferred re-arrange).
         const sz = node.size ? [node.size[0], node.size[1]] : null;
-        applyCaption(cap);
+        applyLayout(cap);
         if (sz) { node.setSize(sz); requestAnimationFrame(() => node.setSize(sz)); }
         syncCanvasToDims(); commit(); rebuildStylePalette(); fitCanvas();
       }
       // Append a caption's regions to the current canvas (keeps existing boxes + caption fields).
       function insertCaptionBoxes(cap) {
         closeInlineEditor();
-        const cd = (cap && cap.compositional_deconstruction) || {};
-        const els = Array.isArray(cd.elements) ? cd.elements : [];
-        const added = els.map((el, i) => bboxElemToBox(el, i)).filter(Boolean);
+        const [W, H] = dims();
+        const added = LF.importLayout(cap.obj, spec.format, W, H).boxes;
         if (!added.length) return;
         const start = node._boxes.length;
         node._boxes.push(...added);
@@ -2705,8 +2652,8 @@ app.registerExtension({
       async function doImport() {
         let cap = null, txt = "";
         try { txt = (await navigator.clipboard.readText() || "").trim(); cap = tryParseCaption(txt); } catch (e) {}
-        if (!cap) { txt = (window.prompt("Paste Ideogram 4 caption JSON:", "") || "").trim(); cap = tryParseCaption(txt); }
-        if (!cap) { if (txt) alert("Not a valid Ideogram 4 caption JSON (needs 'compositional_deconstruction')."); return; }
+        if (!cap) { txt = (window.prompt(spec.importPrompt, "") || "").trim(); cap = tryParseCaption(txt); }
+        if (!cap) { if (txt) alert(spec.importError); return; }
         loadCaption(cap);
       }
       stopProp(importBtn);
@@ -2843,7 +2790,7 @@ app.registerExtension({
 
       function rebuildStylePalette() {
         while (styleBar.children.length > 1) styleBar.removeChild(styleBar.lastChild);
-        buildSwatchRow(styleBar, node._stylePalette, MAX_STYLE_COLORS,
+        buildSwatchRow(styleBar, node._stylePalette, spec.maxStyleColors,
           swatchEdit,
           () => { swatchEdit(); rebuildStylePalette(); fitCanvas(); });
       }
@@ -2871,7 +2818,7 @@ app.registerExtension({
       function updateBboxLabel() {
         const b = node._boxes[node._activeIdx];
         setField(bboxPx, b, boxToPx);
-        setField(bboxGrid, b, normBboxJS);
+        setField(bboxGrid, b, (bx) => spec.outBbox(bx, ...dims()));
       }
       function parse4(inp) {
         const nums = inp.value.split(/[,\s]+/).map(Number).filter((n) => !isNaN(n));
@@ -2892,10 +2839,8 @@ app.registerExtension({
       function commitGridEdit() {
         const b = node._boxes[node._activeIdx]; if (!b || !bboxGrid) return;
         const nums = parse4(bboxGrid); if (!nums) { updateBboxLabel(); return; }
-        let [ymin, xmin, ymax, xmax] = nums.map((n) => Math.max(0, Math.min(1000, n)));
-        if (ymin > ymax) [ymin, ymax] = [ymax, ymin];
-        if (xmin > xmax) [xmin, xmax] = [xmax, xmin];
-        b.y = ymin / 1000; b.x = xmin / 1000; b.h = (ymax - ymin) / 1000; b.w = (xmax - xmin) / 1000;
+        const r = spec.outToBox(nums, ...dims()); if (!r) { updateBboxLabel(); return; }
+        b.x = r.x; b.y = r.y; b.w = r.w; b.h = r.h;
         delete b.nobbox; commit(); fitCanvas();
       }
       function makeBboxField(placeholder, title, onCommit) {
@@ -2974,7 +2919,7 @@ app.registerExtension({
         const typeRow = document.createElement("div");
         typeRow.className = "itl-ideo-row";
         const lbl = document.createElement("span"); lbl.textContent = "type:"; typeRow.appendChild(lbl);
-        for (const t of ["obj", "text"]) {
+        for (const t of spec.labels) {
           const btn = document.createElement("button");
           btn.className = "itl-ideo-btn" + (b.type === t ? " active" : "");
           btn.textContent = t;
@@ -2990,7 +2935,7 @@ app.registerExtension({
         const gl = document.createElement("span");
         gl.textContent = "out:"; gl.style.color = "#888";
         typeRow.appendChild(gl);
-        bboxGrid = makeBboxField("ymin, xmin, ymax, xmax", "Exported bbox on the 0–1000 grid: ymin, xmin, ymax, xmax — editable", commitGridEdit);
+        bboxGrid = makeBboxField("ymin, xmin, ymax, xmax", spec.outHint, commitGridEdit);
         typeRow.appendChild(bboxGrid);
         updateBboxLabel();
         panel.appendChild(typeRow);
@@ -3009,7 +2954,7 @@ app.registerExtension({
         palRow.className = "itl-ideo-row";
         const pl = document.createElement("span"); pl.textContent = "colors:"; palRow.appendChild(pl);
         b.palette = b.palette || [];
-        buildSwatchRow(palRow, b.palette, MAX_ELEM_COLORS, swatchEdit, commit);
+        buildSwatchRow(palRow, b.palette, spec.maxElemColors, swatchEdit, commit);
         panel.appendChild(palRow);
       }
 
@@ -3241,7 +3186,7 @@ app.registerExtension({
         chainCallback(w, "callback", () => { syncCanvasToDims(); drawCanvas(); fitCanvas(); updateTokens(); });  // absolute coords depend on w/h
       }
       // Update the token estimate when the caption-level text widgets change.
-      for (const name of ["background", "high_level_description", "aesthetics", "lighting", "medium", "style"]) {
+      for (const name of spec.sceneFields) {
         const w = findW(name);
         if (w) chainCallback(w, "callback", () => updateTokens());
       }
@@ -3393,11 +3338,11 @@ app.registerExtension({
         }
         if (coordWidget) {                                    // restore coord mode; default normalized unless explicitly absolute
           coordWidget.value = (o && o.ideo && o.ideo.coordMode) === "absolute" ? "absolute" : "normalized";
-          absLbl._cb.checked = coordWidget.value === "absolute";
+          if (absLbl) absLbl._cb.checked = coordWidget.value === "absolute";
         }
         if (orderWidget) {                                    // restore bbox axis order; default yx unless explicitly xy
           orderWidget.value = (o && o.ideo && o.ideo.bboxOrder) === "xy" ? "xy" : "yx";
-          xyLbl._cb.checked = orderWidget.value === "xy";
+          if (xyLbl) xyLbl._cb.checked = orderWidget.value === "xy";
         }
         node._configured = true;                              // mark as loaded so initial layout keeps the restored size
         hideDataWidgets();
@@ -3453,3 +3398,45 @@ app.registerExtension({
     });
   },
 });
+
+// ── Ideogram 4 spec: this file's original behaviour, extracted verbatim ─────────────────────────────────────────
+const IDEOGRAM_SPEC = {
+  nodeName: "ITLIdeogram4PromptBuilder", format: "ideogram", title: "Ideogram 4 editor",
+  sceneFields: ["background", "high_level_description", "aesthetics", "lighting", "medium", "style"],
+  sceneDefaults: {},
+  labels: ["obj", "text"], defaultLabel: "obj", nativeLabels: new Set(["obj", "text"]),
+  toolbar: { coordToggle: true, orderToggle: true },
+  maxElemColors: 5, maxStyleColors: 16, paletteLabel: "Style colors:", tokenCap: 2048,
+  outHint: "Exported bbox on the 0–1000 grid: ymin, xmin, ymax, xmax — editable",
+  outBbox: (b) => LF.normBbox(b),                           // the grid readout ignores the output toggles (as before)
+  outToBox: (nums) => {
+    let [ymin, xmin, ymax, xmax] = nums.map((n) => Math.max(0, Math.min(1000, n)));
+    if (ymin > ymax) [ymin, ymax] = [ymax, ymin];
+    if (xmin > xmax) [xmin, xmax] = [xmax, xmin];
+    return { x: xmin / 1000, y: ymin / 1000, w: (xmax - xmin) / 1000, h: (ymax - ymin) / 1000 };
+  },
+  sceneFromWidgets: ({ getW, findW, stylePalette }) => {
+    const styleW = findW("style");
+    return LF.ideogramScene({ high_level_description: getW("high_level_description"), background: getW("background"),
+      style_kind: styleW ? styleW.value : "none", photo: getW("style.photo") || "", art_style: getW("style.art_style") || "",
+      aesthetics: getW("aesthetics"), lighting: getW("lighting"), medium: getW("medium"), palette: stylePalette });
+  },
+  build: (boxes, scene, opts) => LF.buildIdeogram(boxes, scene, opts),
+  plainPrompt: null,
+  applyScene: (scene, { setWidgetVal, findW }) => {
+    setWidgetVal("high_level_description", scene.high_level_description || "");
+    setWidgetVal("background", scene.background || "");
+    const kind = scene.style_kind || "none";
+    const styleW = findW("style");
+    if (styleW) styleW.value = kind;                        // setter synchronously rebuilds sub-widgets
+    if (kind === "photo") setWidgetVal("style.photo", scene.photo || "");
+    else if (kind === "art_style") setWidgetVal("style.art_style", scene.art_style || "");
+    setWidgetVal("aesthetics", scene.aesthetics || "");
+    setWidgetVal("lighting", scene.lighting || "");
+    setWidgetVal("medium", scene.medium || "");
+  },
+  hasTags: false, requiresBbox: false,
+  importPrompt: "Paste Ideogram 4 caption (or MOSS-Image layout) JSON:",
+  importError: "Not a layout JSON (needs 'compositional_deconstruction' or 'items').",
+};
+registerLayoutSpec(IDEOGRAM_SPEC);

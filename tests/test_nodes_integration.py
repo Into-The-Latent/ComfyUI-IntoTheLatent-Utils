@@ -76,6 +76,10 @@ def test_moss_node_builds_layout_and_converts_ideogram_import():
     conv = json.loads(res.args[0])
     assert conv["summary"]["caption"] == "A beach" and conv["items"][0]["label"] == "object"
     assert json.loads(res.ui["caption"][0]) == conv
+    empty = '{"compositional_deconstruction":{"background":"Only a scene.","elements":[]}}'   # no items → plain prompt, layout mirror
+    res = Moss.execute(1024, 1024, "ignored", import_json=empty, import_mode="always")
+    assert res.args[0] == "Only a scene." and json.loads(res.ui["caption"][0]) == {
+        "summary": {"caption": "Only a scene."}, "items": [], "bbox_coord_space": "abs_centralized", "bbox_format": "yxyx"}
     moss_in = json.dumps(conv)                                                                       # same-format import: passthrough
     assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=moss_in, import_mode="always").args[0]) == conv
     assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins

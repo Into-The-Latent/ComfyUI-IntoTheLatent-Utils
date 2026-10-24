@@ -330,9 +330,10 @@ def from_moss_bbox(bb, width, height, space=MOSS_SPACE, fmt=MOSS_FORMAT):
     return {"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1}
 
 
-def build_moss(boxes, scene, width, height):
+def build_moss(boxes, scene, width, height, allow_empty=False):
     # Editor boxes + scene -> layout dict, or None when no item survives (the caller then uses the caption as
-    # plain text, like ComfyUI core). Skips groups, disabled, unplaced and zero-area boxes.
+    # plain text, like ComfyUI core); allow_empty keeps an items-less layout (the editor mirror). Skips groups,
+    # disabled, unplaced and zero-area boxes.
     items = []
     for box in exported_boxes(boxes):
         if box.get("nobbox"):
@@ -351,7 +352,7 @@ def build_moss(boxes, scene, width, height):
             item["palette"] = pal[:5]
         item["bbox"] = bb
         items.append(item)
-    if not items:
+    if not items and not allow_empty:
         return None
     summary = {}
     meta = strs(scene.get("meta"))

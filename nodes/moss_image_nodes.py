@@ -122,6 +122,6 @@ Same editor as the Ideogram 4 Prompt Builder: see that node for the canvas, Over
         ui = {"dims": [width, height]}
         if boxes_seeded:
             ui["boxes"] = [json.dumps(boxes)]
-        if used_import:                                       # mirror the (converted) import in the editor
-            ui["caption"] = [lf.dumps(layout) if layout is not None else prompt]
+        if used_import:                                       # mirror the (converted) import in the editor, always as a layout
+            ui["caption"] = [lf.dumps(layout if layout is not None else lf.build_moss([], scene, width, height, allow_empty=True))]
         return io.NodeOutput(prompt, preview, bboxes_out, width, height, ui=ui)
