@@ -163,6 +163,24 @@ A "click-together" helper for the **style fields** of an Ideogram 4 caption — 
 back to the built-in defaults and shows a warning (with the exact parse error) plus a **Restore
 defaults** button that (re)creates the file.
 
+### ITL MOSS-Image Style Wizard
+
+The same chip-picker as the Ideogram 4 Style Wizard — same categories, same chips, same **Edit presets**
+file (`WizardStylesDefault.json` is shared, so edits show up in both) — aimed at the **ITL MOSS-Image Prompt
+Builder**. MOSS-Image has no style fields, so on close the picks are written into the builder like this:
+
+- **Medium + Art Style → the builder's `meta` tags.** In a same-seed test a medium took effect from the
+  tags (as well as from the caption).
+- **Aesthetics + Lighting + Photo → one `Style: …` sentence at the end of the caption.** Lighting only
+  reliably took effect from the caption text, not from the tags.
+
+The wizard only ever replaces what it wrote itself: your own caption text and meta tags stay, and if you
+edit or delete its sentence, closing the wizard without changing the picks leaves your edit alone. What it
+last wrote is remembered on the builder node, so it survives saving and copy/paste. Ideogram-style values
+such as `3d_render` are written as words (`3d render`). Wire the wizard's **`style`** output into the
+builder's **`import_json`** — like the Ideogram wizard it outputs an empty string at run time, and the
+builder doesn't treat it as an import (no needless re-runs).
+
 ### ITL Prompt Batch
 
 Run a **list of prompts one at a time** across a queued batch — the text analog of the classic
@@ -467,7 +485,7 @@ Only the **Ideogram 4 Prompt Builder** node, its canvas editor and the **MOSS-Im
 that same editor are derived from [**ComfyUI-KJNodes**](https://github.com/kijai/ComfyUI-KJNodes) by
 **Kijai** (GPL-3.0). Huge thanks to Kijai for that original work — the derived files retain their attribution.
 
-Everything else in this pack — the **Ideogram 4 Style Wizard**, the **Resolution Selector**, the
+Everything else in this pack — the **Ideogram 4** and **MOSS-Image Style Wizards**, the **Resolution Selector**, the
 **Prompt Batch** node, the **Save Metadata (Civitai)** nodes, the **Multi Loaders**, the **Breeze TTS** nodes
 and the **Whisper** nodes — is original development by **Into The Latent**.
 

@@ -1702,9 +1702,13 @@ app.registerExtension({
 
       // ── serialization ──
       // Wired AND the source node isn't muted(2)/bypassed(4) — those keep the link but emit nothing.
+      // A style wizard on import_json is only an anchor (it outputs "" at run time): not an import source, so it
+      // must not make every queue re-run this node and everything after it.
+      const STYLE_WIZARDS = ["ITLIdeogram4StyleWizard", "ITLMossImageStyleWizard"];
       const importConnected = () => {
         const link = node.graph?.links?.[node.inputs?.find((i) => i.name === "import_json")?.link];
-        return !!link && ![2, 4].includes(node.graph.getNodeById(link.origin_id)?.mode);
+        const src = link && node.graph.getNodeById(link.origin_id);
+        return !!src && ![2, 4].includes(src.mode) && !STYLE_WIZARDS.includes(src.type);
       };
       // Stamp a stable id on any box missing one — identity for the Object Explorer and (future)
       // parenting. Editor-only: Python builds caption elements from known keys, so id never exports.

@@ -48,20 +48,44 @@ export function applyCaptionSentence(caption, prev, next) {
   if (!next) return text;
   text = text.replace(/[ \t]+$/, "");
   if (!text.trim()) return next;
-  if (/\n\s*$/.test(text) || text.includes("\n")) return text.replace(/\s+$/, "") + "\n" + next;
+  if (text.includes("\n")) return text.replace(/\s+$/, "") + "\n" + next;   // multi-line caption: its own line
   return text + " " + next;
 }
 
 // Merge the wizard's tags into the builder's meta field (comma / newline separated). Tags the wizard added on
 // the previous apply (`owned`) are removed first; a tag the user already has is kept as theirs (not owned).
-// Returns { meta, owned } — the new field value and the tags this apply added.
+// Nothing to remove or add -> the field is returned untouched; otherwise it keeps the user's separator
+// (one tag per line stays one per line). Returns { meta, owned } — the new value and the tags this apply added.
 export function applyMetaTags(meta, owned, tags) {
-  const ownedLc = new Set((owned || []).map((t) => t.toLowerCase()));
-  const kept = String(meta || "").split(/[,\n]/).map((t) => t.trim()).filter((t) => t && !ownedLc.has(t.toLowerCase()));
+  const text = String(meta || "");
+  const ownedLc = new Set(strings(owned).map((t) => t.toLowerCase()));
+  const all = text.split(/[,\n]/).map((t) => t.trim()).filter(Boolean);
+  const kept = all.filter((t) => !ownedLc.has(t.toLowerCase()));
   const have = new Set(kept.map((t) => t.toLowerCase()));
   const added = [];
-  for (const t of tags || []) {
+  for (const t of strings(tags)) {
     if (!have.has(t.toLowerCase())) { have.add(t.toLowerCase()); added.push(t); }
   }
-  return { meta: [...kept, ...added].join(", "), owned: added };
+  if (kept.length === all.length && !added.length) return { meta: text, owned: [] };
+  const sep = text.includes("\n") && !text.includes(",") ? "\n" : ", ";
+  return { meta: [...kept, ...added].join(sep), owned: added };
+}
+
+const strings = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === "string" && t.trim()) : []);
+
+// One apply on one builder. `record` is what the wizard wrote there last time ({ sentence, tags, added }, kept on
+// the builder node so it travels with it on copy/paste). If the picks haven't changed since then, nothing is
+// written: the user may have edited or deleted the sentence / tags in the meantime, and closing the wizard just
+// to look must not undo that. A malformed record counts as none. Returns { caption, meta, record }.
+export function applyMossStyle(fields, record, wiz) {
+  const r = record && typeof record === "object" && !Array.isArray(record) ? record : {};
+  const prev = { sentence: typeof r.sentence === "string" ? r.sentence : "", tags: strings(r.tags), added: strings(r.added) };
+  const sentence = mossStyleSentence(wiz), tags = mossMetaTags(wiz);
+  const same = (a, b) => a.length === b.length && a.every((t, i) => t.toLowerCase() === b[i].toLowerCase());
+  if (record && prev.sentence === sentence && same(prev.tags, tags)) {
+    return { caption: fields.caption, meta: fields.meta, record: prev };
+  }
+  const m = applyMetaTags(fields.meta, prev.added, tags);
+  return { caption: applyCaptionSentence(fields.caption, prev.sentence, sentence), meta: m.meta,
+           record: { sentence, tags, added: m.owned } };
 }

@@ -11,7 +11,7 @@
  * wizard writes meta tags + a "Style: ..." caption sentence (moss_style.js). Both share the chip presets.
  */
 import { chainCallback } from "./utility.js";
-import { mossMetaTags, mossStyleSentence, applyCaptionSentence, applyMetaTags } from "./moss_style.js";
+import { mossMetaTags, mossStyleSentence, applyMossStyle } from "./moss_style.js";
 const { app } = window.comfyAPI.app;
 
 // Built-in chip lists (values are exactly what lands in the JSON). Sourced from the research report.
@@ -227,20 +227,21 @@ function buildStyleDescription(wiz) {
   return sd;
 }
 
-// Restore the picks (+ the per-target record of what was last written) from the persisted widget value.
+// Restore the picks from the persisted widget value.
 function hydrateWiz(node, wizWidget) {
-  node._wiz = BLANK(); node._wizOwned = {};
+  node._wiz = BLANK();
   try {
     const v = JSON.parse(wizWidget?.value || "{}");
-    if (v && typeof v === "object") {
-      for (const k of Object.keys(node._wiz)) if (typeof v[k] === "string") node._wiz[k] = v[k];
-      if (v._owned && typeof v._owned === "object") node._wizOwned = v._owned;
-    }
+    if (v && typeof v === "object") for (const k of Object.keys(node._wiz)) if (typeof v[k] === "string") node._wiz[k] = v[k];
   } catch (e) {}
 }
 
-// ── Per-node targets ── which builder a wizard writes into, and how. apply(target, wiz, owned) returns the new
-// `owned` record (what it wrote, so the next apply can replace exactly that); the Ideogram target owns nothing.
+function setWidget(target, name, val) {
+  const w = target.widgets?.find((x) => x.name === name);
+  if (w) { w.value = val; w.callback?.(val); }
+}
+
+// ── Per-node targets ── which builder a wizard writes into, and how (apply(target, wiz)).
 const WIZARDS = {
   ITLIdeogram4StyleWizard: {
     builderType: "ITLIdeogram4PromptBuilder", builderLabel: "ITL Ideogram 4 Prompt Builder", title: "Style Wizard",
@@ -248,7 +249,7 @@ const WIZARDS = {
     warn: (wiz) => (wiz.photo.trim() && wiz.art_style.trim()
       ? "⚠ Ideogram allows only photo OR art_style — only photo will be applied to the builder." : ""),
     apply(target, wiz) {
-      const set = (name, val) => { const w = target.widgets?.find((x) => x.name === name); if (w) { w.value = val; w.callback?.(val); } };
+      const set = (name, val) => setWidget(target, name, val);
       // Mirror the wizard exactly, including clears: photo -> "photo", else art_style -> "art_style",
       // else "none". Setting "none" rebuilds the combo without a photo/art_style sub-widget, so a
       // cleared wizard actually clears the builder's photo/art_style (was the "stays filled" bug).
@@ -261,7 +262,6 @@ const WIZARDS = {
       set("aesthetics", wiz.aesthetics.trim());
       set("lighting", wiz.lighting.trim());
       set("medium", wiz.medium.trim());
-      return null;
     },
   },
   ITLMossImageStyleWizard: {
@@ -272,15 +272,15 @@ const WIZARDS = {
              "caption ends + " + (sentence || "(no style sentence)");
     },
     warn: () => "",
-    apply(target, wiz, owned) {
-      const w = (name) => target.widgets?.find((x) => x.name === name);
-      const set = (wd, val) => { if (wd) { wd.value = val; wd.callback?.(val); } };
-      const sentence = mossStyleSentence(wiz);
-      const capW = w("caption"), metaW = w("meta");
-      set(capW, applyCaptionSentence(capW?.value, owned?.sentence || "", sentence));
-      const m = applyMetaTags(metaW?.value, owned?.meta || [], mossMetaTags(wiz));
-      set(metaW, m.meta);
-      return { sentence, meta: m.owned };
+    // What the wizard last wrote is recorded on the builder node itself (properties are saved with the workflow
+    // and copied with the node), so a pasted builder keeps it and a cloned wizard doesn't inherit someone else's.
+    apply(target, wiz) {
+      const get = (name) => target.widgets?.find((x) => x.name === name)?.value ?? "";
+      target.properties = target.properties || {};
+      const r = applyMossStyle({ caption: get("caption"), meta: get("meta") }, target.properties.itlStyleWizard, wiz);
+      if (r.caption !== get("caption")) setWidget(target, "caption", r.caption);
+      if (r.meta !== get("meta")) setWidget(target, "meta", r.meta);
+      target.properties.itlStyleWizard = r.record;
     },
   },
 };
@@ -301,13 +301,10 @@ app.registerExtension({
       const i = node.inputs?.findIndex((inp) => inp.name === "wizard_data");
       if (i != null && i !== -1) node.removeInput(i);
 
-      node._wiz = BLANK();
-      node._wizOwned = {};                                   // per target node id: what this wizard last wrote there
-      function hydrate() { hydrateWiz(node, wizWidget); }
-      hydrate();
+      hydrateWiz(node, wizWidget);
 
       function persist() {
-        if (wizWidget) wizWidget.value = JSON.stringify({ ...node._wiz, _owned: node._wizOwned });
+        if (wizWidget) wizWidget.value = JSON.stringify(node._wiz);
         // Nudge ComfyUI to snapshot the change (same trick the prompt builder uses).
         window.dispatchEvent(new MouseEvent("mouseup"));
       }
@@ -329,11 +326,9 @@ app.registerExtension({
       function applyToBuilder(notify) {
         const targets = builderTargets();
         for (const target of targets) {
-          const owned = spec.apply(target, node._wiz, node._wizOwned[target.id]);
-          if (owned) node._wizOwned[target.id] = owned; else delete node._wizOwned[target.id];
+          spec.apply(target, node._wiz);
           target.setDirtyCanvas?.(true, true);
         }
-        if (targets.length) persist();
         if (!targets.length && notify) {
           window.alert(`Wire this node's "style" output into an ${spec.builderLabel}'s "import_json" input, then reopen the wizard.`);
         }
