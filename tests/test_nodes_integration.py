@@ -43,3 +43,18 @@ def test_basic_node_writes_parameters_chunk(tmp_path, monkeypatch):
     assert "Negative prompt: blur" in params
     assert "Steps: 25" in params and "Seed: 42" in params and "Size: 48x64" in params
     assert "workflow" not in text  # save_workflow was off
+
+
+def test_ideogram_node_converts_moss_import():
+    import json
+    from nodes.ideogram4_nodes import ITLIdeogram4PromptBuilder as Ideo
+    moss = ('{"summary":{"caption":"Poster."},"items":[{"label":"character","caption":"hero","bbox":[-416,-384,-288,384]}],'
+            '"bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}')
+    res = Ideo.execute(1024, 1024, "", {"style": "none"}, import_json=moss, import_mode="always", output_format="compact")
+    out = json.loads(res.args[0])
+    assert out["compositional_deconstruction"]["background"] == "Poster."
+    assert out["compositional_deconstruction"]["elements"][0] == {"type": "obj", "bbox": [94, 125, 219, 875], "desc": "hero"}
+    assert json.loads(res.ui["caption"][0]) == out                        # the editor mirrors the converted caption
+    # a non-layout JSON object is ignored like prose: the editor output wins
+    assert Ideo.execute(1024, 1024, "Editor wins.", {"style": "none"}, import_json='{"caption": "x"}', import_mode="always",
+                        output_format="compact").args[0] == '{"compositional_deconstruction":{"background":"Editor wins.","elements":[]}}'

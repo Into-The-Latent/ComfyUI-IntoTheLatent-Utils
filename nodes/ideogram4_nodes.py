@@ -261,23 +261,29 @@ Toolbar:
             boxes_seeded = bool(boxes)
 
         imported = lf.loads_layout(import_json)              # strict parse, then a lenient repair fallback
+        src = lf.detect_format(imported)                     # None -> not a layout: ignored like prose
 
         # Use the wired import_json directly per import_mode: "always" -> authoritative (its changes
         # always propagate); "when empty" -> only seed the editor while it has no regions, then the
         # editor wins so manual edits stick. The editor mirrors it via ui when used.
-        used_import = imported is not None and (import_mode == "always" or not boxes)
+        used_import = src is not None and (import_mode == "always" or not boxes)
 
-        if used_import:
+        if used_import and src == "ideogram":
             caption = {k: v for k, v in imported.items() if k != "_itl"}   # strip the editor-only sidecar from the prompt output
             boxes, _ = lf.parse_ideogram(imported)
+            mirror = imported
         else:
-            kind = style["style"]                           # "none" | "photo" | "art_style"
-            scene = lf.ideogram_scene(high_level_description=high_level_description, background=background,
-                                      style_kind=kind, photo=style.get("photo", ""), art_style=style.get("art_style", ""),
-                                      aesthetics=aesthetics, lighting=lighting, medium=medium,
-                                      palette=lf.parse_json_list(style_palette_data))
+            if used_import:                                 # a MOSS-Image layout: convert, then build like editor output
+                boxes, scene, _ = lf.import_layout(imported, "ideogram", width, height)
+            else:
+                kind = style["style"]                       # "none" | "photo" | "art_style"
+                scene = lf.ideogram_scene(high_level_description=high_level_description, background=background,
+                                          style_kind=kind, photo=style.get("photo", ""), art_style=style.get("art_style", ""),
+                                          aesthetics=aesthetics, lighting=lighting, medium=medium,
+                                          palette=lf.parse_json_list(style_palette_data))
             caption = lf.build_ideogram(boxes, scene, coord_mode=coord_mode, bbox_order=bbox_order,
                                         width=width, height=height)
+            mirror = caption
         preview = _render_preview(boxes, width, height, _bg_image(image), bg_brightness)
         bboxes_out = lf.bbox_outputs(boxes, width, height)
 
@@ -287,5 +293,5 @@ Toolbar:
         if boxes_seeded:
             ui["boxes"] = [json.dumps(boxes)]
         if used_import:                                       # mirror the import in the editor (only when used)
-            ui["caption"] = [lf.dumps(imported)]
+            ui["caption"] = [lf.dumps(mirror)]
         return io.NodeOutput(dump(caption), preview, bboxes_out, width, height, ui=ui)

@@ -383,3 +383,61 @@ def parse_moss(layout, width, height):
     s = layout.get("summary") if isinstance(layout.get("summary"), dict) else {}
     return boxes, moss_scene(caption=str(s.get("caption") or ""), meta=s.get("meta"), canvas=s.get("canvas"),
                              palette=strs(s.get("palette")))
+
+
+# ── detection + conversion ─────────────────────────────────────────────────────────────────────
+
+def detect_format(obj):
+    # "moss" (an items list), "ideogram" (compositional_deconstruction), else None.
+    if not isinstance(obj, dict):
+        return None
+    if isinstance(obj.get("items"), list):
+        return "moss"
+    if "compositional_deconstruction" in obj:
+        return "ideogram"
+    return None
+
+
+def ideogram_scene_to_moss(scene):
+    # summary.caption = "<hld> <background> Style: <photo|art_style>, <aesthetics>, <lighting>, <medium>." —
+    # empties dropped, single-space joined; the Style sentence only when a kind is chosen and a field is filled.
+    parts = [scene.get("high_level_description", "").strip(), scene.get("background", "").strip()]
+    kind = scene.get("style_kind", "none")
+    if kind in ("photo", "art_style"):
+        fields = [scene.get(kind, ""), scene.get("aesthetics", ""), scene.get("lighting", ""), scene.get("medium", "")]
+        fields = [f.strip() for f in fields if f and f.strip()]
+        if fields:
+            parts.append("Style: " + ", ".join(fields) + ".")
+    return moss_scene(caption=" ".join(p for p in parts if p), palette=scene.get("palette") or [])
+
+
+def moss_scene_to_ideogram(scene):
+    # The whole-scene caption is the closest fit for Ideogram's required background; meta/canvas have no home.
+    return ideogram_scene(background=scene.get("caption", ""), palette=scene.get("palette") or [])
+
+
+def boxes_to_labels(boxes, target):
+    # Copies with `type` normalised to the target's label set; every other key (incl. tags) is kept.
+    out = []
+    for b in boxes:
+        t = b.get("type")
+        if target == "ideogram":
+            t = "text" if t == "text" else "obj"
+        else:
+            t = moss_label(t)
+        out.append(dict(b, type=t))
+    return out
+
+
+def import_layout(obj, target, width, height):
+    # Parse a layout of either format into (boxes, scene, converted) for the `target` node ("ideogram" | "moss");
+    # scene + labels are converted when the formats differ. An `_itl` sidecar is ignored. ValueError when
+    # the object is not a layout or the target is unknown.
+    src = detect_format(obj)
+    if src is None or target not in ("ideogram", "moss"):
+        raise ValueError("not a layout JSON (needs 'items' or 'compositional_deconstruction')")
+    boxes, scene = parse_ideogram(obj) if src == "ideogram" else parse_moss(obj, width, height)
+    if src == target:
+        return boxes, scene, False
+    scene = ideogram_scene_to_moss(scene) if target == "moss" else moss_scene_to_ideogram(scene)
+    return boxes_to_labels(boxes, target), scene, True
