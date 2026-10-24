@@ -12,14 +12,14 @@ canvas, set each region's type/desc/text/color palette, and assemble the Ideogra
 
 import json
 import os
-import re
-import logging
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 from comfy_api.latest import io
+
+from . import layout_formats as lf
 
 
 _FONT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts", "FreeMono.ttf")
@@ -65,20 +65,14 @@ def _wrap(draw, text, font, max_w):
     return lines
 
 
-def _by_id(boxes):
-    return {b.get("id"): b for b in boxes if isinstance(b, dict) and b.get("id")}
-
-
-def _eff_disabled(box, by_id):
-    # True if the box or any ancestor has "disabled" — disabling a group disables its members.
-    cur, seen = box, 0
-    while isinstance(cur, dict) and seen < 1000:
-        if cur.get("disabled"):
-            return True
-        p = cur.get("parent")
-        cur = by_id.get(p) if p is not None else None
-        seen += 1
-    return False
+def _bg_image(image):
+    # IMAGE tensor -> PIL (first frame) for the preview background, None when absent/unreadable.
+    if image is None:
+        return None
+    try:
+        return Image.fromarray((image[0].detach().cpu().numpy() * 255).clip(0, 255).astype(np.uint8))
+    except Exception:
+        return None
 
 
 def _render_preview(boxes, width, height, bg=None, brightness=50):
@@ -105,9 +99,9 @@ def _render_preview(boxes, width, height, bg=None, brightness=50):
     tag_font = _font(max(9, fs - 2))
     lh = fs + 2
 
-    by_id = _by_id(boxes)
-    for i, box in enumerate(boxes):
-        if not isinstance(box, dict) or box.get("nobbox") or box.get("group") or _eff_disabled(box, by_id):
+    ids = lf.by_id(boxes)
+    for i, box in enumerate(boxes):                          # enumerate the full list: tags show the editor's region numbers
+        if not isinstance(box, dict) or box.get("nobbox") or box.get("group") or lf.eff_disabled(box, ids):
             continue                                        # skip unplaced elements, editor-only groups, and disabled
         palette = [c for c in (box.get("palette") or []) if c]
         r, g, b = _hex_rgb(palette[0]) if palette else (140, 140, 140)   # box = first palette color, else grey
@@ -151,103 +145,6 @@ def _render_preview(boxes, width, height, bg=None, brightness=50):
     img = Image.alpha_composite(img, overlay).convert("RGB")
     arr = np.asarray(img, dtype=np.float32) / 255.0
     return torch.from_numpy(arr).unsqueeze(0)
-
-
-def _norm_bbox(box, sx=1000, sy=1000, order="yx"):
-    # {x, y, w, h} fractions (0-1) -> bbox; x scaled by sx, y by sy.
-    # Default sx=sy=1000 is the Ideogram-standard 0-1000 grid; pass (width, height) for absolute pixels.
-    # order="yx" -> [ymin, xmin, ymax, xmax] (Ideogram); "xy" -> [xmin, ymin, xmax, ymax] (Qwen/standard).
-    def cx(v):
-        return max(0, min(sx, round(v * sx)))
-    def cy(v):
-        return max(0, min(sy, round(v * sy)))
-    x, y, w, h = box.get("x", 0.0), box.get("y", 0.0), box.get("w", 0.0), box.get("h", 0.0)
-    ymin, xmin, ymax, xmax = cy(y), cx(x), cy(y + h), cx(x + w)
-    if ymin > ymax:
-        ymin, ymax = ymax, ymin
-    if xmin > xmax:
-        xmin, xmax = xmax, xmin
-    return [xmin, ymin, xmax, ymax] if order == "xy" else [ymin, xmin, ymax, xmax]
-
-
-def _palette(colors):
-    # ["#rrggbb", ...] (or autogrow dict) -> ["#RRGGBB", ...] in order, dropping empties.
-    if isinstance(colors, dict):
-        colors = colors.values()
-    return [c.upper() for c in colors if c]
-
-
-def _dumps(v, lvl=0):
-    # Like json.dumps(ensure_ascii=False, indent=4), but scalar arrays stay on one line.
-    pad, end = "    " * (lvl + 1), "    " * lvl
-    if isinstance(v, str):
-        return json.dumps(v, ensure_ascii=False)
-    if isinstance(v, list):
-        if not v:
-            return "[]"
-        if all(not isinstance(x, (dict, list)) for x in v):
-            return "[" + ", ".join(_dumps(x, lvl) for x in v) + "]"
-        return "[\n" + ",\n".join(pad + _dumps(x, lvl + 1) for x in v) + "\n" + end + "]"
-    if isinstance(v, dict):
-        if not v:
-            return "{}"
-        items = [pad + json.dumps(k, ensure_ascii=False) + ": " + _dumps(val, lvl + 1) for k, val in v.items()]
-        return "{\n" + ",\n".join(items) + "\n" + end + "}"
-    return json.dumps(v, ensure_ascii=False)
-
-
-def _parse_json_list(s):
-    if s:
-        try:
-            v = json.loads(s)
-            if isinstance(v, list):
-                return v
-        except json.JSONDecodeError:
-            pass
-    return []
-
-
-def _repair_json(s):
-    # Slice out the outermost {...} (drops ``` fences / prose), then strip trailing commas before
-    # } or ] — the leading "(...)" alt matches whole strings first, so quoted commas are untouched.
-    i, j = s.find("{"), s.rfind("}")
-    t = s[i:j + 1] if (i != -1 and j > i) else s
-    return re.sub(r'("(?:[^"\\]|\\.)*")|,(\s*[}\]])', lambda m: m.group(1) or m.group(2), t)
-
-
-def _loads_caption(s):
-    # Parse a caption dict; on failure retry once with the lenient repair. Returns dict or None.
-    for cand in ((s, _repair_json(s)) if s and s.strip() else ()):
-        try:
-            v = json.loads(cand)
-            if isinstance(v, dict):
-                if cand is not s:
-                    logging.warning("[ITLIdeogram4PromptBuilder] import_json had errors; recovered with lenient parse")
-                return v
-        except (json.JSONDecodeError, TypeError):
-            continue
-    return None
-
-
-def _caption_to_boxes(cap):
-    # Caption dict -> editor box list ({x,y,w,h, type, text, desc, palette}) for preview/bboxes.
-    cd = cap.get("compositional_deconstruction") or {}
-    boxes = []
-    for el in (cd.get("elements") or []):
-        if not isinstance(el, dict):
-            continue
-        box = {"type": "text" if el.get("type") == "text" else "obj",
-               "text": el.get("text", "") or "", "desc": el.get("desc", "") or "",
-               "palette": list(el.get("color_palette") or [])}
-        bb = el.get("bbox")
-        if isinstance(bb, (list, tuple)) and len(bb) == 4:
-            ymin, xmin, ymax, xmax = bb
-            box.update(x=xmin / 1000.0, y=ymin / 1000.0,
-                       w=(xmax - xmin) / 1000.0, h=(ymax - ymin) / 1000.0)
-        else:                                                # no bbox: unplaced placeholder
-            box.update(x=0.03, y=0.03, w=0.22, h=0.14, nobbox=True)
-        boxes.append(box)
-    return boxes
 
 
 class ITLIdeogram4PromptBuilder(io.ComfyNode):
@@ -356,31 +253,14 @@ Toolbar:
                 output_format="pretty", coord_mode="normalized", bbox_order="yx", bboxes=None, image=None, bg_brightness=25) -> io.NodeOutput:
         if import_mode not in ("when empty", "always"):      # old workflows saved before this widget existed
             import_mode = "when empty"
-        dump = _dumps if output_format == "pretty" else (lambda v: json.dumps(v, ensure_ascii=False, separators=(",", ":")))
-        # bbox scale: 0-1000 grid (Ideogram-standard) or absolute pixels (width/height) when coord_mode=="absolute".
-        # bbox axis order: "yx" (Ideogram) or "xy" (Qwen/standard x1,y1,x2,y2).
-        bsx, bsy = (width, height) if coord_mode == "absolute" else (1000, 1000)
-        border = "xy" if bbox_order == "xy" else "yx"
-        boxes = _parse_json_list(elements_data)
+        dump = lf.dumps if output_format == "pretty" else lf.compact
+        boxes = lf.parse_json_list(elements_data)
         boxes_seeded = False
-        if not boxes and bboxes:
-            if isinstance(bboxes, dict):                     # a single BoundingBox is a bare {x,y,width,height} dict
-                frame = [bboxes]
-            elif bboxes and isinstance(bboxes[0], (list, tuple)):
-                frame = bboxes[0]                            # per-frame nesting: [[box, ...], ...]
-            else:
-                frame = bboxes                               # flat list of boxes
-            for bb in frame:
-                if not isinstance(bb, dict):
-                    continue
-                boxes.append({"x": bb.get("x", 0) / width, "y": bb.get("y", 0) / height,
-                              "w": bb.get("width", 0) / width, "h": bb.get("height", 0) / height,
-                              "type": "obj", "text": "", "desc": "", "palette": []})
+        if not boxes:
+            boxes = lf.seed_boxes(bboxes, width, height)
             boxes_seeded = bool(boxes)
 
-        imported = _loads_caption(import_json)               # strict parse, then a lenient repair fallback
-
-        kind = style["style"]                               # "none" | "photo" | "art_style"
+        imported = lf.loads_layout(import_json)              # strict parse, then a lenient repair fallback
 
         # Use the wired import_json directly per import_mode: "always" -> authoritative (its changes
         # always propagate); "when empty" -> only seed the editor while it has no regions, then the
@@ -389,76 +269,17 @@ Toolbar:
 
         if used_import:
             caption = {k: v for k, v in imported.items() if k != "_itl"}   # strip the editor-only sidecar from the prompt output
-            boxes = _caption_to_boxes(imported)
+            boxes, _ = lf.parse_ideogram(imported)
         else:
-            caption = {}
-            if high_level_description.strip():
-                caption["high_level_description"] = high_level_description
-
-            if kind != "none":
-                # The verifier requires every style key present (in order) once a style is
-                # chosen; only color_palette is conditional. Emit blanks rather than omit.
-                sd = {"aesthetics": aesthetics, "lighting": lighting}
-                # photo: ...photo, medium...  |  art_style: ...medium, art_style...  (key order)
-                if kind == "photo":
-                    sd["photo"] = style.get("photo", "")
-                    sd["medium"] = medium
-                else:
-                    sd["medium"] = medium
-                    sd["art_style"] = style.get("art_style", "")
-                palette = _palette(_parse_json_list(style_palette_data))
-                if palette:
-                    sd["color_palette"] = palette
-                caption["style_description"] = sd
-
-            elements = []
-            by_id = _by_id(boxes)
-            for box in boxes:
-                if not isinstance(box, dict) or box.get("group") or _eff_disabled(box, by_id):    # skip groups + disabled
-                    continue
-                etype = "text" if box.get("type") == "text" else "obj"
-                elem = {"type": etype}                      # key order matters
-                if not box.get("nobbox"):                   # unplaced elements omit bbox
-                    elem["bbox"] = _norm_bbox(box, bsx, bsy, border)
-                if etype == "text":
-                    elem["text"] = box.get("text", "")
-                elem["desc"] = box.get("desc", "")
-                palette = _palette(box.get("palette", []))
-                if palette:
-                    elem["color_palette"] = palette[:5]
-                elements.append(elem)
-
-            caption["compositional_deconstruction"] = {
-                "background": background,
-                "elements": elements,
-            }
-        bg = None
-        if image is not None:                                # composite over the input image, else black
-            try:
-                bg = Image.fromarray((image[0].detach().cpu().numpy() * 255).clip(0, 255).astype(np.uint8))
-            except Exception:
-                bg = None
-        preview = _render_preview(boxes, width, height, bg, bg_brightness)
-
-        # Pixel-space bboxes ({x, y, width, height}) for SAM3 / BoundingBox consumers.
-        bbox_dicts = []
-        bbox_by_id = _by_id(boxes)
-        for box in boxes:
-            if not isinstance(box, dict) or box.get("nobbox") or box.get("group") or _eff_disabled(box, bbox_by_id):
-                continue
-            x, y = box.get("x", 0.0), box.get("y", 0.0)
-            bw, bh = box.get("w", 0.0), box.get("h", 0.0)
-            if bw < 0:
-                x += bw
-                bw = -bw
-            if bh < 0:
-                y += bh
-                bh = -bh
-            bbox_dicts.append({"x": round(x * width), "y": round(y * height),
-                               "width": round(bw * width), "height": round(bh * height)})
-        # Per-frame nesting (list[list[dict]]) — the canonical BoundingBox shape that
-        # SAM3 / crop nodes expect (bboxes[frame] -> list of boxes).
-        bboxes_out = [bbox_dicts] if bbox_dicts else []
+            kind = style["style"]                           # "none" | "photo" | "art_style"
+            scene = lf.ideogram_scene(high_level_description=high_level_description, background=background,
+                                      style_kind=kind, photo=style.get("photo", ""), art_style=style.get("art_style", ""),
+                                      aesthetics=aesthetics, lighting=lighting, medium=medium,
+                                      palette=lf.parse_json_list(style_palette_data))
+            caption = lf.build_ideogram(boxes, scene, coord_mode=coord_mode, bbox_order=bbox_order,
+                                        width=width, height=height)
+        preview = _render_preview(boxes, width, height, _bg_image(image), bg_brightness)
+        bboxes_out = lf.bbox_outputs(boxes, width, height)
 
         # ui: send the resolved width/height so the editor canvas can follow connected
         # inputs; import_json (if wired) loads into the editor (output reflects editor only).
@@ -466,5 +287,5 @@ Toolbar:
         if boxes_seeded:
             ui["boxes"] = [json.dumps(boxes)]
         if used_import:                                       # mirror the import in the editor (only when used)
-            ui["caption"] = [_dumps(imported)]
+            ui["caption"] = [lf.dumps(imported)]
         return io.NodeOutput(dump(caption), preview, bboxes_out, width, height, ui=ui)
