@@ -13,6 +13,7 @@ _ensure_breeze_on_path()
 
 from .nodes.ideogram4_nodes import ITLIdeogram4PromptBuilder
 from .nodes.ideogram4_style_wizard import ITLIdeogram4StyleWizard
+from .nodes.moss_image_nodes import ITLMossImagePromptBuilder
 from .nodes.resolution_selector import ITLResolutionSelector
 from .nodes.prompt_batch import ITLPromptBatch
 from .nodes.save_civitai_metadata import ITLSaveCivitaiMetadata, ITLSaveCivitaiMetadataAdvanced
@@ -32,6 +33,7 @@ from .nodes.whisper_transcribe import ITLWhisperTranscribe
 NODE_CLASS_MAPPINGS = {
     "ITLIdeogram4PromptBuilder": ITLIdeogram4PromptBuilder,
     "ITLIdeogram4StyleWizard": ITLIdeogram4StyleWizard,
+    "ITLMossImagePromptBuilder": ITLMossImagePromptBuilder,
     "ITLResolutionSelector": ITLResolutionSelector,
     "ITLPromptBatch": ITLPromptBatch,
     "ITLSaveCivitaiMetadata": ITLSaveCivitaiMetadata,
@@ -57,6 +59,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ITLIdeogram4PromptBuilder": "ITL Ideogram 4 Prompt Builder",
     "ITLIdeogram4StyleWizard": "ITL Ideogram 4 Style Wizard",
+    "ITLMossImagePromptBuilder": "ITL MOSS-Image Prompt Builder",
     "ITLResolutionSelector": "ITL Resolution Selector",
     "ITLPromptBatch": "ITL Prompt Batch",
     "ITLSaveCivitaiMetadata": "ITL Save Metadata (Civitai)",

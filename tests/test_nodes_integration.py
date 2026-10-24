@@ -58,3 +58,24 @@ def test_ideogram_node_converts_moss_import():
     # a non-layout JSON object is ignored like prose: the editor output wins
     assert Ideo.execute(1024, 1024, "Editor wins.", {"style": "none"}, import_json='{"caption": "x"}', import_mode="always",
                         output_format="compact").args[0] == '{"compositional_deconstruction":{"background":"Editor wins.","elements":[]}}'
+
+
+def test_moss_node_builds_layout_and_converts_ideogram_import():
+    import json
+    from nodes.moss_image_nodes import ITLMossImagePromptBuilder as Moss
+    boxes = json.dumps([{"x": 0.125, "y": 0.09375, "w": 0.75, "h": 0.125, "type": "text", "text": "EXPLORE", "desc": "Large title.", "palette": []}])
+    res = Moss.execute(1024, 1024, "Poster.", elements_data=boxes)
+    out = json.loads(res.args[0])
+    assert out["items"][0]["bbox"] == [-416, -384, -288, 384] and out["summary"] == {"caption": "Poster."}
+    assert res.args[2] == [[{"x": 128, "y": 96, "width": 768, "height": 128}]] and res.args[3:5] == (1024, 1024)
+    assert tuple(res.args[1].shape[1:]) == (1024, 1024, 3) and res.ui == {"dims": [1024, 1024]}
+    assert Moss.execute(1024, 1024, "Just prose.").args[0] == "Just prose."                         # no items → plain text
+    assert Moss.execute(1024, 1024, "Editor wins.", import_json="not json at all").args[0] == "Editor wins."
+    ideo = '{"compositional_deconstruction":{"background":"A beach","elements":[{"type":"obj","bbox":[200,100,600,400],"desc":"a crab"}]}}'
+    res = Moss.execute(1024, 1024, "ignored", import_json=ideo, import_mode="always")
+    conv = json.loads(res.args[0])
+    assert conv["summary"]["caption"] == "A beach" and conv["items"][0]["label"] == "object"
+    assert json.loads(res.ui["caption"][0]) == conv
+    moss_in = json.dumps(conv)                                                                       # same-format import: passthrough
+    assert json.loads(Moss.execute(1024, 1024, "ignored", import_json=moss_in, import_mode="always").args[0]) == conv
+    assert json.loads(Moss.execute(1024, 1024, "Poster.", import_json=moss_in, elements_data=boxes).args[0]) == out   # "when empty" + regions: editor wins
