@@ -94,6 +94,47 @@ scene-graph **Overview**, region **parenting**, and named **groups** layered on 
   KJNodes ignores the extra data and loads the flat scene, and KJNodes captions load here flat too.
   The sidecar never reaches the model prompt.
 
+### ITL MOSS-Image Prompt Builder
+
+The same bbox editor as the Ideogram 4 Prompt Builder — canvas, Overview, parenting, groups, templates,
+live preview — producing **MOSS-Image's layout JSON** instead:
+
+```json
+{"summary":{"meta":["poster"],"canvas":"single","caption":"A minimalist travel poster."},
+ "items":[{"label":"text","caption":"Large dark-blue uppercase title.","text":"EXPLORE","bbox":[-416,-384,-288,384]},
+          {"label":"object","caption":"A flat blue mountain.","tags":["illustration"],"bbox":[-192,-288,384,288]}],
+ "bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}
+```
+
+- **Scene fields:** `caption` (the whole scene and style — this is the prompt when no region is placed),
+  optional `meta` tags (comma-separated) and `canvas` (`single` / `multi_panel` / `collage`), plus a
+  summary **palette** (the swatch row above the canvas).
+- **Per region:** label (**object / character / text**), caption, verbatim text, optional **tags** and a
+  color palette. An *unplaced* region (one without a box) is not exported — MOSS needs a bbox — and the
+  Overview says so.
+- **bbox = pixels of `width` × `height`, measured from the canvas centre**, `[ymin, xmin, ymax, xmax]`.
+  The prompt carries no canvas size, so **generate at exactly the node's width/height** (wire its
+  `width`/`height` outputs into the latent, or drive them from the Resolution Selector). An imported MOSS
+  layout is read at the node's current width/height too. The inspector's `out:` field shows these
+  centred pixels and is editable.
+- **Outputs:** `prompt`, `preview`, `bboxes`, `width`, `height` — the same as the Ideogram node.
+
+#### Ideogram 4 ⇄ MOSS-Image
+
+Both builders accept **either** JSON on **Paste**, on the `import_json` socket and from **Templates**, and
+convert it to their own format:
+
+- Ideogram → MOSS: `high_level_description`, `background` and the style fields are joined into
+  `summary.caption` as `<description> <background> Style: <photo|art style>, <aesthetics>, <lighting>,
+  <medium>.` (empty fields dropped); the style palette becomes the summary palette; `obj` → `object`.
+- MOSS → Ideogram: `summary.caption` becomes `background`; `character` → `obj`; `meta`, `canvas` and
+  `tags` have no Ideogram field (tags stay on the region in the editor and come back when you paste
+  into a MOSS node).
+- Wire the Ideogram node's `prompt` into the MOSS node's `import_json` with `import_mode = always` and
+  you have a live converter. Leave the Ideogram node's *absolute pixels* / *xy order* toggles at their
+  defaults for that: the caption JSON carries no marker for them, so the converter assumes the 0–1000
+  `yx` grid.
+
 ### ITL Ideogram 4 Style Wizard
 
 A "click-together" helper for the **style fields** of an Ideogram 4 caption — so you don't have to type
@@ -421,9 +462,9 @@ the node code is GPL-3.0 like the rest of this pack.
 
 Licensed under **GPL-3.0** — see [LICENSE](LICENSE).
 
-Only the **Ideogram 4 Prompt Builder** node and its canvas editor are derived from
-[**ComfyUI-KJNodes**](https://github.com/kijai/ComfyUI-KJNodes) by **Kijai** (GPL-3.0). Huge thanks to
-Kijai for that original work — the derived files retain their attribution.
+Only the **Ideogram 4 Prompt Builder** node, its canvas editor and the **MOSS-Image Prompt Builder** built on
+that same editor are derived from [**ComfyUI-KJNodes**](https://github.com/kijai/ComfyUI-KJNodes) by
+**Kijai** (GPL-3.0). Huge thanks to Kijai for that original work — the derived files retain their attribution.
 
 Everything else in this pack — the **Ideogram 4 Style Wizard**, the **Resolution Selector**, the
 **Prompt Batch** node, the **Save Metadata (Civitai)** nodes, the **Multi Loaders**, the **Breeze TTS** nodes
