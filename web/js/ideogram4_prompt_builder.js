@@ -2390,6 +2390,10 @@ app.registerExtension({
             txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
             txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
             txt.title = label;
+            if (spec.requiresBbox && b.nobbox && !b.group) {      // MOSS needs a bbox: say why this row won't be exported
+              txt.textContent += " ⚠ unplaced";
+              txt.title = (label ? label + " — " : "") + "unplaced: MOSS-Image needs a box, so this item is not exported. Move or resize it to place it.";
+            }
             const lock = document.createElement("button");
             lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
             lock.textContent = b.locked ? "🔒" : "🔓";
@@ -2948,6 +2952,10 @@ app.registerExtension({
 
         panel.appendChild(makeArea("desc", b.desc, "description of this region",
           function () { b.desc = this.value; touch(); }));
+        if (spec.hasTags) {                                  // per-box tags (comma-separated): kept on the box by every node, exported by MOSS
+          panel.appendChild(makeArea("tags", b.tags || "", "tags, comma-separated (optional)",
+            function () { b.tags = this.value; touch(); }));
+        }
 
         // palette
         const palRow = document.createElement("div");
@@ -3015,6 +3023,10 @@ app.registerExtension({
           txt.className = "itl-ideo-ltext" + (label ? "" : " empty");
           txt.textContent = label || (b.type === "text" ? "(text)" : "(empty)");
           txt.title = label;
+          if (spec.requiresBbox && b.nobbox && !b.group) {      // MOSS needs a bbox: say why this row won't be exported
+            txt.textContent += " ⚠ unplaced";
+            txt.title = (label ? label + " — " : "") + "unplaced: MOSS-Image needs a box, so this item is not exported. Move or resize it to place it.";
+          }
           const lock = document.createElement("button");
           lock.className = "itl-ideo-lbtn itl-ideo-lock" + (b.locked ? " on" : "");
           lock.textContent = b.locked ? "🔒" : "🔓";
