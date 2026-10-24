@@ -107,8 +107,10 @@ def test_hostile_moss_json_never_raises():
 def test_box_weight_wraps_the_caption_for_kj_prompt_weight():
     from nodes.layout_formats import weighted_caption
     # trailing punctuation stays outside the brackets: '."' would merge into one token and break KJ's phrase match
-    assert weighted_caption("A red vintage bicycle leaning against the cafe wall.", 2) == "(A red vintage bicycle leaning against the cafe wall:2)."
-    assert weighted_caption("A smiling barista, holding a cup", 1.5) == "(A smiling barista, holding a cup:1.5)"
+    assert weighted_caption("A red vintage bicycle leaning against the cafe wall.", 1.5) == "(A red vintage bicycle leaning against the cafe wall:1.5)."
+    assert weighted_caption("A smiling barista, holding a cup", 1.25) == "(A smiling barista, holding a cup:1.25)"
+    # emphasis is capped at 1.5: KJ's boost is global, and at 2 one long caption already breaks the layout (2026-10-24 sweep)
+    assert weighted_caption("A red bike.", 2) == "(A red bike:1.5)." and weighted_caption("A red bike.", 7) == "(A red bike:1.5)."
     assert weighted_caption("  Hello there!  ", 0.5) == "  (Hello there:0.5)!  "
     for unchanged in (("A bike.", 1), ("A bike.", None), ("A bike.", 0), ("A bike.", -1), ("A bike.", "2"),
                       ("Sign: OPEN.", 2), ("A bike (red).", 2), ("", 2), ("...", 2)):
@@ -120,7 +122,7 @@ def test_build_moss_applies_box_weights_to_captions_only():
              {"x": 0.1, "y": 0.5, "w": 0.5, "h": 0.2, "type": "object", "desc": "A bike.", "weight": 1, "palette": []},
              {"x": 0.6, "y": 0.5, "w": 0.3, "h": 0.2, "type": "object", "desc": "A cat.", "weight": 0.5, "palette": []}]
     items = build_moss(boxes, SCENE, 1024, 1024)["items"]
-    assert [i["caption"] for i in items] == ["(Neon sign:2).", "A bike.", "(A cat:0.5)."] and items[0]["text"] == "OPEN"
+    assert [i["caption"] for i in items] == ["(Neon sign:1.5).", "A bike.", "(A cat:0.5)."] and items[0]["text"] == "OPEN"
     assert list(items[0]) == ["label", "caption", "text", "bbox"]                                   # no weight key in the prompt
 
 

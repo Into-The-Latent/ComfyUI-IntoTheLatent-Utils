@@ -198,6 +198,9 @@ export function fromMossBbox(bb, width, height, space = MOSS_SPACE, fmt = MOSS_F
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }
 
+// KJ's emphasis adds an attention bias to every token of the phrase, for every image position, in every block: above
+// 1.5 one long caption (or a few weighted regions) outweighs the bbox tokens and the layout breaks (2026-10-24 sweep).
+export const MAX_EMPHASIS = 1.5;
 const WEIGHT_SPLIT = /^(\s*)([\s\S]*?)([\s.!?;,…]*)$/;
 
 export function weightedCaption(caption, weight) {
@@ -205,6 +208,7 @@ export function weightedCaption(caption, weight) {
   // Trailing punctuation stays outside: '."' merges into one Qwen token and the phrase would not be found.
   // Weight 1 / missing / not a positive number, or a caption KJ's syntax can't hold ( ( ) : ) -> unchanged.
   if (typeof weight !== "number" || !Number.isFinite(weight) || weight <= 0 || weight === 1 || !caption) return caption;
+  weight = Math.min(weight, MAX_EMPHASIS);                  // emphasis is capped
   const [, lead, core, tail] = WEIGHT_SPLIT.exec(caption);
   if (!core || /[():]/.test(core)) return caption;
   return `${lead}(${core}:${weight})${tail}`;

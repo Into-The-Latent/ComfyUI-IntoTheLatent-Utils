@@ -2367,7 +2367,10 @@ app.registerExtension({
         return !!spec.requiresBbox && !b.group && (!!b.nobbox || !spec.outBbox(b, ...dims()).length);
       }
       // ── per-box weight (MOSS: spec.weights) ── the caption is sent as (caption:w) for KJNodes' MOSS-Image Prompt Weight
-      function weightOf(b) { return (spec.weights || []).find((w) => w.value === (b.weight ?? 1)) || (spec.weights || []).find((w) => w.value === 1); }
+      function weightOf(b) {                                 // the preset for this box; an off-preset value (older save, import) -> nearest
+        const v = typeof b.weight === "number" ? Math.min(b.weight, LF.MAX_EMPHASIS) : 1;
+        return (spec.weights || []).reduce((best, w) => (Math.abs(w.value - v) < Math.abs(best.value - v) ? w : best));
+      }
       function weightSign(b) {                               // the Overview label: << = > >>
         if (!spec.weights || b.group) return null;
         const w = weightOf(b), s = document.createElement("span");
