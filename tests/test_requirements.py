@@ -158,6 +158,8 @@ def test_no_python_file_trips_the_registry_env_or_network_rules():
             u + r"lib\.request", u + "open", u + "retrieve",
             "http" + r"\.client", "http" + r"\.server",
             r"^\s*(import|from)\s+(" + net_modules + r")\b",
+            # process spawning: "no file in this pack does it" (see _published_python_files)
+            "sub" + "process", o + "system", o + "popen", o + "spawn", o + "exec[lv]",
         ])
     )
     offenders = []

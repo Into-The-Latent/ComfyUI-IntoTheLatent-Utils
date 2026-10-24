@@ -36,14 +36,14 @@ export function mossStyleSentence(wiz) {
 // wizard's, so it's left alone and `next` is appended. Nothing else in the caption is touched.
 export function applyCaptionSentence(caption, prev, next) {
   let text = String(caption || "");
-  const at = prev ? text.indexOf(prev) : -1;
+  const at = prev ? text.lastIndexOf(prev) : -1;           // the wizard appends, so its copy is the last one
   if (at !== -1) {
     const before = text.slice(0, at), after = text.slice(at + prev.length);
     if (next) return before + next + after;
-    // removing: join the two sides with one space (or keep their line break), no trailing whitespace
+    // removing: join the two sides with one space (or one line break), no trailing whitespace
     const b = before.replace(/[ \t]+$/, ""), a = after.replace(/^[ \t]+/, "");
     const sep = b && a && !b.endsWith("\n") && !a.startsWith("\n") ? " " : "";
-    return (b + sep + a).replace(/\s+$/, "");
+    return (b.endsWith("\n") && a.startsWith("\n") ? b + a.slice(1) : b + sep + a).replace(/\s+$/, "");
   }
   if (!next) return text;
   text = text.replace(/[ \t]+$/, "");
@@ -53,14 +53,15 @@ export function applyCaptionSentence(caption, prev, next) {
 }
 
 // Merge the wizard's tags into the builder's meta field (comma / newline separated). Tags the wizard added on
-// the previous apply (`owned`) are removed first; a tag the user already has is kept as theirs (not owned).
-// Nothing to remove or add -> the field is returned untouched; otherwise it keeps the user's separator
-// (one tag per line stays one per line). Returns { meta, owned } — the new value and the tags this apply added.
+// the previous apply (`owned`) are removed first — exactly as it wrote them, once each, so a user tag that only
+// differs in case stays; a tag the user already has is kept as theirs (not owned). Nothing to remove or add ->
+// the field is returned untouched; otherwise a newline-only field stays one tag per line and anything else is
+// written comma-joined. Returns { meta, owned } — the new value and the tags this apply added.
 export function applyMetaTags(meta, owned, tags) {
   const text = String(meta || "");
-  const ownedLc = new Set(strings(owned).map((t) => t.toLowerCase()));
   const all = text.split(/[,\n]/).map((t) => t.trim()).filter(Boolean);
-  const kept = all.filter((t) => !ownedLc.has(t.toLowerCase()));
+  const kept = all.slice();
+  for (const t of strings(owned)) { const i = kept.lastIndexOf(t); if (i !== -1) kept.splice(i, 1); }
   const have = new Set(kept.map((t) => t.toLowerCase()));
   const added = [];
   for (const t of strings(tags)) {
@@ -76,13 +77,14 @@ const strings = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === "string"
 // One apply on one builder. `record` is what the wizard wrote there last time ({ sentence, tags, added }, kept on
 // the builder node so it travels with it on copy/paste). If the picks haven't changed since then, nothing is
 // written: the user may have edited or deleted the sentence / tags in the meantime, and closing the wizard just
-// to look must not undo that. A malformed record counts as none. Returns { caption, meta, record }.
-export function applyMossStyle(fields, record, wiz) {
+// to look must not undo that. `force` (an explicit Apply click) writes anyway, e.g. to restore a deleted
+// sentence. A malformed record counts as none. Returns { caption, meta, record }.
+export function applyMossStyle(fields, record, wiz, { force = false } = {}) {
   const r = record && typeof record === "object" && !Array.isArray(record) ? record : {};
   const prev = { sentence: typeof r.sentence === "string" ? r.sentence : "", tags: strings(r.tags), added: strings(r.added) };
   const sentence = mossStyleSentence(wiz), tags = mossMetaTags(wiz);
   const same = (a, b) => a.length === b.length && a.every((t, i) => t.toLowerCase() === b[i].toLowerCase());
-  if (record && prev.sentence === sentence && same(prev.tags, tags)) {
+  if (!force && record && prev.sentence === sentence && same(prev.tags, tags)) {
     return { caption: fields.caption, meta: fields.meta, record: prev };
   }
   const m = applyMetaTags(fields.meta, prev.added, tags);

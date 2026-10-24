@@ -1707,8 +1707,9 @@ app.registerExtension({
       const STYLE_WIZARDS = ["ITLIdeogram4StyleWizard", "ITLMossImageStyleWizard"];
       const importConnected = () => {
         const link = node.graph?.links?.[node.inputs?.find((i) => i.name === "import_json")?.link];
-        const src = link && node.graph.getNodeById(link.origin_id);
-        return !!src && ![2, 4].includes(src.mode) && !STYLE_WIZARDS.includes(src.type);
+        if (!link) return false;
+        const src = node.graph.getNodeById(link.origin_id);         // null for e.g. a subgraph input: a real source
+        return !src || (![2, 4].includes(src.mode) && !STYLE_WIZARDS.includes(src.type));
       };
       // Stamp a stable id on any box missing one — identity for the Object Explorer and (future)
       // parenting. Editor-only: Python builds caption elements from known keys, so id never exports.

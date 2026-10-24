@@ -1,4 +1,6 @@
-// Checks for web/js/moss_style.js (the MOSS-Image Style Wizard write logic). Run by tests/test_js_checks.py (node).
+// Checks for web/js/moss_style.js (the MOSS-Image Style Wizard write logic). Run: node tests/js/moss_style.check.mjs
+// (not wired into pytest on purpose: spawning a process from a published .py is something the registry scanner
+// can flag - see test_no_python_file_trips_the_registry_env_or_network_rules).
 import assert from "node:assert/strict";
 import * as S from "../../web/js/moss_style.js";
 
@@ -81,6 +83,26 @@ t("a malformed record (hand-edited / other tool) is treated as none, never throw
     const r = S.applyMossStyle({ caption: "A.", meta: "" }, bad, wiz({ lighting: "moonlight" }));
     assert.equal(r.caption, "A. Style: moonlight.");
   }
+});
+
+t("an explicit Apply (force) re-inserts a deleted sentence / tags even with unchanged picks", () => {
+  const picks = wiz({ lighting: "neon lighting", medium: "illustration" });
+  const first = S.applyMossStyle({ caption: "A cafe.", meta: "poster" }, null, picks);
+  const r = S.applyMossStyle({ caption: "A cafe.", meta: "poster" }, first.record, picks, { force: true });
+  assert.deepEqual([r.caption, r.meta], ["A cafe. Style: neon lighting.", "poster, illustration"]);
+});
+
+t("the wizard replaces its own (last) copy of a sentence the user also typed", () => {
+  assert.equal(S.applyCaptionSentence("Style: neon lighting. A cafe. Style: neon lighting.", "Style: neon lighting.", "Style: moonlight."),
+    "Style: neon lighting. A cafe. Style: moonlight.");
+});
+
+t("removing an owned tag keeps a user tag that only differs in case", () => {
+  assert.deepEqual(S.applyMetaTags("Illustration, poster, illustration", ["illustration"], []), { meta: "Illustration, poster", owned: [] });
+});
+
+t("removing a sentence on its own line leaves no blank line", () => {
+  assert.equal(S.applyCaptionSentence("A cafe.\nStyle: x.\nMore.", "Style: x.", ""), "A cafe.\nMore.");
 });
 
 console.log(`\n${n} checks passed`);

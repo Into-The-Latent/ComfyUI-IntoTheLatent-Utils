@@ -241,7 +241,8 @@ function setWidget(target, name, val) {
   if (w) { w.value = val; w.callback?.(val); }
 }
 
-// ── Per-node targets ── which builder a wizard writes into, and how (apply(target, wiz)).
+// ── Per-node targets ── which builder a wizard writes into, and how (apply(target, wiz, { force })). `force` is
+// set for an explicit Apply click; closing with Esc / ✕ / the backdrop applies without it.
 const WIZARDS = {
   ITLIdeogram4StyleWizard: {
     builderType: "ITLIdeogram4PromptBuilder", builderLabel: "ITL Ideogram 4 Prompt Builder", title: "Style Wizard",
@@ -274,10 +275,10 @@ const WIZARDS = {
     warn: () => "",
     // What the wizard last wrote is recorded on the builder node itself (properties are saved with the workflow
     // and copied with the node), so a pasted builder keeps it and a cloned wizard doesn't inherit someone else's.
-    apply(target, wiz) {
+    apply(target, wiz, { force } = {}) {
       const get = (name) => target.widgets?.find((x) => x.name === name)?.value ?? "";
       target.properties = target.properties || {};
-      const r = applyMossStyle({ caption: get("caption"), meta: get("meta") }, target.properties.itlStyleWizard, wiz);
+      const r = applyMossStyle({ caption: get("caption"), meta: get("meta") }, target.properties.itlStyleWizard, wiz, { force });
       if (r.caption !== get("caption")) setWidget(target, "caption", r.caption);
       if (r.meta !== get("meta")) setWidget(target, "meta", r.meta);
       target.properties.itlStyleWizard = r.record;
@@ -321,12 +322,12 @@ app.registerExtension({
         return out;
       }
 
-      // Write the picked style fields into every connected Prompt Builder. `notify` controls the
-      // "nothing connected" alert (shown on an explicit Apply, not on Esc/backdrop close). Returns count.
+      // Write the picked style fields into every connected Prompt Builder. `notify` marks an explicit Apply: it
+      // shows the "nothing connected" alert and forces the write (not on an Esc / backdrop close). Returns count.
       function applyToBuilder(notify) {
         const targets = builderTargets();
         for (const target of targets) {
-          spec.apply(target, node._wiz);
+          spec.apply(target, node._wiz, { force: !!notify });
           target.setDirtyCanvas?.(true, true);
         }
         if (!targets.length && notify) {
