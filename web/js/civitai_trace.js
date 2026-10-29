@@ -35,10 +35,12 @@ export function widget(node, name) {
 }
 // Mirror of tracer._literal: a widget's value, or null when its input is wired to a real node (the API prompt
 // has a link there and the widget only holds a stale value). A virtual source (legacy PrimitiveNode) is
-// replaced by its value in the API prompt, and the frontend syncs that value into the widget.
+// replaced by its value in the API prompt, and the frontend syncs that value into the widget; a source the
+// graph can't find (a subgraph's input) keeps the widget value too.
 export function literal(node, name) {
   if (!node) return null;
-  if (inputLink(node, name) && !originNode(node, name)?.isVirtualNode) return null;
+  const origin = originNode(node, name);
+  if (origin && !origin.isVirtualNode) return null;
   return widget(node, name) ?? null;
 }
 

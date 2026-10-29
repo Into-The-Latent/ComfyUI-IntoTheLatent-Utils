@@ -157,6 +157,10 @@ t("a widget whose input is wired is not a literal (the API prompt has a link the
   const p = graph({ prim: ["PrimitiveNode", {}, { isVirtualNode: true, ...W({ value: 9 }) }],
     rr: ["Reroute", { "": "prim" }, { isVirtualNode: true }], k: ["KSampler", { seed: "rr" }, W({ seed: 9 })] });
   assert.equal(literal(p.k, "seed"), 9);
+  // Inside a subgraph a promoted widget's link starts at the SubgraphInput, which getNodeById can't find:
+  // keep the widget value, as before (the flattened API prompt carries the literal).
+  const sg = graph({ k: ["KSampler", { steps: "subgraph-input" }, W({ steps: 20 })] });
+  assert.equal(literal(sg.k, "steps"), 20);
 });
 
 t("legacy Reroute nodes are passed through, like the API prompt", () => {

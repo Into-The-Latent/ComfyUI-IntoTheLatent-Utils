@@ -145,6 +145,7 @@ function traceLive(node) {
   const noise = settingsNode(sampler, "noise", "noise_seed");
   r.steps = literal(sampler, "steps") ?? literal(sched, "steps");
   r.cfg = cfgIn ? literal(holder, cfgIn) : null;
+  r.no_cfg = !cfgIn; // e.g. BasicGuider: runs without CFG
   r.seed = literal(sampler, "seed") ?? literal(sampler, "noise_seed") ?? literal(noise, "noise_seed");
   r.sampler_name = literal(sampler, "sampler_name") ?? literal(select, "sampler_name");
   r.scheduler = literal(sampler, "scheduler") ?? literal(sched, "scheduler");
@@ -224,7 +225,7 @@ function renderPreview(el, r) {
   el.innerHTML =
     `<span class="pos">positive</span>: ${escapeHtml(r.positive) || "(empty)"}\n` +
     `<span class="neg">negative</span>: ${escapeHtml(r.negative) || "(empty)"}\n` +
-    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.cfg ?? (r.unresolved.includes("cfg") ? null : "none"))} · ` +
+    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.no_cfg ? "none" : r.cfg)} · ` +
     `<span class="k">sampler</span> ${escapeHtml(r.sampler_name)}/${escapeHtml(r.scheduler)} · <span class="k">seed</span> ${escapeHtml(r.seed)}\n` +
     `<span class="k">model</span> ${escapeHtml(r.model_name ?? "(?)")} · <span class="k">loras</span> ${loras}\n` +
     `<span class="k">size</span> from image at run · hashes computed on save` +
