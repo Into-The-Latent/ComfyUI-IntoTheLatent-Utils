@@ -165,9 +165,9 @@ def _find_clip_encode(prompt, start_id, which):
     zeroed (positive) text. Without an input of that name the walk follows every other link input, but
     never the other side's (``positive`` / ``positive_*`` when resolving the negative). Returns
     ``(nid, node, zeroed)``; ``zeroed`` is True when no encode was found, the walk hit a zero-out and
-    nothing unknown: a text encoder we can't read or a missing node. Then the prompt is known-empty.
-    Other leaves (LoadImage, VAE / ControlNet loaders behind latent or image inputs) say nothing
-    about the text.
+    nothing unknown: a text encoder we can't read (``TextEncode`` in the class name, or a wired
+    ``clip`` input) or a missing node. Then the prompt is known-empty. Other leaves (LoadImage, VAE /
+    ControlNet loaders behind latent or image inputs) and earlier samplers say nothing about the text.
     """
     other = "negative" if which == "positive" else "positive"
 
@@ -192,9 +192,12 @@ def _find_clip_encode(prompt, start_id, which):
         if cls in ZERO_OUT_CLASSES:
             zeroed = True
             continue
-        if "TextEncode" in str(cls):
-            unknown = True
+        if cls in SAMPLER_CLASSES:  # reached through a latent input; conditioning never passes a sampler
+            continue
         ins = node.get("inputs", {})
+        if "TextEncode" in str(cls) or _is_link(ins.get("clip")):  # a text encoder we can't read
+            unknown = True
+            continue
         links = [v for k, v in ins.items() if named(k, which) and _is_link(v)]
         links = links or [v for k, v in ins.items() if not named(k, other) and _is_link(v)]
         for v in links:

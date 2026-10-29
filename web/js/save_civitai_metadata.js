@@ -8,11 +8,10 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
-import { inputLink, originNode, findClipEncode } from "./civitai_trace.js";
+import { SAMPLER_CLASSES, inputLink, originNode, findClipEncode } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
-const SAMPLER_CLASSES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]);
 // class_type -> widget holding the model filename (mirror of tracer.MODEL_SOURCES; the Python side
 // also tracks the folder for hashing, which the preview doesn't need). Covers checkpoints and
 // standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/Krea/etc.).

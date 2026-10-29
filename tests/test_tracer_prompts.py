@@ -147,3 +147,32 @@ def test_carrier_without_the_matching_input_never_reads_the_other_side():
     p["4"]["inputs"]["negative"] = ["8", 1]
     r = trace(p, "7")
     assert r.negative == "" and "negative" in r.unresolved
+
+
+def test_walk_stops_at_an_earlier_sampler():
+    # Two stages: the stage-2 negative is ReferenceLatent(ZeroOut(enc), latent of stage 1). The latent
+    # branch must not reach the stage-1 sampler and report its negative.
+    p = _ksampler("a cat", "unused")
+    p["20"] = {"class_type": "CLIPTextEncode", "inputs": {"text": "stage1 blurry", "clip": ["1", 1]}}
+    p["21"] = {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["2", 0],
+               "negative": ["20", 0], "seed": 1, "steps": 20, "cfg": 7,
+               "sampler_name": "euler", "scheduler": "normal"}}
+    p["22"] = {"class_type": "VAEDecode", "inputs": {"samples": ["21", 0], "vae": ["1", 2]}}
+    p["23"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["22", 0], "vae": ["1", 2]}}
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    p["11"] = {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["8", 0], "latent": ["23", 0]}}
+    p["4"]["inputs"]["negative"] = ["11", 0]
+    r = trace(p, "7")
+    assert r.negative == "" and "negative" not in r.unresolved
+
+
+def test_zero_out_beside_a_clip_fed_encoder_stays_unresolved():
+    # Text encoders without "TextEncode" in the name (ImpactWildcardEncode, WAS Text to Conditioning, ...)
+    # still take a CLIP input.
+    p = _ksampler("a cat", "unused")
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    p["9"] = {"class_type": "ImpactWildcardEncode", "inputs": {"wildcard_text": "blurry", "clip": ["1", 1]}}
+    p["10"] = {"class_type": "ConditioningCombine", "inputs": {"conditioning_1": ["8", 0], "conditioning_2": ["9", 0]}}
+    p["4"]["inputs"]["negative"] = ["10", 0]
+    r = trace(p, "7")
+    assert r.negative == "" and "negative" in r.unresolved

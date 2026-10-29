@@ -92,4 +92,18 @@ t("a carrier without the matching input never reads the other side", () => {
   assert.equal(walk(g, "w", "negative"), "unresolved");
 });
 
+t("the walk stops at an earlier sampler", () => {
+  const g = graph({ ...ENC, s1neg: ["CLIPTextEncode", { clip: "ckpt" }],
+    k1: ["KSampler", { positive: "pos", negative: "s1neg", model: "ckpt" }], dec: ["VAEDecode", { samples: "k1" }],
+    enc: ["VAEEncode", { pixels: "dec" }], z: ["ConditioningZeroOut", { conditioning: "pos" }],
+    ref: ["ReferenceLatent", { conditioning: "z", latent: "enc" }] });
+  assert.equal(walk(g, "ref", "negative"), "zeroed");
+});
+
+t("a zero-out beside a CLIP-fed encoder we can't read stays unresolved", () => {
+  const g = graph({ ...ENC, z: ["ConditioningZeroOut", { conditioning: "pos" }],
+    wc: ["ImpactWildcardEncode", { clip: "ckpt" }], c: ["ConditioningCombine", { conditioning_1: "z", conditioning_2: "wc" }] });
+  assert.equal(walk(g, "c", "negative"), "unresolved");
+});
+
 console.log(`${n} checks passed`);

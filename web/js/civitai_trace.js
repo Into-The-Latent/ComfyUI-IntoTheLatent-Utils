@@ -6,16 +6,19 @@
  * can be checked outside the browser: node tests/js/civitai_trace.check.mjs
  */
 
+export const SAMPLER_CLASSES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]);
 export const CLIP_CLASSES = new Set(["CLIPTextEncode"]);
 export const ZERO_OUT_CLASSES = new Set(["ConditioningZeroOut"]); // mirror of tracer.ZERO_OUT_CLASSES
 
 // node.inputs[i].link -> graph.links[id] -> {origin_id, origin_slot}.
+function linkById(graph, id) {
+  if (id == null) return null;
+  const links = graph?.links;
+  return (links?.get ? links.get(id) : links?.[id]) || null;
+}
 export function inputLink(node, name) {
   const inp = (node.inputs || []).find((i) => i.name === name);
-  if (!inp || inp.link == null) return null;
-  const links = node.graph?.links;
-  const link = links?.get ? links.get(inp.link) : links?.[inp.link];
-  return link || null;
+  return inp ? linkById(node.graph, inp.link) : null;
 }
 export function originNode(node, name) {
   const link = inputLink(node, name);
@@ -28,7 +31,8 @@ const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wi
 // A node with inputs named `which` / `which_*` (WanImageToVideo, PairConditioning*, …) is followed only
 // through them, else through every other input but never the other side's; ConditioningZeroOut is a
 // dead end unless bypassed. zeroed = no encode found, a zero-out hit and nothing unknown (a text encoder
-// we can't read, a missing node). Other leaves (LoadImage, loaders) say nothing about the text.
+// we can't read: TextEncode in the class or a wired clip input; a missing node). Other leaves (LoadImage,
+// loaders) and earlier samplers say nothing about the text.
 export function findClipEncode(node, which) {
   const other = which === "positive" ? "negative" : "positive";
   const named = (name, side) => name === side || name.startsWith(side + "_");
@@ -44,8 +48,9 @@ export function findClipEncode(node, which) {
     const cls = n.comfyClass || n.type;
     if (CLIP_CLASSES.has(cls)) return { clip: n, zeroed: false };
     if (ZERO_OUT_CLASSES.has(cls) && n.mode !== BYPASSED) { zeroed = true; continue; }
-    if (String(cls).includes("TextEncode")) unknown = true;
-    const linked = (n.inputs || []).map((i) => [i.name, inputLink(n, i.name)]).filter(([, l]) => l);
+    if (SAMPLER_CLASSES.has(cls)) continue; // reached through a latent input; conditioning never passes a sampler
+    if (String(cls).includes("TextEncode") || inputLink(n, "clip")) { unknown = true; continue; }
+    const linked = (n.inputs || []).map((i) => [i.name, linkById(n.graph, i.link)]).filter(([, l]) => l);
     const own = linked.filter(([name]) => named(name, which));
     const links = own.length ? own : linked.filter(([name]) => !named(name, other));
     for (const [, l] of links) queue.push(n.graph.getNodeById(l.origin_id));

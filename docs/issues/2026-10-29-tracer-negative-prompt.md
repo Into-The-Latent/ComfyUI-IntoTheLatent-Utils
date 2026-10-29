@@ -39,12 +39,16 @@ In `nodes/civitai_metadata/tracer.py`, `_find_clip_encode` does a breadth-first 
 In `_find_clip_encode`, take the input being resolved as a parameter (`which` = `"positive"` / `"negative"`), and while walking:
 
 1. **Stop at `ConditioningZeroOut`.** Do not walk through it, and remember that a zero-out was reached.
-2. **Follow a node that has an input named `which` only through that input**, if that input is a link. Otherwise follow every link input, as today.
-3. Return a third outcome besides "found text" and "not found": **zeroed**. That means no encoder was found and the walk ended at a zero-out.
+2. **Follow a node that has inputs named `which` or `which_*` only through those inputs**, if any of them is a link. The `which_*` form covers PairConditioningSetProperties (`negative_NEW`) and PairConditioningCombine (`negative_A`, `negative_B`). Otherwise follow every other link input, but **never the other side's** (`positive` / `positive_*` when resolving the negative), so a carrier whose optional negative is unwired can't fall back to the positive.
+3. **Stop at a sampler.** The walk only reaches one through a latent input (two-stage workflows). Conditioning never passes through a sampler, so its prompts must not be reported.
+4. **Stop at a text encoder we can't read**, and mark the prompt **unknown**. That is a class name containing `TextEncode` (CLIPTextEncodeSDXL, TextEncodeQwenImage, …) or a node with a wired `clip` input (ImpactWildcardEncode, WAS Text to Conditioning, …). A missing node is unknown too.
+5. Return a third outcome besides "found text" and "not found": **zeroed**. That means no encoder was found, the walk reached a zero-out, and nothing unknown was reached. Other leaves (LoadImage, VAE / ControlNet loaders behind latent or image inputs, as in Flux Kontext's ReferenceLatent) say nothing about the text and don't count.
 
-In `_resolve_prompts`, a zeroed negative should be written as an **empty** negative and should **not** be added to `unresolved`, because it is known to be empty. A combine of a zeroed part and a real part, as in ComfyUI's SD3 template, still finds the real encode through the other branch, so it keeps its real negative.
+`_resolve_conditioning_text` reports a zeroed prompt as an **empty**, resolved prompt, so `_resolve_prompts` does **not** add it to `unresolved`. A combine of a zeroed part and a real part, as in ComfyUI's SD3 template, still finds the real encode through the other branch, so it keeps its real negative. A combine of a zeroed part and an unknown encoder stays unresolved.
 
-DiffusionNexus has the same fix in its C# port of this file, `DiffusionNexus.UI/Services/Distiller/ComfyUiPromptTracer.cs` (`FindEncoder`, Little-God1983/DiffusionNexus PR #671, commits `a6a75aee` and `013fd419`).
+The live-graph preview's walk is in `web/js/civitai_trace.js` (`findClipEncode`). It applies the same rules, and also walks through a **bypassed** (mode 4) zero-out, because the API prompt drops bypassed nodes.
+
+DiffusionNexus has the first version of this fix (rules 1, 2 without the `which_*` and other-side parts, and zeroed); the review refinements above (rules 2–4, unknown encoders) may still be missing there. It is in its C# port of this file, `DiffusionNexus.UI/Services/Distiller/ComfyUiPromptTracer.cs` (`FindEncoder`, Little-God1983/DiffusionNexus PR #671, commits `a6a75aee` and `013fd419`).
 
 ## Tests to add (`tests/test_tracer_prompts.py`)
 - **KSampler with a zeroed negative:** the negative is `""`, the positive is "a cat", and `"negative"` is not in `unresolved`.
