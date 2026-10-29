@@ -3,7 +3,7 @@
 // (not wired into pytest on purpose: spawning a process from a published .py is something the registry scanner
 // can flag - see test_no_python_file_trips_the_registry_env_or_network_rules).
 import assert from "node:assert/strict";
-import { findClipEncode, guiderOf, settingsNode, literal } from "../../web/js/civitai_trace.js";
+import { findClipEncode, guiderOf, settingsNode, literal, samplerName, schedulerName } from "../../web/js/civitai_trace.js";
 
 // Fake LiteGraph graph. spec: {id: [type, {input: originId | [originId, slot] | null}, extra]}.
 function graph(spec) {
@@ -167,6 +167,21 @@ t("legacy Reroute nodes are passed through, like the API prompt", () => {
   const r = graph({ ...ENC, g: ["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })],
     rr: ["Reroute", { "": "g" }], rr2: ["Reroute", { "": "rr" }], k: ["SamplerCustomAdvanced", { guider: "rr2" }] });
   assert.equal(guiderOf(r.k).holder.id, "g");
+});
+
+t("dedicated sampler / scheduler nodes are named by their class", () => {
+  const g = graph({ sel: ["SamplerDPMPP_2M_SDE", {}, W({ eta: 1, noise_device: "gpu" })], sch: ["KarrasScheduler", {}, W({ steps: 30 })],
+    wrap: ["SomeSamplerWrapper", { sampler: "sel" }], k: ["SamplerCustomAdvanced", { sampler: "wrap", sigmas: "sch" }] });
+  assert.equal(samplerName(g.k), "dpmpp_2m_sde");
+  assert.equal(schedulerName(g.k), "karras");
+  const ks = graph({ sel: ["KSamplerSelect", {}, W({ sampler_name: "euler" })], sch: ["BasicScheduler", {}, W({ scheduler: "simple", steps: 8 })],
+    k: ["SamplerCustomAdvanced", { sampler: "sel", sigmas: "sch" }] });
+  assert.equal(samplerName(ks.k), "euler");
+  assert.equal(schedulerName(ks.k), "simple");
+  const unk = graph({ sel: ["SomeCustomSampler", {}, W({ eta: 1 })], sch: ["Flux2Scheduler", {}, W({ steps: 20 })],
+    k: ["SamplerCustomAdvanced", { sampler: "sel", sigmas: "sch" }] });
+  assert.equal(samplerName(unk.k), null);
+  assert.equal(schedulerName(unk.k), null);
 });
 
 console.log(`${n} checks passed`);

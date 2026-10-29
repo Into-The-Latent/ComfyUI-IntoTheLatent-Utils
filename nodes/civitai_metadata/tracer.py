@@ -27,6 +27,32 @@ GUIDER_INPUTS = {
     "BasicGuider": ("conditioning", None, None),
 }
 DEFAULT_GUIDER_INPUTS = ("positive", "negative", "cfg")
+# Core sampler / scheduler nodes that say what runs by their class, not a sampler_name / scheduler widget
+# (the *_gpu noise-device variants share their CPU name's A1111 label). Mirrored in web/js/civitai_trace.js.
+SAMPLER_NODE_NAMES = {
+    "SamplerEulerAncestral": "euler_ancestral",
+    "SamplerEulerAncestralCFGPP": "euler_ancestral_cfg_pp",
+    "SamplerEulerCFGpp": "euler_cfg_pp",
+    "SamplerLMS": "lms",
+    "SamplerDPMPP_2S_Ancestral": "dpmpp_2s_ancestral",
+    "SamplerDPMPP_SDE": "dpmpp_sde",
+    "SamplerDPMPP_2M_SDE": "dpmpp_2m_sde",
+    "SamplerDPMPP_3M_SDE": "dpmpp_3m_sde",
+    "SamplerDPMAdaptative": "dpm_adaptive",
+    "SamplerER_SDE": "er_sde",
+    "SamplerSASolver": "sa_solver",
+    "SamplerSEEDS2": "seeds_2",
+    "SamplerLCM": "lcm",
+}
+# Model-specific schedulers (Flux2Scheduler, LTXVScheduler, …) name no known schedule and stay unnamed.
+SCHEDULER_NODE_NAMES = {
+    "KarrasScheduler": "karras",
+    "ExponentialScheduler": "exponential",
+    "PolyexponentialScheduler": "polyexponential",
+    "LaplaceScheduler": "laplace",
+    "BetaSamplingScheduler": "beta",
+    "AlignYourStepsScheduler": "align_your_steps",
+}
 BATCH_CLASS = "ITLPromptBatch"
 # Model-source loaders → (widget holding the filename, folder_paths folder to hash it from).
 # Covers checkpoints AND standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/
@@ -160,10 +186,10 @@ def _guider_inputs(holder):
     return GUIDER_INPUTS.get(holder.get("class_type"), DEFAULT_GUIDER_INPUTS)
 
 
-def _settings_node(prompt, link, key):
-    """BFS back from a link to the nearest node that has a ``key`` input: KSamplerSelect behind
-    `sampler` (sampler_name), the scheduler behind `sigmas` (steps), RandomNoise behind `noise`
-    (noise_seed). The node's other fields are read from it too, so SplitSigmasDenoise's own
+def _settings_node(prompt, link, key, classes=()):
+    """BFS back from a link to the nearest node that has a ``key`` input or is one of ``classes``:
+    KSamplerSelect / a dedicated sampler node behind `sampler` (sampler_name), the scheduler behind
+    `sigmas` (steps), RandomNoise behind `noise` (noise_seed). The node's other fields are read from it too, so SplitSigmasDenoise's own
     `denoise` (a split point) is never taken for the scheduler's. Never reads past a sampler."""
     if not _is_link(link):
         return {}
@@ -178,7 +204,7 @@ def _settings_node(prompt, link, key):
         if not node or node.get("class_type") in SAMPLER_CLASSES:
             continue
         ins = node.get("inputs", {})
-        if key in ins:
+        if key in ins or node.get("class_type") in classes:
             return node
         for v in ins.values():
             if _is_link(v):
@@ -198,15 +224,17 @@ def _first(*values):
 def _read_sampler_fields(prompt, sampler, holder, r):
     ins = sampler.get("inputs", {})
     sched = _settings_node(prompt, ins.get("sigmas"), "steps")
-    select = _settings_node(prompt, ins.get("sampler"), "sampler_name")
+    select = _settings_node(prompt, ins.get("sampler"), "sampler_name", SAMPLER_NODE_NAMES)
     noise = _settings_node(prompt, ins.get("noise"), "noise_seed")
 
     cfg_in = _guider_inputs(holder)[2]
     r.steps = _first(_literal(sampler, "steps"), _literal(sched, "steps"))
     r.cfg = _literal(holder, cfg_in) if cfg_in else None
     r.seed = _first(_literal(sampler, "seed"), _literal(sampler, "noise_seed"), _literal(noise, "noise_seed"))
-    r.sampler_name = _first(_literal(sampler, "sampler_name"), _literal(select, "sampler_name"))
-    r.scheduler = _first(_literal(sampler, "scheduler"), _literal(sched, "scheduler"))
+    r.sampler_name = _first(_literal(sampler, "sampler_name"), _literal(select, "sampler_name"),
+                            SAMPLER_NODE_NAMES.get(select.get("class_type")))
+    r.scheduler = _first(_literal(sampler, "scheduler"), _literal(sched, "scheduler"),
+                         SCHEDULER_NODE_NAMES.get(sched.get("class_type")))
     r.denoise = _first(_literal(sampler, "denoise"), _literal(sched, "denoise"))
     for f in ("steps", "cfg", "sampler_name"):
         if getattr(r, f) is None and not (f == "cfg" and cfg_in is None):  # a guider without CFG has none
