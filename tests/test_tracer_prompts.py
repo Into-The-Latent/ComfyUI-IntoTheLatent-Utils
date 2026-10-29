@@ -100,3 +100,27 @@ def test_sd3_template_combine_keeps_real_negative():
     r = trace(p, "7")
     assert r.positive == "a cat" and r.negative == "blurry"
     assert "negative" not in r.unresolved
+
+
+def test_zero_out_beside_an_unknown_encoder_stays_unresolved():
+    # One branch is zeroed, the other ends at an encoder we can't read: the negative is unknown, not empty.
+    p = _ksampler("a cat", "unused")
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    p["9"] = {"class_type": "CLIPTextEncodeSDXL", "inputs": {"text_g": "blurry", "text_l": "blurry", "clip": ["1", 1]}}
+    p["10"] = {"class_type": "ConditioningCombine", "inputs": {"conditioning_1": ["8", 0], "conditioning_2": ["9", 0]}}
+    p["4"]["inputs"]["negative"] = ["10", 0]
+    r = trace(p, "7")
+    assert r.negative == "" and "negative" in r.unresolved
+
+
+def test_pair_conditioning_follows_suffixed_inputs():
+    # Hook nodes carry both conditionings under suffixed names (positive_NEW / negative_NEW, *_A / *_B).
+    p = _ksampler("a cat", "blurry")
+    p["8"] = {"class_type": "PairConditioningSetProperties", "inputs": {
+        "positive_NEW": ["2", 0], "negative_NEW": ["3", 0], "strength": 1.0, "set_cond_area": "default"}}
+    p["9"] = {"class_type": "PairConditioningCombine", "inputs": {
+        "positive_A": ["8", 0], "negative_A": ["8", 1], "positive_B": ["2", 0], "negative_B": ["3", 0]}}
+    p["4"]["inputs"]["positive"] = ["9", 0]
+    p["4"]["inputs"]["negative"] = ["9", 1]
+    r = trace(p, "7")
+    assert r.positive == "a cat" and r.negative == "blurry"

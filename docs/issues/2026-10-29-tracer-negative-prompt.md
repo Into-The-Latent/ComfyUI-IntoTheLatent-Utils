@@ -28,12 +28,12 @@ WanImageToVideo[1] ──► KSamplerAdvanced.negative
 The negative is really "blurry", but the metadata says `Negative prompt: a cat`. Every Wan 2.2 image-to-video workflow is affected, at any CFG.
 
 ## Cause
-In `nodes/civitai_metadata/tracer.py`, `_find_clip_encode` (line 156) does a breadth-first search back from the sampler's `negative` link through **every** link input of every node:
+In `nodes/civitai_metadata/tracer.py`, `_find_clip_encode` does a breadth-first search back from the sampler's `negative` link through **every** link input of every node:
 
 - **Case 1:** `ConditioningZeroOut.conditioning` leads straight to the positive `CLIPTextEncode`, which it returns.
 - **Case 2:** `WanImageToVideo` lists `positive` before `negative`, so the search reaches the positive encode first.
 
-`_resolve_conditioning_text` (line 207) then reports that text as the negative and marks it as resolved.
+`_resolve_conditioning_text` then reports that text as the negative and marks it as resolved.
 
 ## Fix
 In `_find_clip_encode`, take the input being resolved as a parameter (`which` = `"positive"` / `"negative"`), and while walking:

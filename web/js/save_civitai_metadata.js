@@ -8,12 +8,11 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
+import { inputLink, originNode, findClipEncode } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
 const SAMPLER_CLASSES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]);
-const CLIP_CLASSES = new Set(["CLIPTextEncode"]);
-const ZERO_OUT_CLASSES = new Set(["ConditioningZeroOut"]); // mirror of tracer.ZERO_OUT_CLASSES
 // class_type -> widget holding the model filename (mirror of tracer.MODEL_SOURCES; the Python side
 // also tracks the folder for hashing, which the preview doesn't need). Covers checkpoints and
 // standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/Krea/etc.).
@@ -29,18 +28,6 @@ const POWER_LORA_CLASSES = new Set(["Power Lora Loader (rgthree)"]);
 const LORA_STACK_CLASSES = new Set(["Lora Loader Stack (rgthree)"]);
 const BATCH_CLASS = "ITLPromptBatch";
 
-// --- Live-graph link helpers (LiteGraph). node.inputs[i].link -> graph.links[id] -> {origin_id, origin_slot}.
-function inputLink(node, name) {
-  const inp = (node.inputs || []).find((i) => i.name === name);
-  if (!inp || inp.link == null) return null;
-  const links = node.graph?.links;
-  const link = links?.get ? links.get(inp.link) : links?.[inp.link];
-  return link || null;
-}
-function originNode(node, name) {
-  const link = inputLink(node, name);
-  return link ? node.graph.getNodeById(link.origin_id) : null;
-}
 function widget(node, name) {
   return node.widgets?.find((w) => w.name === name)?.value;
 }
@@ -93,30 +80,6 @@ function bfsBack(node, classSet) {
     }
   }
   return null;
-}
-
-// Mirror of tracer._find_clip_encode: BFS to the nearest CLIPTextEncode for the sampler input `which`.
-// A node with an input named `which` (WanImageToVideo, ControlNetApplyAdvanced, …) is followed only
-// through it; ConditioningZeroOut is a dead end. zeroed = no encode found but a zero-out was hit.
-function findClipEncode(node, which) {
-  const seen = new Set();
-  const queue = [node];
-  let zeroed = false;
-  while (queue.length) {
-    const n = queue.shift();
-    if (!n || seen.has(n.id)) continue;
-    seen.add(n.id);
-    const cls = n.comfyClass || n.type;
-    if (CLIP_CLASSES.has(cls)) return { clip: n, zeroed: false };
-    if (ZERO_OUT_CLASSES.has(cls)) { zeroed = true; continue; }
-    const own = originNode(n, which);
-    if (own) { queue.push(own); continue; }
-    for (const inp of n.inputs || []) {
-      const o = originNode(n, inp.name);
-      if (o) queue.push(o);
-    }
-  }
-  return { clip: null, zeroed };
 }
 
 // Current line of our ITLPromptBatch node at the given output slot (0=positive, 1=negative).

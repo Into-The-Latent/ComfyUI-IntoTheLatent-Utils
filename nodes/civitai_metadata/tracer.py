@@ -159,14 +159,16 @@ def _find_clip_encode(prompt, start_id, which):
     """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners).
 
     ``which`` is the sampler input being resolved ("positive"/"negative"). A node that carries both
-    conditionings (WanImageToVideo, ControlNetApplyAdvanced, …) is followed only through its input of
-    that name, so the negative never walks into the positive encode. ConditioningZeroOut is a dead
-    end: walking through it would report the zeroed (positive) text. Returns ``(nid, node, zeroed)``;
-    ``zeroed`` is True when no encode was found and the walk hit a zero-out — a known-empty prompt.
+    conditionings (WanImageToVideo, ControlNetApplyAdvanced, PairConditioning* with ``negative_NEW`` /
+    ``negative_A``, …) is followed only through its inputs of that name, so the negative never walks
+    into the positive encode. ConditioningZeroOut is a dead end: walking through it would report the
+    zeroed (positive) text. Returns ``(nid, node, zeroed)``; ``zeroed`` is True when no encode was
+    found and every branch ended at a zero-out — a known-empty prompt. Any other dead end (an encoder
+    we can't read, a missing node) leaves the prompt unknown.
     """
     seen = set()
     queue = [str(start_id)]
-    zeroed = False
+    zeroed = dead_end = False
     while queue:
         nid = queue.pop(0)
         if nid in seen:
@@ -174,6 +176,7 @@ def _find_clip_encode(prompt, start_id, which):
         seen.add(nid)
         node = _node(prompt, nid)
         if not node:
+            dead_end = True
             continue
         cls = node.get("class_type")
         if cls in CLIP_ENCODE_CLASSES:
@@ -182,11 +185,13 @@ def _find_clip_encode(prompt, start_id, which):
             zeroed = True
             continue
         ins = node.get("inputs", {})
-        links = [ins[which]] if _is_link(ins.get(which)) else ins.values()
+        own = [v for k, v in ins.items() if (k == which or str(k).startswith(which + "_")) and _is_link(v)]
+        links = own or [v for v in ins.values() if _is_link(v)]
+        if not links:
+            dead_end = True
         for v in links:
-            if _is_link(v):
-                queue.append(str(v[0]))
-    return None, None, zeroed
+            queue.append(str(v[0]))
+    return None, None, zeroed and not dead_end
 
 
 def _resolve_batch(origin, slot):
