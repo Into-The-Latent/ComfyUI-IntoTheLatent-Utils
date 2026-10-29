@@ -8,11 +8,10 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
+import { SAMPLER_CLASSES, inputLink, originNode, findClipEncode } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
-const SAMPLER_CLASSES = new Set(["KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"]);
-const CLIP_CLASSES = new Set(["CLIPTextEncode"]);
 // class_type -> widget holding the model filename (mirror of tracer.MODEL_SOURCES; the Python side
 // also tracks the folder for hashing, which the preview doesn't need). Covers checkpoints and
 // standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/Krea/etc.).
@@ -28,18 +27,6 @@ const POWER_LORA_CLASSES = new Set(["Power Lora Loader (rgthree)"]);
 const LORA_STACK_CLASSES = new Set(["Lora Loader Stack (rgthree)"]);
 const BATCH_CLASS = "ITLPromptBatch";
 
-// --- Live-graph link helpers (LiteGraph). node.inputs[i].link -> graph.links[id] -> {origin_id, origin_slot}.
-function inputLink(node, name) {
-  const inp = (node.inputs || []).find((i) => i.name === name);
-  if (!inp || inp.link == null) return null;
-  const links = node.graph?.links;
-  const link = links?.get ? links.get(inp.link) : links?.[inp.link];
-  return link || null;
-}
-function originNode(node, name) {
-  const link = inputLink(node, name);
-  return link ? node.graph.getNodeById(link.origin_id) : null;
-}
 function widget(node, name) {
   return node.widgets?.find((w) => w.name === name)?.value;
 }
@@ -161,8 +148,8 @@ function traceLive(node) {
 
   for (const which of ["positive", "negative"]) {
     const cond = originNode(sampler, which);
-    const clip = cond ? bfsBack(cond, CLIP_CLASSES) : null;
-    const res = clip ? resolveClipText(clip) : { text: "", ok: false };
+    const { clip, zeroed } = cond ? findClipEncode(cond, which) : { clip: null, zeroed: false };
+    const res = clip ? resolveClipText(clip) : { text: "", ok: zeroed };
     r[which] = res.text;
     if (!res.ok) r.unresolved.push(which);
   }

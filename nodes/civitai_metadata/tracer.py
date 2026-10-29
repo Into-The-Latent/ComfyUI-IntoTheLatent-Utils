@@ -2,7 +2,7 @@
 #
 # Walks the API prompt (dict of {node_id: {class_type, inputs}}) backward from a save node's `images`
 # input to recover the real generation parameters used this run. Mirrored in
-# web/js/save_civitai_metadata.js — keep the two in sync.
+# web/js/save_civitai_metadata.js (the prompt walk in web/js/civitai_trace.js) — keep them in sync.
 #
 # This file is built up across three concerns: (1) sampler detection + scalar fields, (2) prompt
 # resolution (incl. our ITLPromptBatch), (3) the model/LoRA chain.
@@ -13,6 +13,8 @@ from ..prompt_batch_core import parse_prompts, select_prompt
 
 SAMPLER_CLASSES = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
 CLIP_ENCODE_CLASSES = {"CLIPTextEncode"}
+# Conditioning that is known to be empty (turbo / CFG-1 negatives). The prompt walk stops here.
+ZERO_OUT_CLASSES = {"ConditioningZeroOut"}
 BATCH_CLASS = "ITLPromptBatch"
 # Model-source loaders → (widget holding the filename, folder_paths folder to hash it from).
 # Covers checkpoints AND standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/
@@ -153,10 +155,28 @@ def _read_sampler_fields(sampler, r):
             r.unresolved.append(f)
 
 
-def _find_clip_encode(prompt, start_id):
-    """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners)."""
+def _find_clip_encode(prompt, start_id, which):
+    """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners).
+
+    ``which`` is the sampler input being resolved ("positive"/"negative"). A node that carries both
+    conditionings (WanImageToVideo, ControlNetApplyAdvanced, PairConditioning* with ``negative_NEW`` /
+    ``negative_A``, …) is followed only through its inputs of that name, so the negative never walks
+    into the positive encode. ConditioningZeroOut is a dead end: walking through it would report the
+    zeroed (positive) text. Without an input of that name the walk follows every other link input, but
+    never the other side's (``positive`` / ``positive_*`` when resolving the negative). Returns
+    ``(nid, node, zeroed)``; ``zeroed`` is True when no encode was found, the walk hit a zero-out and
+    nothing unknown: a text encoder we can't read (``TextEncode`` in the class name, or a wired
+    ``clip`` input) or a missing node. Then the prompt is known-empty. Other leaves (LoadImage, VAE /
+    ControlNet loaders behind latent or image inputs) and earlier samplers say nothing about the text.
+    """
+    other = "negative" if which == "positive" else "positive"
+
+    def named(k, side):
+        return k == side or str(k).startswith(side + "_")
+
     seen = set()
     queue = [str(start_id)]
+    zeroed = unknown = False
     while queue:
         nid = queue.pop(0)
         if nid in seen:
@@ -164,13 +184,25 @@ def _find_clip_encode(prompt, start_id):
         seen.add(nid)
         node = _node(prompt, nid)
         if not node:
+            unknown = True
             continue
-        if node.get("class_type") in CLIP_ENCODE_CLASSES:
-            return nid, node
-        for v in node.get("inputs", {}).values():
-            if _is_link(v):
-                queue.append(str(v[0]))
-    return None, None
+        cls = node.get("class_type")
+        if cls in CLIP_ENCODE_CLASSES:
+            return nid, node, False
+        if cls in ZERO_OUT_CLASSES:
+            zeroed = True
+            continue
+        if cls in SAMPLER_CLASSES:  # reached through a latent input; conditioning never passes a sampler
+            continue
+        ins = node.get("inputs", {})
+        if "TextEncode" in str(cls) or _is_link(ins.get("clip")):  # a text encoder we can't read
+            unknown = True
+            continue
+        links = [v for k, v in ins.items() if named(k, which) and _is_link(v)]
+        links = links or [v for k, v in ins.items() if not named(k, other) and _is_link(v)]
+        for v in links:
+            queue.append(str(v[0]))
+    return None, None, zeroed and not unknown
 
 
 def _resolve_batch(origin, slot):
@@ -208,9 +240,9 @@ def _resolve_conditioning_text(prompt, sampler, which):
     link = sampler.get("inputs", {}).get(which)
     if not _is_link(link):
         return "", False
-    _cid, clip = _find_clip_encode(prompt, str(link[0]))
+    _cid, clip, zeroed = _find_clip_encode(prompt, str(link[0]), which)
     if clip is None:
-        return "", False
+        return "", zeroed  # a zeroed-out conditioning is a resolved, empty prompt
     return _resolve_text(prompt, clip)
 
 
