@@ -104,6 +104,37 @@ export function schedulerName(sampler) {
     (sched ? SCHEDULER_NODE_NAMES[sched.comfyClass || sched.type] ?? null : null);
 }
 
+// Mirror of tracer._conditioning_links: the links a conditioning walk follows out of node `n`: its inputs
+// named `which` / `which_*` if any is linked, else every other linked input but the other side's.
+function conditioningLinks(n, which) {
+  const other = which === "positive" ? "negative" : "positive";
+  const named = (name, side) => name === side || name.startsWith(side + "_");
+  const linked = (n.inputs || []).map((i) => [i.name, linkById(n.graph, i.link)]).filter(([, l]) => l);
+  const own = linked.filter(([name]) => named(name, which));
+  return (own.length ? own : linked.filter(([name]) => !named(name, other))).map(([, l]) => l);
+}
+
+// Mirror of tracer.GUIDANCE_CLASSES / _find_guidance: Flux's built-in guidance on the positive path, from the
+// nearest FluxGuidance / CLIPTextEncodeFlux; null when there is none, FluxDisableGuidance comes first, or it
+// is wired.
+export const GUIDANCE_CLASSES = new Set(["FluxGuidance", "CLIPTextEncodeFlux"]);
+const GUIDANCE_OFF_CLASSES = new Set(["FluxDisableGuidance"]);
+export function findGuidance(holder, posIn) {
+  const seen = new Set();
+  const queue = [originNode(holder, posIn)];
+  while (queue.length) {
+    const n = queue.shift();
+    if (!n || seen.has(n.id)) continue;
+    seen.add(n.id);
+    const cls = n.comfyClass || n.type;
+    if (GUIDANCE_CLASSES.has(cls)) return literal(n, "guidance");
+    if (GUIDANCE_OFF_CLASSES.has(cls)) return null;
+    if (CLIP_CLASSES.has(cls) || SAMPLER_CLASSES.has(cls)) continue;
+    for (const l of conditioningLinks(n, "positive")) queue.push(n.graph.getNodeById(l.origin_id));
+  }
+  return null;
+}
+
 const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wires its input through
 
 // Mirror of tracer._find_clip_encode: BFS to the nearest CLIPTextEncode for the sampler input `which`.
@@ -113,8 +144,6 @@ const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wi
 // we can't read: TextEncode in the class or a wired clip input; a missing node). Other leaves (LoadImage,
 // loaders) and earlier samplers say nothing about the text.
 export function findClipEncode(node, which) {
-  const other = which === "positive" ? "negative" : "positive";
-  const named = (name, side) => name === side || name.startsWith(side + "_");
   const seen = new Set();
   const queue = [node];
   let zeroed = false;
@@ -129,10 +158,7 @@ export function findClipEncode(node, which) {
     if (ZERO_OUT_CLASSES.has(cls) && n.mode !== BYPASSED) { zeroed = true; continue; }
     if (SAMPLER_CLASSES.has(cls)) continue; // reached through a latent input; conditioning never passes a sampler
     if (String(cls).includes("TextEncode") || inputLink(n, "clip")) { unknown = true; continue; }
-    const linked = (n.inputs || []).map((i) => [i.name, linkById(n.graph, i.link)]).filter(([, l]) => l);
-    const own = linked.filter(([name]) => named(name, which));
-    const links = own.length ? own : linked.filter(([name]) => !named(name, other));
-    for (const [, l] of links) queue.push(n.graph.getNodeById(l.origin_id));
+    for (const l of conditioningLinks(n, which)) queue.push(n.graph.getNodeById(l.origin_id));
   }
   return { clip: null, zeroed: zeroed && !unknown };
 }

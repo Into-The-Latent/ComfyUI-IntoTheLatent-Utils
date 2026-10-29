@@ -8,7 +8,7 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
-import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, guiderOf, settingsNode, samplerName, schedulerName } from "./civitai_trace.js";
+import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, findGuidance, guiderOf, settingsNode, samplerName, schedulerName } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
@@ -145,6 +145,7 @@ function traceLive(node) {
   r.steps = literal(sampler, "steps") ?? literal(sched, "steps");
   r.cfg = cfgIn ? literal(holder, cfgIn) : null;
   r.no_cfg = !cfgIn; // e.g. BasicGuider: runs without CFG
+  r.guidance = findGuidance(holder, posIn); // Flux: saved as "Distilled CFG Scale"
   r.seed = literal(sampler, "seed") ?? literal(sampler, "noise_seed") ?? literal(noise, "noise_seed");
   r.sampler_name = samplerName(sampler);
   r.scheduler = schedulerName(sampler);
@@ -225,6 +226,7 @@ function renderPreview(el, r) {
     `<span class="pos">positive</span>: ${escapeHtml(r.positive) || "(empty)"}\n` +
     `<span class="neg">negative</span>: ${escapeHtml(r.negative) || "(empty)"}\n` +
     `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.no_cfg ? "none" : r.cfg)} · ` +
+    (r.guidance != null ? `<span class="k">flux guidance</span> ${escapeHtml(r.guidance)} · ` : "") +
     `<span class="k">sampler</span> ${escapeHtml(r.sampler_name)}/${escapeHtml(r.scheduler)} · <span class="k">seed</span> ${escapeHtml(r.seed)}\n` +
     `<span class="k">model</span> ${escapeHtml(r.model_name ?? "(?)")} · <span class="k">loras</span> ${loras}\n` +
     `<span class="k">size</span> from image at run · hashes computed on save` +
