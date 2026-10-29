@@ -49,3 +49,54 @@ def test_conditioning_passthrough_walked():
     p["8"] = {"class_type": "ConditioningConcat", "inputs": {"conditioning_to": ["2", 0], "conditioning_from": ["2", 0]}}
     p["4"]["inputs"]["positive"] = ["8", 0]
     assert trace(p, "7").positive == "base pos"
+
+
+def test_zeroed_negative_is_empty_not_the_positive():
+    # Turbo / CFG-1 workflows: the negative is the positive encode run through ConditioningZeroOut.
+    p = _ksampler("a cat", "unused")
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    p["4"]["inputs"]["negative"] = ["8", 0]
+    r = trace(p, "7")
+    assert r.positive == "a cat" and r.negative == ""
+    assert "negative" not in r.unresolved
+
+
+def _wan_i2v(neg_link):
+    # WanImageToVideo carries both conditionings: outputs positive(0), negative(1), latent(2).
+    return {
+        "1": CKPT,
+        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "a cat", "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "blurry", "clip": ["1", 1]}},
+        "5": {"class_type": "WanImageToVideo", "inputs": {"positive": ["2", 0], "negative": neg_link,
+              "vae": ["1", 2], "width": 832, "height": 480, "length": 81, "batch_size": 1}},
+        "4": {"class_type": "KSamplerAdvanced", "inputs": {"model": ["1", 0], "positive": ["5", 0],
+              "negative": ["5", 1], "latent_image": ["5", 2], "noise_seed": 1, "steps": 20, "cfg": 3.5,
+              "sampler_name": "euler", "scheduler": "simple"}},
+        "6": VAE, "7": SAVE,
+    }
+
+
+def test_wan_i2v_follows_the_matching_input():
+    r = trace(_wan_i2v(["3", 0]), "7")
+    assert r.positive == "a cat" and r.negative == "blurry"
+
+
+def test_wan_i2v_zeroed_negative():
+    p = _wan_i2v(["8", 0])
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    r = trace(p, "7")
+    assert r.positive == "a cat" and r.negative == ""
+    assert "negative" not in r.unresolved
+
+
+def test_sd3_template_combine_keeps_real_negative():
+    # ComfyUI's SD3 template: Combine(SetTimestepRange(ZeroOut(enc)), SetTimestepRange(enc)).
+    p = _ksampler("a cat", "blurry")
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["3", 0]}}
+    p["9"] = {"class_type": "ConditioningSetTimestepRange", "inputs": {"conditioning": ["8", 0], "start": 0.1, "end": 1.0}}
+    p["10"] = {"class_type": "ConditioningSetTimestepRange", "inputs": {"conditioning": ["3", 0], "start": 0.0, "end": 0.1}}
+    p["11"] = {"class_type": "ConditioningCombine", "inputs": {"conditioning_1": ["9", 0], "conditioning_2": ["10", 0]}}
+    p["4"]["inputs"]["negative"] = ["11", 0]
+    r = trace(p, "7")
+    assert r.positive == "a cat" and r.negative == "blurry"
+    assert "negative" not in r.unresolved

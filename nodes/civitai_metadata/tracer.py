@@ -13,6 +13,8 @@ from ..prompt_batch_core import parse_prompts, select_prompt
 
 SAMPLER_CLASSES = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
 CLIP_ENCODE_CLASSES = {"CLIPTextEncode"}
+# Conditioning that is known to be empty (turbo / CFG-1 negatives). The prompt walk stops here.
+ZERO_OUT_CLASSES = {"ConditioningZeroOut"}
 BATCH_CLASS = "ITLPromptBatch"
 # Model-source loaders → (widget holding the filename, folder_paths folder to hash it from).
 # Covers checkpoints AND standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/
@@ -153,10 +155,18 @@ def _read_sampler_fields(sampler, r):
             r.unresolved.append(f)
 
 
-def _find_clip_encode(prompt, start_id):
-    """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners)."""
+def _find_clip_encode(prompt, start_id, which):
+    """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners).
+
+    ``which`` is the sampler input being resolved ("positive"/"negative"). A node that carries both
+    conditionings (WanImageToVideo, ControlNetApplyAdvanced, …) is followed only through its input of
+    that name, so the negative never walks into the positive encode. ConditioningZeroOut is a dead
+    end: walking through it would report the zeroed (positive) text. Returns ``(nid, node, zeroed)``;
+    ``zeroed`` is True when no encode was found and the walk hit a zero-out — a known-empty prompt.
+    """
     seen = set()
     queue = [str(start_id)]
+    zeroed = False
     while queue:
         nid = queue.pop(0)
         if nid in seen:
@@ -165,12 +175,18 @@ def _find_clip_encode(prompt, start_id):
         node = _node(prompt, nid)
         if not node:
             continue
-        if node.get("class_type") in CLIP_ENCODE_CLASSES:
-            return nid, node
-        for v in node.get("inputs", {}).values():
+        cls = node.get("class_type")
+        if cls in CLIP_ENCODE_CLASSES:
+            return nid, node, False
+        if cls in ZERO_OUT_CLASSES:
+            zeroed = True
+            continue
+        ins = node.get("inputs", {})
+        links = [ins[which]] if _is_link(ins.get(which)) else ins.values()
+        for v in links:
             if _is_link(v):
                 queue.append(str(v[0]))
-    return None, None
+    return None, None, zeroed
 
 
 def _resolve_batch(origin, slot):
@@ -208,9 +224,9 @@ def _resolve_conditioning_text(prompt, sampler, which):
     link = sampler.get("inputs", {}).get(which)
     if not _is_link(link):
         return "", False
-    _cid, clip = _find_clip_encode(prompt, str(link[0]))
+    _cid, clip, zeroed = _find_clip_encode(prompt, str(link[0]), which)
     if clip is None:
-        return "", False
+        return "", zeroed  # a zeroed-out conditioning is a resolved, empty prompt
     return _resolve_text(prompt, clip)
 
 
