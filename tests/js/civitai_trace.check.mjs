@@ -3,7 +3,7 @@
 // (not wired into pytest on purpose: spawning a process from a published .py is something the registry scanner
 // can flag - see test_no_python_file_trips_the_registry_env_or_network_rules).
 import assert from "node:assert/strict";
-import { findClipEncode } from "../../web/js/civitai_trace.js";
+import { findClipEncode, guiderOf, followWidget } from "../../web/js/civitai_trace.js";
 
 // Fake LiteGraph graph. spec: {id: [type, {input: originId | [originId, slot] | null}, extra]}.
 function graph(spec) {
@@ -104,6 +104,44 @@ t("a zero-out beside a CLIP-fed encoder we can't read stays unresolved", () => {
   const g = graph({ ...ENC, z: ["ConditioningZeroOut", { conditioning: "pos" }],
     wc: ["ImpactWildcardEncode", { clip: "ckpt" }], c: ["ConditioningCombine", { conditioning_1: "z", conditioning_2: "wc" }] });
   assert.equal(walk(g, "c", "negative"), "unresolved");
+});
+
+// --- modular samplers (SamplerCustomAdvanced / SamplerCustom) ---
+const W = (o) => ({ widgets: Object.entries(o).map(([name, value]) => ({ name, value })) });
+const flux = (guider) => graph({ ...ENC, g: guider,
+  sel: ["KSamplerSelect", {}, W({ sampler_name: "euler" })],
+  sch: ["BasicScheduler", { model: "ckpt" }, W({ scheduler: "simple", steps: 8, denoise: 1 })],
+  split: ["SplitSigmas", { sigmas: "sch" }, W({ step: 4 })],
+  noise: ["RandomNoise", {}, W({ noise_seed: 42 })],
+  k: ["SamplerCustomAdvanced", { noise: "noise", guider: "g", sampler: "sel", sigmas: ["split", 1], latent_image: null }] });
+
+t("SamplerCustomAdvanced: the guider holds the prompts, cfg and model", () => {
+  const g = flux(["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })]);
+  const { holder, names } = guiderOf(g.k);
+  assert.equal(holder.id, "g");
+  assert.deepEqual(names, ["positive", "negative", "cfg"]);
+  assert.deepEqual(guiderOf(graph(ENC).pos).names, ["positive", "negative", "cfg"]); // no guider: the sampler
+  assert.equal(guiderOf(graph(ENC).pos).holder.id, "pos");
+});
+
+t("BasicGuider has no negative and no cfg; DualCFGGuider uses cond1 / cfg_conds", () => {
+  assert.deepEqual(guiderOf(flux(["BasicGuider", { model: "ckpt", conditioning: "pos" }]).k).names, ["conditioning", null, null]);
+  assert.deepEqual(guiderOf(flux(["DualCFGGuider", { model: "ckpt", cond1: "pos", cond2: "pos", negative: "neg" }]).k).names,
+    ["cond1", "negative", "cfg_conds"]);
+});
+
+t("settings are read from the nodes wired into sampler / sigmas / noise", () => {
+  const g = flux(["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })]);
+  assert.equal(followWidget(g.k, "sampler", "sampler_name"), "euler");
+  assert.equal(followWidget(g.k, "sigmas", "steps"), 8);          // through SplitSigmas
+  assert.equal(followWidget(g.k, "sigmas", "scheduler"), "simple");
+  assert.equal(followWidget(g.k, "noise", "noise_seed"), 42);
+  assert.equal(followWidget(g.k, "latent_image", "steps"), null); // unwired
+});
+
+t("the settings walk never reads past a sampler", () => {
+  const g = graph({ k1: ["KSampler", {}, W({ steps: 30 })], x: ["SomeSigmas", { from: "k1" }], k: ["SamplerCustom", { sigmas: "x" }] });
+  assert.equal(followWidget(g.k, "sigmas", "steps"), null);
 });
 
 console.log(`${n} checks passed`);

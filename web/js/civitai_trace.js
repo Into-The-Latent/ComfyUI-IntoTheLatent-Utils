@@ -24,6 +24,43 @@ export function originNode(node, name) {
   const link = inputLink(node, name);
   return link ? node.graph.getNodeById(link.origin_id) : null;
 }
+export function widget(node, name) {
+  return node.widgets?.find((w) => w.name === name)?.value;
+}
+
+// Mirror of tracer.GUIDER_INPUTS: guider class -> its [positive, negative, cfg] inputs / widgets;
+// null = it has none (runs without CFG). Other guiders use the CFGGuider names.
+export const GUIDER_INPUTS = {
+  CFGGuider: ["positive", "negative", "cfg"],
+  DualCFGGuider: ["cond1", "negative", "cfg_conds"],
+  BasicGuider: ["conditioning", null, null],
+};
+const DEFAULT_GUIDER_INPUTS = ["positive", "negative", "cfg"];
+
+// Mirror of tracer._guider: the node holding the prompts, cfg and model (SamplerCustomAdvanced's guider,
+// else the sampler itself), with its [positive, negative, cfg] names.
+export function guiderOf(sampler) {
+  const holder = originNode(sampler, "guider") || sampler;
+  return { holder, names: GUIDER_INPUTS[holder.comfyClass || holder.type] || DEFAULT_GUIDER_INPUTS };
+}
+
+// Mirror of tracer._follow_literal: BFS back from `node`'s input `name` to the nearest node with a `field`
+// widget (KSamplerSelect behind `sampler`, BasicScheduler behind `sigmas`, RandomNoise behind `noise`).
+// Never reads past a sampler.
+export function followWidget(node, name, field) {
+  const seen = new Set();
+  const queue = [originNode(node, name)];
+  while (queue.length) {
+    const n = queue.shift();
+    if (!n || seen.has(n.id)) continue;
+    seen.add(n.id);
+    if (SAMPLER_CLASSES.has(n.comfyClass || n.type)) continue;
+    const v = widget(n, field);
+    if (v != null) return v;
+    for (const inp of n.inputs || []) queue.push(originNode(n, inp.name));
+  }
+  return null;
+}
 
 const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wires its input through
 
