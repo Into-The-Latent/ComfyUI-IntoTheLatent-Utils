@@ -27,6 +27,10 @@ GUIDER_INPUTS = {
     "BasicGuider": ("conditioning", None, None),
 }
 DEFAULT_GUIDER_INPUTS = ("positive", "negative", "cfg")
+# Flux's built-in ("distilled") guidance sits on the positive conditioning, not on the sampler: it is
+# written as Forge's "Distilled CFG Scale". FluxDisableGuidance turns it off.
+GUIDANCE_CLASSES = {"FluxGuidance", "CLIPTextEncodeFlux"}
+GUIDANCE_OFF_CLASSES = {"FluxDisableGuidance"}
 # Core sampler / scheduler nodes that say what runs by their class, not a sampler_name / scheduler widget
 # (the *_gpu noise-device variants share their CPU name's A1111 label). Mirrored in web/js/civitai_trace.js.
 SAMPLER_NODE_NAMES = {
@@ -129,6 +133,7 @@ class TraceResult:
     model_name: str = None
     model_file: str = None
     model_folder: str = None
+    guidance: object = None
     loras: list = field(default_factory=list)
     unresolved: list = field(default_factory=list)
 
@@ -241,6 +246,18 @@ def _read_sampler_fields(prompt, sampler, holder, r):
             r.unresolved.append(f)
 
 
+def _conditioning_links(ins, which):
+    """The links a conditioning walk follows out of a node: its inputs named ``which`` /
+    ``which_*`` if any is linked, else every other linked input but the other side's."""
+    other = "negative" if which == "positive" else "positive"
+
+    def named(k, side):
+        return k == side or str(k).startswith(side + "_")
+
+    links = [v for k, v in ins.items() if named(k, which) and _is_link(v)]
+    return links or [v for k, v in ins.items() if not named(k, other) and _is_link(v)]
+
+
 def _find_clip_encode(prompt, start_id, which):
     """BFS backward to the nearest CLIPTextEncode (walks through conditioning combiners).
 
@@ -255,11 +272,6 @@ def _find_clip_encode(prompt, start_id, which):
     ``clip`` input) or a missing node. Then the prompt is known-empty. Other leaves (LoadImage, VAE /
     ControlNet loaders behind latent or image inputs) and earlier samplers say nothing about the text.
     """
-    other = "negative" if which == "positive" else "positive"
-
-    def named(k, side):
-        return k == side or str(k).startswith(side + "_")
-
     seen = set()
     queue = [str(start_id)]
     zeroed = unknown = False
@@ -284,9 +296,7 @@ def _find_clip_encode(prompt, start_id, which):
         if "TextEncode" in str(cls) or _is_link(ins.get("clip")):  # a text encoder we can't read
             unknown = True
             continue
-        links = [v for k, v in ins.items() if named(k, which) and _is_link(v)]
-        links = links or [v for k, v in ins.items() if not named(k, other) and _is_link(v)]
-        for v in links:
+        for v in _conditioning_links(ins, which):
             queue.append(str(v[0]))
     return None, None, zeroed and not unknown
 
@@ -330,6 +340,34 @@ def _resolve_conditioning_text(prompt, holder, which, name):
     if clip is None:
         return "", zeroed  # a zeroed-out conditioning is a resolved, empty prompt
     return _resolve_text(prompt, clip)
+
+
+def _find_guidance(prompt, holder):
+    """Flux's built-in guidance on the positive path: the nearest FluxGuidance / CLIPTextEncodeFlux
+    ``guidance``. None when there is none, when FluxDisableGuidance comes first, or when it is wired."""
+    link = holder.get("inputs", {}).get(_guider_inputs(holder)[0])
+    if not _is_link(link):
+        return None
+    seen = set()
+    queue = [str(link[0])]
+    while queue:
+        nid = queue.pop(0)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        node = _node(prompt, nid)
+        if not node:
+            continue
+        cls = node.get("class_type")
+        if cls in GUIDANCE_CLASSES:
+            return _literal(node, "guidance")
+        if cls in GUIDANCE_OFF_CLASSES:
+            return None
+        if cls in CLIP_ENCODE_CLASSES or cls in SAMPLER_CLASSES:
+            continue
+        for v in _conditioning_links(node.get("inputs", {}), "positive"):
+            queue.append(str(v[0]))
+    return None
 
 
 def _resolve_prompts(prompt, holder, r):
@@ -410,5 +448,6 @@ def trace(prompt, node_id):
     holder = _guider(prompt, sampler)
     _read_sampler_fields(prompt, sampler, holder, r)
     _resolve_prompts(prompt, holder, r)
+    r.guidance = _find_guidance(prompt, holder)
     _trace_model_chain(prompt, holder, r)
     return r

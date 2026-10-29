@@ -3,7 +3,7 @@
 // (not wired into pytest on purpose: spawning a process from a published .py is something the registry scanner
 // can flag - see test_no_python_file_trips_the_registry_env_or_network_rules).
 import assert from "node:assert/strict";
-import { findClipEncode, guiderOf, settingsNode, literal, samplerName, schedulerName } from "../../web/js/civitai_trace.js";
+import { findClipEncode, guiderOf, settingsNode, literal, samplerName, schedulerName, findGuidance } from "../../web/js/civitai_trace.js";
 
 // Fake LiteGraph graph. spec: {id: [type, {input: originId | [originId, slot] | null}, extra]}.
 function graph(spec) {
@@ -182,6 +182,21 @@ t("dedicated sampler / scheduler nodes are named by their class", () => {
     k: ["SamplerCustomAdvanced", { sampler: "sel", sigmas: "sch" }] });
   assert.equal(samplerName(unk.k), null);
   assert.equal(schedulerName(unk.k), null);
+});
+
+t("Flux guidance is read from the positive path (FluxGuidance / CLIPTextEncodeFlux), not past a disable", () => {
+  const g = graph({ ...ENC, fg: ["FluxGuidance", { conditioning: "pos" }, W({ guidance: 3.5 })],
+    ref: ["ReferenceLatent", { conditioning: "fg", latent: null }],
+    off: ["FluxDisableGuidance", { conditioning: "fg" }], flux: ["CLIPTextEncodeFlux", { clip: "ckpt" }, W({ guidance: 4 })],
+    negfg: ["FluxGuidance", { conditioning: "neg" }, W({ guidance: 9 })],
+    k1: ["KSampler", { positive: "ref", negative: "negfg" }], k2: ["KSampler", { positive: "off" }],
+    k3: ["KSampler", { positive: "flux" }], k4: ["KSampler", { positive: "pos", negative: "negfg" }],
+    bg: ["BasicGuider", { conditioning: "fg" }] });
+  assert.equal(findGuidance(g.k1, "positive"), 3.5);
+  assert.equal(findGuidance(g.k2, "positive"), null);
+  assert.equal(findGuidance(g.k3, "positive"), 4);
+  assert.equal(findGuidance(g.k4, "positive"), null);  // only on the negative
+  assert.equal(findGuidance(g.bg, "conditioning"), 3.5);
 });
 
 console.log(`${n} checks passed`);

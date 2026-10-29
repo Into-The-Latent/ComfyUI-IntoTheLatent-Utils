@@ -50,3 +50,14 @@ def test_lora_tag_without_hash_still_appended():
     )
     assert "<lora:noHashLora:1>" in out.split("\n")[0]
     assert "Lora hashes" not in out             # no hash -> not in settings line
+
+
+def test_flux_guidance_written_as_distilled_cfg_scale():
+    # Forge's field for Flux's built-in guidance, next to the real CFG.
+    out = format_parameters(
+        positive="cat", negative="", steps=8, cfg=1.0, seed=1, sampler="Euler",
+        width=1024, height=1024, guidance=3.5,
+    )
+    assert "CFG scale: 1, Distilled CFG Scale: 3.5, Seed: 1" in out
+    assert "Distilled" not in format_parameters(
+        positive="cat", negative="", steps=8, cfg=1.0, seed=1, sampler="Euler", width=8, height=8)

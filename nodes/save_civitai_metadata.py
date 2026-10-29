@@ -64,7 +64,7 @@ def _save_with_metadata(cls, images, filename_prefix, save_workflow, overrides):
         positive=result.positive, negative=result.negative, steps=result.steps, cfg=result.cfg,
         seed=result.seed, sampler=sampler_label, width=width, height=height,
         model_name=result.model_name, model_hash=model_hash, loras=result.loras,
-        denoise=result.denoise, clip_skip=result.clip_skip,
+        denoise=result.denoise, clip_skip=result.clip_skip, guidance=result.guidance,
     )
 
     # Expand %date:FORMAT% (frontend feature that doesn't reach a custom node's widget) before the
