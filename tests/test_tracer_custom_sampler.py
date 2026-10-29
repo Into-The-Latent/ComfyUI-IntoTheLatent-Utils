@@ -110,3 +110,13 @@ def test_settings_walk_never_reads_past_a_sampler():
     p["8"]["inputs"]["sigmas"] = ["21", 0]
     r = trace(p, "12")
     assert r.steps is None and "steps" in r.unresolved and r.scheduler is None
+
+
+def test_split_sigmas_denoise_is_not_the_img2img_strength():
+    # SplitSigmasDenoise's `denoise` is where the schedule is split; steps / scheduler / denoise all come
+    # from the scheduler node itself.
+    p = _flux(_cfg_guider())
+    p["15"] = {"class_type": "SplitSigmasDenoise", "inputs": {"sigmas": ["6", 0], "denoise": 0.3}}
+    p["8"]["inputs"]["sigmas"] = ["15", 1]
+    r = trace(p, "12")
+    assert r.denoise == 1.0 and r.steps == 8 and r.scheduler == "simple"

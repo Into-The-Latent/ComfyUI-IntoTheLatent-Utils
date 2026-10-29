@@ -159,11 +159,13 @@ def _guider_inputs(holder):
     return GUIDER_INPUTS.get(holder.get("class_type"), DEFAULT_GUIDER_INPUTS)
 
 
-def _follow_literal(prompt, link, name):
-    """BFS back from a link to the nearest node with a literal ``name`` input (KSamplerSelect behind
-    `sampler`, BasicScheduler behind `sigmas`, RandomNoise behind `noise`). Never reads past a sampler."""
+def _settings_node(prompt, link, key):
+    """BFS back from a link to the nearest node that has a ``key`` input: KSamplerSelect behind
+    `sampler` (sampler_name), the scheduler behind `sigmas` (steps), RandomNoise behind `noise`
+    (noise_seed). The node's other fields are read from it too, so SplitSigmasDenoise's own
+    `denoise` (a split point) is never taken for the scheduler's. Never reads past a sampler."""
     if not _is_link(link):
-        return None
+        return {}
     seen = set()
     queue = [str(link[0])]
     while queue:
@@ -175,32 +177,36 @@ def _follow_literal(prompt, link, name):
         if not node or node.get("class_type") in SAMPLER_CLASSES:
             continue
         ins = node.get("inputs", {})
-        v = ins.get(name)
-        if v is not None and not _is_link(v):
-            return v
+        if key in ins:
+            return node
         for v in ins.values():
             if _is_link(v):
                 queue.append(str(v[0]))
-    return None
+    return {}
+
+
+def _literal(node, name):
+    v = node.get("inputs", {}).get(name)
+    return None if _is_link(v) else v
+
+
+def _first(*values):
+    return next((v for v in values if v is not None), None)
 
 
 def _read_sampler_fields(prompt, sampler, holder, r):
     ins = sampler.get("inputs", {})
-
-    def lit(name, via=None):
-        v = ins.get(name)
-        if v is not None and not _is_link(v):
-            return v
-        return _follow_literal(prompt, ins.get(via), name) if via else None
+    sched = _settings_node(prompt, ins.get("sigmas"), "steps")
+    select = _settings_node(prompt, ins.get("sampler"), "sampler_name")
+    noise = _settings_node(prompt, ins.get("noise"), "noise_seed")
 
     cfg_in = _guider_inputs(holder)[2]
-    r.steps = lit("steps", via="sigmas")
-    cfg = holder.get("inputs", {}).get(cfg_in) if cfg_in else None
-    r.cfg = None if _is_link(cfg) else cfg
-    r.seed = lit("seed") if lit("seed") is not None else lit("noise_seed", via="noise")
-    r.sampler_name = lit("sampler_name", via="sampler")
-    r.scheduler = lit("scheduler", via="sigmas")
-    r.denoise = lit("denoise", via="sigmas")
+    r.steps = _first(_literal(sampler, "steps"), _literal(sched, "steps"))
+    r.cfg = _literal(holder, cfg_in) if cfg_in else None
+    r.seed = _first(_literal(sampler, "seed"), _literal(sampler, "noise_seed"), _literal(noise, "noise_seed"))
+    r.sampler_name = _first(_literal(sampler, "sampler_name"), _literal(select, "sampler_name"))
+    r.scheduler = _first(_literal(sampler, "scheduler"), _literal(sched, "scheduler"))
+    r.denoise = _first(_literal(sampler, "denoise"), _literal(sched, "denoise"))
     for f in ("steps", "cfg", "sampler_name"):
         if getattr(r, f) is None and not (f == "cfg" and cfg_in is None):  # a guider without CFG has none
             r.unresolved.append(f)

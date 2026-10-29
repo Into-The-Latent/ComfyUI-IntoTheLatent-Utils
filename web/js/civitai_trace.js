@@ -20,12 +20,24 @@ export function inputLink(node, name) {
   const inp = (node.inputs || []).find((i) => i.name === name);
   return inp ? linkById(node.graph, inp.link) : null;
 }
+// The node feeding `node`'s input `name`, through any legacy Reroute nodes (the API prompt has none).
 export function originNode(node, name) {
-  const link = inputLink(node, name);
-  return link ? node.graph.getNodeById(link.origin_id) : null;
+  let link = inputLink(node, name);
+  let n = link ? node.graph.getNodeById(link.origin_id) : null;
+  for (let hops = 0; n && (n.comfyClass || n.type) === "Reroute" && hops < 64; hops++) {
+    link = linkById(n.graph, n.inputs?.[0]?.link);
+    n = link ? n.graph.getNodeById(link.origin_id) : null;
+  }
+  return n;
 }
 export function widget(node, name) {
   return node.widgets?.find((w) => w.name === name)?.value;
+}
+// Mirror of tracer._literal: a widget's value, or null when its input is wired (the API prompt has a link
+// there and the widget only holds a stale value).
+export function literal(node, name) {
+  if (!node || inputLink(node, name)) return null;
+  return widget(node, name) ?? null;
 }
 
 // Mirror of tracer.GUIDER_INPUTS: guider class -> its [positive, negative, cfg] inputs / widgets;
@@ -44,10 +56,11 @@ export function guiderOf(sampler) {
   return { holder, names: GUIDER_INPUTS[holder.comfyClass || holder.type] || DEFAULT_GUIDER_INPUTS };
 }
 
-// Mirror of tracer._follow_literal: BFS back from `node`'s input `name` to the nearest node with a `field`
-// widget (KSamplerSelect behind `sampler`, BasicScheduler behind `sigmas`, RandomNoise behind `noise`).
-// Never reads past a sampler.
-export function followWidget(node, name, field) {
+// Mirror of tracer._settings_node: BFS back from `node`'s input `name` to the nearest node that has a `key`
+// widget or input: KSamplerSelect behind `sampler`, the scheduler behind `sigmas` (steps), RandomNoise behind
+// `noise`. Its other fields are read from it too (SplitSigmasDenoise's own denoise is a split point, not the
+// scheduler's). Never reads past a sampler.
+export function settingsNode(node, name, key) {
   const seen = new Set();
   const queue = [originNode(node, name)];
   while (queue.length) {
@@ -55,8 +68,7 @@ export function followWidget(node, name, field) {
     if (!n || seen.has(n.id)) continue;
     seen.add(n.id);
     if (SAMPLER_CLASSES.has(n.comfyClass || n.type)) continue;
-    const v = widget(n, field);
-    if (v != null) return v;
+    if (n.widgets?.some((w) => w.name === key) || (n.inputs || []).some((i) => i.name === key)) return n;
     for (const inp of n.inputs || []) queue.push(originNode(n, inp.name));
   }
   return null;

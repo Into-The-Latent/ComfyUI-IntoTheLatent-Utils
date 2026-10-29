@@ -8,7 +8,7 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
-import { SAMPLER_CLASSES, inputLink, originNode, widget, findClipEncode, guiderOf, followWidget } from "./civitai_trace.js";
+import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, guiderOf, settingsNode } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
@@ -140,11 +140,14 @@ function traceLive(node) {
   // into `sampler` / `sigmas` / `noise` (mirrors tracer._read_sampler_fields).
   const { holder, names } = guiderOf(sampler);
   const [posIn, negIn, cfgIn] = names;
-  r.steps = widget(sampler, "steps") ?? followWidget(sampler, "sigmas", "steps");
-  r.cfg = cfgIn ? widget(holder, cfgIn) ?? null : null;
-  r.seed = widget(sampler, "seed") ?? widget(sampler, "noise_seed") ?? followWidget(sampler, "noise", "noise_seed");
-  r.sampler_name = widget(sampler, "sampler_name") ?? followWidget(sampler, "sampler", "sampler_name");
-  r.scheduler = widget(sampler, "scheduler") ?? followWidget(sampler, "sigmas", "scheduler");
+  const sched = settingsNode(sampler, "sigmas", "steps");
+  const select = settingsNode(sampler, "sampler", "sampler_name");
+  const noise = settingsNode(sampler, "noise", "noise_seed");
+  r.steps = literal(sampler, "steps") ?? literal(sched, "steps");
+  r.cfg = cfgIn ? literal(holder, cfgIn) : null;
+  r.seed = literal(sampler, "seed") ?? literal(sampler, "noise_seed") ?? literal(noise, "noise_seed");
+  r.sampler_name = literal(sampler, "sampler_name") ?? literal(select, "sampler_name");
+  r.scheduler = literal(sampler, "scheduler") ?? literal(sched, "scheduler");
   for (const f of ["steps", "cfg", "sampler_name"]) {
     if (r[f] == null && !(f === "cfg" && !cfgIn)) r.unresolved.push(f); // a guider without CFG has none
   }
