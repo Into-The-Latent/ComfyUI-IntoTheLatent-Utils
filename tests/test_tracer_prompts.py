@@ -124,3 +124,26 @@ def test_pair_conditioning_follows_suffixed_inputs():
     p["4"]["inputs"]["negative"] = ["9", 1]
     r = trace(p, "7")
     assert r.positive == "a cat" and r.negative == "blurry"
+
+
+def test_zeroed_negative_through_a_latent_carrier_is_empty():
+    # Flux Kontext style: ReferenceLatent(ZeroOut(enc), latent). The latent branch ending at LoadImage
+    # says nothing about the text, so the negative is still known-empty.
+    p = _ksampler("a cat", "unused")
+    p["8"] = {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["2", 0]}}
+    p["9"] = {"class_type": "LoadImage", "inputs": {"image": "ref.png"}}
+    p["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["9", 0], "vae": ["1", 2]}}
+    p["11"] = {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["8", 0], "latent": ["10", 0]}}
+    p["4"]["inputs"]["negative"] = ["11", 0]
+    r = trace(p, "7")
+    assert r.negative == "" and "negative" not in r.unresolved
+
+
+def test_carrier_without_the_matching_input_never_reads_the_other_side():
+    # A carrier whose optional `negative` is unwired (so absent from the API prompt) must not fall back
+    # to its `positive` input.
+    p = _ksampler("a cat", "unused")
+    p["8"] = {"class_type": "SomeCarrier", "inputs": {"positive": ["2", 0], "strength": 1.0}}
+    p["4"]["inputs"]["negative"] = ["8", 1]
+    r = trace(p, "7")
+    assert r.negative == "" and "negative" in r.unresolved

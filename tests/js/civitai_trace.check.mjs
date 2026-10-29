@@ -81,4 +81,15 @@ t("a dangling `which` link is a dead end, not a reason to walk every input", () 
   assert.equal(walk(g, "w", "negative"), "unresolved");
 });
 
+t("a zeroed negative through a latent carrier is still known-empty", () => {
+  const g = graph({ ...ENC, z: ["ConditioningZeroOut", { conditioning: "pos" }], img: ["LoadImage", {}],
+    enc: ["VAEEncode", { pixels: "img", vae: "ckpt" }], ref: ["ReferenceLatent", { conditioning: "z", latent: "enc" }] });
+  assert.equal(walk(g, "ref", "negative"), "zeroed");
+});
+
+t("a carrier without the matching input never reads the other side", () => {
+  const g = graph({ ...ENC, w: ["WanImageToVideo", { positive: "pos", negative: null, vae: null }] });
+  assert.equal(walk(g, "w", "negative"), "unresolved");
+});
+
 console.log(`${n} checks passed`);

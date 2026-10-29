@@ -2,7 +2,7 @@
 #
 # Walks the API prompt (dict of {node_id: {class_type, inputs}}) backward from a save node's `images`
 # input to recover the real generation parameters used this run. Mirrored in
-# web/js/save_civitai_metadata.js — keep the two in sync.
+# web/js/save_civitai_metadata.js (the prompt walk in web/js/civitai_trace.js) — keep them in sync.
 #
 # This file is built up across three concerns: (1) sampler detection + scalar fields, (2) prompt
 # resolution (incl. our ITLPromptBatch), (3) the model/LoRA chain.
@@ -162,13 +162,21 @@ def _find_clip_encode(prompt, start_id, which):
     conditionings (WanImageToVideo, ControlNetApplyAdvanced, PairConditioning* with ``negative_NEW`` /
     ``negative_A``, …) is followed only through its inputs of that name, so the negative never walks
     into the positive encode. ConditioningZeroOut is a dead end: walking through it would report the
-    zeroed (positive) text. Returns ``(nid, node, zeroed)``; ``zeroed`` is True when no encode was
-    found and every branch ended at a zero-out — a known-empty prompt. Any other dead end (an encoder
-    we can't read, a missing node) leaves the prompt unknown.
+    zeroed (positive) text. Without an input of that name the walk follows every other link input, but
+    never the other side's (``positive`` / ``positive_*`` when resolving the negative). Returns
+    ``(nid, node, zeroed)``; ``zeroed`` is True when no encode was found, the walk hit a zero-out and
+    nothing unknown: a text encoder we can't read or a missing node. Then the prompt is known-empty.
+    Other leaves (LoadImage, VAE / ControlNet loaders behind latent or image inputs) say nothing
+    about the text.
     """
+    other = "negative" if which == "positive" else "positive"
+
+    def named(k, side):
+        return k == side or str(k).startswith(side + "_")
+
     seen = set()
     queue = [str(start_id)]
-    zeroed = dead_end = False
+    zeroed = unknown = False
     while queue:
         nid = queue.pop(0)
         if nid in seen:
@@ -176,7 +184,7 @@ def _find_clip_encode(prompt, start_id, which):
         seen.add(nid)
         node = _node(prompt, nid)
         if not node:
-            dead_end = True
+            unknown = True
             continue
         cls = node.get("class_type")
         if cls in CLIP_ENCODE_CLASSES:
@@ -184,14 +192,14 @@ def _find_clip_encode(prompt, start_id, which):
         if cls in ZERO_OUT_CLASSES:
             zeroed = True
             continue
+        if "TextEncode" in str(cls):
+            unknown = True
         ins = node.get("inputs", {})
-        own = [v for k, v in ins.items() if (k == which or str(k).startswith(which + "_")) and _is_link(v)]
-        links = own or [v for v in ins.values() if _is_link(v)]
-        if not links:
-            dead_end = True
+        links = [v for k, v in ins.items() if named(k, which) and _is_link(v)]
+        links = links or [v for k, v in ins.items() if not named(k, other) and _is_link(v)]
         for v in links:
             queue.append(str(v[0]))
-    return None, None, zeroed and not dead_end
+    return None, None, zeroed and not unknown
 
 
 def _resolve_batch(origin, slot):

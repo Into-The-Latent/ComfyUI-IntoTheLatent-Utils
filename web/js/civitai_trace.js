@@ -26,26 +26,29 @@ const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wi
 
 // Mirror of tracer._find_clip_encode: BFS to the nearest CLIPTextEncode for the sampler input `which`.
 // A node with inputs named `which` / `which_*` (WanImageToVideo, PairConditioning*, …) is followed only
-// through them; ConditioningZeroOut is a dead end unless bypassed. zeroed = no encode found and every
-// branch ended at a zero-out; any other dead end (an encoder we can't read, a missing node) is unknown.
+// through them, else through every other input but never the other side's; ConditioningZeroOut is a
+// dead end unless bypassed. zeroed = no encode found, a zero-out hit and nothing unknown (a text encoder
+// we can't read, a missing node). Other leaves (LoadImage, loaders) say nothing about the text.
 export function findClipEncode(node, which) {
+  const other = which === "positive" ? "negative" : "positive";
+  const named = (name, side) => name === side || name.startsWith(side + "_");
   const seen = new Set();
   const queue = [node];
   let zeroed = false;
-  let deadEnd = false;
+  let unknown = false;
   while (queue.length) {
     const n = queue.shift();
-    if (!n) { deadEnd = true; continue; }
+    if (!n) { unknown = true; continue; }
     if (seen.has(n.id)) continue;
     seen.add(n.id);
     const cls = n.comfyClass || n.type;
     if (CLIP_CLASSES.has(cls)) return { clip: n, zeroed: false };
     if (ZERO_OUT_CLASSES.has(cls) && n.mode !== BYPASSED) { zeroed = true; continue; }
+    if (String(cls).includes("TextEncode")) unknown = true;
     const linked = (n.inputs || []).map((i) => [i.name, inputLink(n, i.name)]).filter(([, l]) => l);
-    const own = linked.filter(([name]) => name === which || name.startsWith(which + "_"));
-    const links = own.length ? own : linked;
-    if (!links.length) deadEnd = true;
+    const own = linked.filter(([name]) => named(name, which));
+    const links = own.length ? own : linked.filter(([name]) => !named(name, other));
     for (const [, l] of links) queue.push(n.graph.getNodeById(l.origin_id));
   }
-  return { clip: null, zeroed: zeroed && !deadEnd };
+  return { clip: null, zeroed: zeroed && !unknown };
 }
