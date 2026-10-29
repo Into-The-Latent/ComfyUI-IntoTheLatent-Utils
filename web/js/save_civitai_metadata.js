@@ -8,7 +8,7 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
-import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, guiderOf, settingsNode } from "./civitai_trace.js";
+import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, guiderOf, settingsNode, samplerName, schedulerName } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
@@ -141,14 +141,13 @@ function traceLive(node) {
   const { holder, names } = guiderOf(sampler);
   const [posIn, negIn, cfgIn] = names;
   const sched = settingsNode(sampler, "sigmas", "steps");
-  const select = settingsNode(sampler, "sampler", "sampler_name");
   const noise = settingsNode(sampler, "noise", "noise_seed");
   r.steps = literal(sampler, "steps") ?? literal(sched, "steps");
   r.cfg = cfgIn ? literal(holder, cfgIn) : null;
   r.no_cfg = !cfgIn; // e.g. BasicGuider: runs without CFG
   r.seed = literal(sampler, "seed") ?? literal(sampler, "noise_seed") ?? literal(noise, "noise_seed");
-  r.sampler_name = literal(sampler, "sampler_name") ?? literal(select, "sampler_name");
-  r.scheduler = literal(sampler, "scheduler") ?? literal(sched, "scheduler");
+  r.sampler_name = samplerName(sampler);
+  r.scheduler = schedulerName(sampler);
   for (const f of ["steps", "cfg", "sampler_name"]) {
     if (r[f] == null && !(f === "cfg" && !cfgIn)) r.unresolved.push(f); // a guider without CFG has none
   }

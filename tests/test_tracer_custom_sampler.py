@@ -1,5 +1,6 @@
 # Tests for the tracer on the modular samplers (SamplerCustomAdvanced / SamplerCustom) — part of
 # ComfyUI-IntoTheLatent-Utils. GPL-3.0.
+from nodes.civitai_metadata.sampler_names import to_a1111_sampler
 from nodes.civitai_metadata.tracer import trace
 
 
@@ -122,3 +123,36 @@ def test_split_sigmas_denoise_is_not_the_img2img_strength():
     p["8"]["inputs"]["sigmas"] = ["15", 1]
     r = trace(p, "12")
     assert r.denoise == 1.0 and r.steps == 8 and r.scheduler == "simple"
+
+
+def test_dedicated_sampler_and_scheduler_nodes_are_named_by_class():
+    # SamplerDPMPP_2M_SDE / KarrasScheduler have no sampler_name / scheduler widget: the class says what runs.
+    p = _flux(_cfg_guider())
+    p["5"] = {"class_type": "SamplerDPMPP_2M_SDE", "inputs": {"solver_type": "midpoint", "eta": 1.0, "s_noise": 1.0, "noise_device": "gpu"}}
+    p["6"] = {"class_type": "KarrasScheduler", "inputs": {"steps": 30, "sigma_max": 14.6, "sigma_min": 0.03, "rho": 7.0}}
+    r = trace(p, "12")
+    assert r.sampler_name == "dpmpp_2m_sde" and r.scheduler == "karras" and r.steps == 30
+    assert r.unresolved == []
+    assert to_a1111_sampler(r.sampler_name, r.scheduler) == "DPM++ 2M SDE Karras"
+
+
+def test_sampler_node_behind_a_pass_through():
+    p = _flux(_cfg_guider())
+    p["5"] = {"class_type": "SamplerEulerAncestral", "inputs": {"eta": 1.0, "s_noise": 1.0}}
+    p["16"] = {"class_type": "SomeSamplerWrapper", "inputs": {"sampler": ["5", 0]}}
+    p["8"]["inputs"]["sampler"] = ["16", 0]
+    assert trace(p, "12").sampler_name == "euler_ancestral"
+
+
+def test_unknown_sampler_node_stays_unresolved():
+    p = _flux(_cfg_guider())
+    p["5"] = {"class_type": "SomeCustomSampler", "inputs": {"eta": 1.0}}
+    r = trace(p, "12")
+    assert r.sampler_name is None and "sampler_name" in r.unresolved
+
+
+def test_model_specific_scheduler_has_steps_but_no_scheduler_name():
+    p = _flux(_cfg_guider())
+    p["6"] = {"class_type": "Flux2Scheduler", "inputs": {"steps": 20, "width": 1024, "height": 1024}}
+    r = trace(p, "12")
+    assert r.steps == 20 and r.scheduler is None

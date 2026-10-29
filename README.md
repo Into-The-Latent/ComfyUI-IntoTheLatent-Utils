@@ -374,7 +374,10 @@ The modular samplers used by many Flux / Krea templates work too. With **Sampler
 prompts, CFG and model are read from its guider (**CFGGuider**, **DualCFGGuider**, **BasicGuider**), the
 seed from **RandomNoise**, the sampler from **KSamplerSelect**, and steps / scheduler / denoise from the
 scheduler behind `sigmas` (**BasicScheduler**, also through **SplitSigmas**). **SamplerCustom** gets its
-sampler and steps the same way. A BasicGuider runs without CFG, so those images have no negative prompt
+sampler and steps the same way. The dedicated core nodes are named by their class: sampler nodes such as
+**SamplerEulerAncestral** or **SamplerDPMPP_2M_SDE**, and the **Karras**, **Exponential**,
+**Polyexponential**, **Laplace**, **Beta** and **AlignYourSteps** schedulers. So a Karras schedule is saved
+as e.g. "DPM++ 2M SDE Karras". A BasicGuider runs without CFG, so those images have no negative prompt
 and no CFG value, and neither is reported as unresolved.
 
 #### What gets written
