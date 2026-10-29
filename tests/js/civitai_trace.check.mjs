@@ -127,7 +127,7 @@ t("SamplerCustomAdvanced: the guider holds the prompts, cfg and model", () => {
 t("BasicGuider has no negative and no cfg; DualCFGGuider uses cond1 / cfg_conds", () => {
   assert.deepEqual(guiderOf(flux(["BasicGuider", { model: "ckpt", conditioning: "pos" }]).k).names, ["conditioning", null, null]);
   assert.deepEqual(guiderOf(flux(["DualCFGGuider", { model: "ckpt", cond1: "pos", cond2: "pos", negative: "neg" }]).k).names,
-    ["cond1", "negative", "cfg_conds"]);
+    ["cond1", "negative", "cfg_cond2_negative"]);
 });
 
 t("settings are read from the nodes wired into sampler / sigmas / noise", () => {
@@ -153,6 +153,10 @@ t("a widget whose input is wired is not a literal (the API prompt has a link the
   const g = graph({ seed: ["Seed (rgthree)", {}, W({ seed: 7 })], noise: ["RandomNoise", { noise_seed: "seed" }, W({ noise_seed: 0 })] });
   assert.equal(literal(g.noise, "noise_seed"), null);
   assert.equal(literal(g.seed, "seed"), 7);
+  // A legacy PrimitiveNode is virtual: the API prompt holds its value, and the frontend syncs it into the widget.
+  const p = graph({ prim: ["PrimitiveNode", {}, { isVirtualNode: true, ...W({ value: 9 }) }],
+    rr: ["Reroute", { "": "prim" }, { isVirtualNode: true }], k: ["KSampler", { seed: "rr" }, W({ seed: 9 })] });
+  assert.equal(literal(p.k, "seed"), 9);
 });
 
 t("legacy Reroute nodes are passed through, like the API prompt", () => {

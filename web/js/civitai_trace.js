@@ -33,10 +33,12 @@ export function originNode(node, name) {
 export function widget(node, name) {
   return node.widgets?.find((w) => w.name === name)?.value;
 }
-// Mirror of tracer._literal: a widget's value, or null when its input is wired (the API prompt has a link
-// there and the widget only holds a stale value).
+// Mirror of tracer._literal: a widget's value, or null when its input is wired to a real node (the API prompt
+// has a link there and the widget only holds a stale value). A virtual source (legacy PrimitiveNode) is
+// replaced by its value in the API prompt, and the frontend syncs that value into the widget.
 export function literal(node, name) {
-  if (!node || inputLink(node, name)) return null;
+  if (!node) return null;
+  if (inputLink(node, name) && !originNode(node, name)?.isVirtualNode) return null;
   return widget(node, name) ?? null;
 }
 
@@ -44,7 +46,7 @@ export function literal(node, name) {
 // null = it has none (runs without CFG). Other guiders use the CFGGuider names.
 export const GUIDER_INPUTS = {
   CFGGuider: ["positive", "negative", "cfg"],
-  DualCFGGuider: ["cond1", "negative", "cfg_conds"],
+  DualCFGGuider: ["cond1", "negative", "cfg_cond2_negative"],
   BasicGuider: ["conditioning", null, null],
 };
 const DEFAULT_GUIDER_INPUTS = ["positive", "negative", "cfg"];

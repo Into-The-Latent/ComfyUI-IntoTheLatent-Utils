@@ -53,9 +53,11 @@ def test_basic_guider_has_no_negative_and_no_cfg():
 
 
 def test_dual_cfg_guider():
+    # Guider_DualCFG (regular): cfg_function(cond2, negative, cfg_cond2_negative) + (cond1 - cond2) * cfg_conds,
+    # so the scale against the negative, A1111's "CFG scale", is cfg_cond2_negative.
     r = trace(_flux({"class_type": "DualCFGGuider", "inputs": {"model": ["14", 0], "cond1": ["2", 0], "cond2": ["2", 0],
                      "negative": ["3", 0], "cfg_conds": 5.0, "cfg_cond2_negative": 2.0, "style": "regular"}}), "12")
-    assert r.positive == "a cat" and r.negative == "blurry" and r.cfg == 5.0
+    assert r.positive == "a cat" and r.negative == "blurry" and r.cfg == 2.0
     assert r.unresolved == []
 
 

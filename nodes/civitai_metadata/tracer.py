@@ -19,10 +19,11 @@ ZERO_OUT_CLASSES = {"ConditioningZeroOut"}
 # `guider` (prompts, cfg, model), `noise` (RandomNoise: seed), `sampler` (KSamplerSelect:
 # sampler_name) and `sigmas` (BasicScheduler: steps, scheduler, denoise); SamplerCustom wires only
 # the last two. Guider class -> its (positive, negative, cfg) inputs; None = it has none, because it
-# runs without CFG. Other guiders (PerpNegGuider, custom ones) use the CFGGuider names.
+# runs without CFG. Other guiders (PerpNegGuider, custom ones) use the CFGGuider names. DualCFGGuider's
+# scale against the negative (A1111's "CFG scale") is cfg_cond2_negative; cfg_conds is cond1 vs cond2.
 GUIDER_INPUTS = {
     "CFGGuider": ("positive", "negative", "cfg"),
-    "DualCFGGuider": ("cond1", "negative", "cfg_conds"),
+    "DualCFGGuider": ("cond1", "negative", "cfg_cond2_negative"),
     "BasicGuider": ("conditioning", None, None),
 }
 DEFAULT_GUIDER_INPUTS = ("positive", "negative", "cfg")

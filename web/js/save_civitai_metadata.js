@@ -224,7 +224,7 @@ function renderPreview(el, r) {
   el.innerHTML =
     `<span class="pos">positive</span>: ${escapeHtml(r.positive) || "(empty)"}\n` +
     `<span class="neg">negative</span>: ${escapeHtml(r.negative) || "(empty)"}\n` +
-    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.cfg)} · ` +
+    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.cfg ?? (r.unresolved.includes("cfg") ? null : "none"))} · ` +
     `<span class="k">sampler</span> ${escapeHtml(r.sampler_name)}/${escapeHtml(r.scheduler)} · <span class="k">seed</span> ${escapeHtml(r.seed)}\n` +
     `<span class="k">model</span> ${escapeHtml(r.model_name ?? "(?)")} · <span class="k">loras</span> ${loras}\n` +
     `<span class="k">size</span> from image at run · hashes computed on save` +
