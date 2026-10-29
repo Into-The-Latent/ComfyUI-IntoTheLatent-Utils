@@ -13,7 +13,7 @@ def _num(x):
 
 def format_parameters(*, positive, negative, steps, cfg, seed, sampler, width, height,
                       model_name=None, model_hash=None, loras=None, denoise=None,
-                      clip_skip=None, version="ComfyUI"):
+                      clip_skip=None, guidance=None, version="ComfyUI"):
     loras = loras or []
     tags = " ".join(
         f"<lora:{lo['name']}:{_num(lo['strength'])}>"
@@ -32,6 +32,7 @@ def format_parameters(*, positive, negative, steps, cfg, seed, sampler, width, h
     add("Steps", _num(steps) if steps is not None else None)
     add("Sampler", sampler or None)
     add("CFG scale", _num(cfg) if cfg is not None else None)
+    add("Distilled CFG Scale", _num(guidance) if guidance is not None else None)  # Flux guidance (Forge's name)
     add("Seed", _num(seed) if seed is not None else None)
     add("Size", f"{width}x{height}")
     add("Model hash", model_hash)

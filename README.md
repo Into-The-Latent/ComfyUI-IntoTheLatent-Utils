@@ -390,6 +390,9 @@ Negative prompt: {negative}
 Steps: …, Sampler: …, CFG scale: …, Seed: …, Size: …, Model hash: …, Model: …, Lora hashes: "...", Version: ComfyUI
 ```
 
+For Flux, the guidance set on **FluxGuidance** (or on **CLIPTextEncodeFlux**) is written after the CFG as
+`Distilled CFG Scale: 3.5`, the field Forge uses for it. `CFG scale` stays the sampler's real CFG.
+
 Each traced LoRA is appended to the positive line as a `<lora:name:weight>` tag and listed again in
 `Lora hashes:` — both signals Civitai uses to auto-link the resource. Unknown/unresolved fields are
 omitted, never guessed; if something can't be traced (e.g. two KSamplers in the graph, or a dynamic
