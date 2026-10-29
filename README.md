@@ -370,6 +370,13 @@ GGUF unet loaders), and picks up LoRAs from ComfyUI's stock **Load LoRA** (`Lora
 several LoRAs in one node. Disabled rows and empty (`None`) / zero-strength slots are skipped, matching
 what actually loads.
 
+The modular samplers used by many Flux / Krea templates work too. With **SamplerCustomAdvanced**, the
+prompts, CFG and model are read from its guider (**CFGGuider**, **DualCFGGuider**, **BasicGuider**), the
+seed from **RandomNoise**, the sampler from **KSamplerSelect**, and steps / scheduler / denoise from the
+scheduler behind `sigmas` (**BasicScheduler**, also through **SplitSigmas**). **SamplerCustom** gets its
+sampler and steps the same way. A BasicGuider runs without CFG, so those images have no negative prompt
+and no CFG value, and neither is reported as unresolved.
+
 #### What gets written
 
 One `parameters` chunk, A1111 order:

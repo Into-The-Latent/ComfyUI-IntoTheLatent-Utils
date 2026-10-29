@@ -15,6 +15,18 @@ SAMPLER_CLASSES = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCust
 CLIP_ENCODE_CLASSES = {"CLIPTextEncode"}
 # Conditioning that is known to be empty (turbo / CFG-1 negatives). The prompt walk stops here.
 ZERO_OUT_CLASSES = {"ConditioningZeroOut"}
+# The modular samplers keep their settings on nodes wired into them: SamplerCustomAdvanced takes a
+# `guider` (prompts, cfg, model), `noise` (RandomNoise: seed), `sampler` (KSamplerSelect:
+# sampler_name) and `sigmas` (BasicScheduler: steps, scheduler, denoise); SamplerCustom wires only
+# the last two. Guider class -> its (positive, negative, cfg) inputs; None = it has none, because it
+# runs without CFG. Other guiders (PerpNegGuider, custom ones) use the CFGGuider names. DualCFGGuider's
+# scale against the negative (A1111's "CFG scale") is cfg_cond2_negative; cfg_conds is cond1 vs cond2.
+GUIDER_INPUTS = {
+    "CFGGuider": ("positive", "negative", "cfg"),
+    "DualCFGGuider": ("cond1", "negative", "cfg_cond2_negative"),
+    "BasicGuider": ("conditioning", None, None),
+}
+DEFAULT_GUIDER_INPUTS = ("positive", "negative", "cfg")
 BATCH_CLASS = "ITLPromptBatch"
 # Model-source loaders → (widget holding the filename, folder_paths folder to hash it from).
 # Covers checkpoints AND standalone diffusion models (UNETLoader "Load Diffusion Model" — Flux/SD3/
@@ -137,21 +149,67 @@ def _single_sampler(prompt):
     return found[0] if len(found) == 1 else (None, None)
 
 
-def _read_sampler_fields(sampler, r):
+def _guider(prompt, sampler):
+    """The node holding the prompts, cfg and model: SamplerCustomAdvanced's guider, else the sampler."""
+    link = sampler.get("inputs", {}).get("guider")
+    guider = _node(prompt, link[0]) if _is_link(link) else None
+    return guider or sampler
+
+
+def _guider_inputs(holder):
+    return GUIDER_INPUTS.get(holder.get("class_type"), DEFAULT_GUIDER_INPUTS)
+
+
+def _settings_node(prompt, link, key):
+    """BFS back from a link to the nearest node that has a ``key`` input: KSamplerSelect behind
+    `sampler` (sampler_name), the scheduler behind `sigmas` (steps), RandomNoise behind `noise`
+    (noise_seed). The node's other fields are read from it too, so SplitSigmasDenoise's own
+    `denoise` (a split point) is never taken for the scheduler's. Never reads past a sampler."""
+    if not _is_link(link):
+        return {}
+    seen = set()
+    queue = [str(link[0])]
+    while queue:
+        nid = queue.pop(0)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        node = _node(prompt, nid)
+        if not node or node.get("class_type") in SAMPLER_CLASSES:
+            continue
+        ins = node.get("inputs", {})
+        if key in ins:
+            return node
+        for v in ins.values():
+            if _is_link(v):
+                queue.append(str(v[0]))
+    return {}
+
+
+def _literal(node, name):
+    v = node.get("inputs", {}).get(name)
+    return None if _is_link(v) else v
+
+
+def _first(*values):
+    return next((v for v in values if v is not None), None)
+
+
+def _read_sampler_fields(prompt, sampler, holder, r):
     ins = sampler.get("inputs", {})
+    sched = _settings_node(prompt, ins.get("sigmas"), "steps")
+    select = _settings_node(prompt, ins.get("sampler"), "sampler_name")
+    noise = _settings_node(prompt, ins.get("noise"), "noise_seed")
 
-    def lit(name):
-        v = ins.get(name)
-        return None if _is_link(v) else v
-
-    r.steps = lit("steps")
-    r.cfg = lit("cfg")
-    r.seed = lit("seed") if lit("seed") is not None else lit("noise_seed")
-    r.sampler_name = lit("sampler_name")
-    r.scheduler = lit("scheduler")
-    r.denoise = lit("denoise")
+    cfg_in = _guider_inputs(holder)[2]
+    r.steps = _first(_literal(sampler, "steps"), _literal(sched, "steps"))
+    r.cfg = _literal(holder, cfg_in) if cfg_in else None
+    r.seed = _first(_literal(sampler, "seed"), _literal(sampler, "noise_seed"), _literal(noise, "noise_seed"))
+    r.sampler_name = _first(_literal(sampler, "sampler_name"), _literal(select, "sampler_name"))
+    r.scheduler = _first(_literal(sampler, "scheduler"), _literal(sched, "scheduler"))
+    r.denoise = _first(_literal(sampler, "denoise"), _literal(sched, "denoise"))
     for f in ("steps", "cfg", "sampler_name"):
-        if getattr(r, f) is None:
+        if getattr(r, f) is None and not (f == "cfg" and cfg_in is None):  # a guider without CFG has none
             r.unresolved.append(f)
 
 
@@ -236,8 +294,8 @@ def _resolve_text(prompt, clip_node):
     return "", False
 
 
-def _resolve_conditioning_text(prompt, sampler, which):
-    link = sampler.get("inputs", {}).get(which)
+def _resolve_conditioning_text(prompt, holder, which, name):
+    link = holder.get("inputs", {}).get(name)
     if not _is_link(link):
         return "", False
     _cid, clip, zeroed = _find_clip_encode(prompt, str(link[0]), which)
@@ -246,9 +304,13 @@ def _resolve_conditioning_text(prompt, sampler, which):
     return _resolve_text(prompt, clip)
 
 
-def _resolve_prompts(prompt, sampler, r):
-    r.positive, ok_p = _resolve_conditioning_text(prompt, sampler, "positive")
-    r.negative, ok_n = _resolve_conditioning_text(prompt, sampler, "negative")
+def _resolve_prompts(prompt, holder, r):
+    pos_in, neg_in, _cfg_in = _guider_inputs(holder)
+    r.positive, ok_p = _resolve_conditioning_text(prompt, holder, "positive", pos_in)
+    if neg_in is None:  # a guider without CFG (BasicGuider) has no negative at all
+        r.negative, ok_n = "", True
+    else:
+        r.negative, ok_n = _resolve_conditioning_text(prompt, holder, "negative", neg_in)
     if not ok_p:
         r.unresolved.append("positive")
     if not ok_n:
@@ -259,8 +321,8 @@ def _stem(name):
     return os.path.splitext(os.path.basename(str(name).replace("\\", "/")))[0]
 
 
-def _trace_model_chain(prompt, sampler, r):
-    model = sampler.get("inputs", {}).get("model")
+def _trace_model_chain(prompt, holder, r):
+    model = holder.get("inputs", {}).get("model")
     nid = str(model[0]) if _is_link(model) else None
     seen = set()
     while nid and nid not in seen:
@@ -317,7 +379,8 @@ def trace(prompt, node_id):
         r.unresolved.append("sampler")
         return r
 
-    _read_sampler_fields(sampler, r)
-    _resolve_prompts(prompt, sampler, r)
-    _trace_model_chain(prompt, sampler, r)
+    holder = _guider(prompt, sampler)
+    _read_sampler_fields(prompt, sampler, holder, r)
+    _resolve_prompts(prompt, holder, r)
+    _trace_model_chain(prompt, holder, r)
     return r

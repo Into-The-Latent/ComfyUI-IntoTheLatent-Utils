@@ -8,7 +8,7 @@
  * Python tracer — the two are a mirror pair, like parsePrompts <-> _parse_prompts.
  */
 import { chainCallback } from "./utility.js";
-import { SAMPLER_CLASSES, inputLink, originNode, findClipEncode } from "./civitai_trace.js";
+import { SAMPLER_CLASSES, inputLink, originNode, widget, literal, findClipEncode, guiderOf, settingsNode } from "./civitai_trace.js";
 const { app } = window.comfyAPI.app;
 
 const NODE_IDS = ["ITLSaveCivitaiMetadata", "ITLSaveCivitaiMetadataAdvanced"];
@@ -27,9 +27,6 @@ const POWER_LORA_CLASSES = new Set(["Power Lora Loader (rgthree)"]);
 const LORA_STACK_CLASSES = new Set(["Lora Loader Stack (rgthree)"]);
 const BATCH_CLASS = "ITLPromptBatch";
 
-function widget(node, name) {
-  return node.widgets?.find((w) => w.name === name)?.value;
-}
 const stem = (s) => String(s).replace(/\\/g, "/").split("/").pop().replace(/\.[^.]+$/, "");
 
 // Enabled loras from a live rgthree Power Lora Loader node, in listed order. Each lora row widget
@@ -139,15 +136,26 @@ function traceLive(node) {
   }
   if (!sampler) { r.unresolved.push("sampler"); return r; }
 
-  r.steps = widget(sampler, "steps");
-  r.cfg = widget(sampler, "cfg");
-  r.seed = widget(sampler, "seed") ?? widget(sampler, "noise_seed");
-  r.sampler_name = widget(sampler, "sampler_name");
-  r.scheduler = widget(sampler, "scheduler");
-  for (const f of ["steps", "cfg", "sampler_name"]) if (r[f] == null) r.unresolved.push(f);
+  // SamplerCustomAdvanced: prompts, cfg and model sit on its guider; the other settings on the nodes wired
+  // into `sampler` / `sigmas` / `noise` (mirrors tracer._read_sampler_fields).
+  const { holder, names } = guiderOf(sampler);
+  const [posIn, negIn, cfgIn] = names;
+  const sched = settingsNode(sampler, "sigmas", "steps");
+  const select = settingsNode(sampler, "sampler", "sampler_name");
+  const noise = settingsNode(sampler, "noise", "noise_seed");
+  r.steps = literal(sampler, "steps") ?? literal(sched, "steps");
+  r.cfg = cfgIn ? literal(holder, cfgIn) : null;
+  r.no_cfg = !cfgIn; // e.g. BasicGuider: runs without CFG
+  r.seed = literal(sampler, "seed") ?? literal(sampler, "noise_seed") ?? literal(noise, "noise_seed");
+  r.sampler_name = literal(sampler, "sampler_name") ?? literal(select, "sampler_name");
+  r.scheduler = literal(sampler, "scheduler") ?? literal(sched, "scheduler");
+  for (const f of ["steps", "cfg", "sampler_name"]) {
+    if (r[f] == null && !(f === "cfg" && !cfgIn)) r.unresolved.push(f); // a guider without CFG has none
+  }
 
-  for (const which of ["positive", "negative"]) {
-    const cond = originNode(sampler, which);
+  for (const [which, name] of [["positive", posIn], ["negative", negIn]]) {
+    if (!name) continue; // a guider without CFG (BasicGuider) has no negative at all
+    const cond = originNode(holder, name);
     const { clip, zeroed } = cond ? findClipEncode(cond, which) : { clip: null, zeroed: false };
     const res = clip ? resolveClipText(clip) : { text: "", ok: zeroed };
     r[which] = res.text;
@@ -155,7 +163,7 @@ function traceLive(node) {
   }
 
   // Model chain: walk model links back through LoraLoaders to the checkpoint.
-  let cur = originNode(sampler, "model");
+  let cur = originNode(holder, "model");
   const seen = new Set();
   while (cur && !seen.has(cur.id)) {
     seen.add(cur.id);
@@ -217,7 +225,7 @@ function renderPreview(el, r) {
   el.innerHTML =
     `<span class="pos">positive</span>: ${escapeHtml(r.positive) || "(empty)"}\n` +
     `<span class="neg">negative</span>: ${escapeHtml(r.negative) || "(empty)"}\n` +
-    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.cfg)} · ` +
+    `<span class="k">steps</span> ${escapeHtml(r.steps)} · <span class="k">cfg</span> ${escapeHtml(r.no_cfg ? "none" : r.cfg)} · ` +
     `<span class="k">sampler</span> ${escapeHtml(r.sampler_name)}/${escapeHtml(r.scheduler)} · <span class="k">seed</span> ${escapeHtml(r.seed)}\n` +
     `<span class="k">model</span> ${escapeHtml(r.model_name ?? "(?)")} · <span class="k">loras</span> ${loras}\n` +
     `<span class="k">size</span> from image at run · hashes computed on save` +

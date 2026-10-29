@@ -3,7 +3,7 @@
 // (not wired into pytest on purpose: spawning a process from a published .py is something the registry scanner
 // can flag - see test_no_python_file_trips_the_registry_env_or_network_rules).
 import assert from "node:assert/strict";
-import { findClipEncode } from "../../web/js/civitai_trace.js";
+import { findClipEncode, guiderOf, settingsNode, literal } from "../../web/js/civitai_trace.js";
 
 // Fake LiteGraph graph. spec: {id: [type, {input: originId | [originId, slot] | null}, extra]}.
 function graph(spec) {
@@ -104,6 +104,69 @@ t("a zero-out beside a CLIP-fed encoder we can't read stays unresolved", () => {
   const g = graph({ ...ENC, z: ["ConditioningZeroOut", { conditioning: "pos" }],
     wc: ["ImpactWildcardEncode", { clip: "ckpt" }], c: ["ConditioningCombine", { conditioning_1: "z", conditioning_2: "wc" }] });
   assert.equal(walk(g, "c", "negative"), "unresolved");
+});
+
+// --- modular samplers (SamplerCustomAdvanced / SamplerCustom) ---
+const W = (o) => ({ widgets: Object.entries(o).map(([name, value]) => ({ name, value })) });
+const flux = (guider) => graph({ ...ENC, g: guider,
+  sel: ["KSamplerSelect", {}, W({ sampler_name: "euler" })],
+  sch: ["BasicScheduler", { model: "ckpt" }, W({ scheduler: "simple", steps: 8, denoise: 1 })],
+  split: ["SplitSigmas", { sigmas: "sch" }, W({ step: 4 })],
+  noise: ["RandomNoise", {}, W({ noise_seed: 42 })],
+  k: ["SamplerCustomAdvanced", { noise: "noise", guider: "g", sampler: "sel", sigmas: ["split", 1], latent_image: null }] });
+
+t("SamplerCustomAdvanced: the guider holds the prompts, cfg and model", () => {
+  const g = flux(["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })]);
+  const { holder, names } = guiderOf(g.k);
+  assert.equal(holder.id, "g");
+  assert.deepEqual(names, ["positive", "negative", "cfg"]);
+  assert.deepEqual(guiderOf(graph(ENC).pos).names, ["positive", "negative", "cfg"]); // no guider: the sampler
+  assert.equal(guiderOf(graph(ENC).pos).holder.id, "pos");
+});
+
+t("BasicGuider has no negative and no cfg; DualCFGGuider uses cond1 / cfg_conds", () => {
+  assert.deepEqual(guiderOf(flux(["BasicGuider", { model: "ckpt", conditioning: "pos" }]).k).names, ["conditioning", null, null]);
+  assert.deepEqual(guiderOf(flux(["DualCFGGuider", { model: "ckpt", cond1: "pos", cond2: "pos", negative: "neg" }]).k).names,
+    ["cond1", "negative", "cfg_cond2_negative"]);
+});
+
+t("settings are read from the nodes wired into sampler / sigmas / noise", () => {
+  const g = flux(["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })]);
+  assert.equal(settingsNode(g.k, "sampler", "sampler_name").id, "sel");
+  assert.equal(settingsNode(g.k, "sigmas", "steps").id, "sch");       // through SplitSigmas
+  assert.equal(settingsNode(g.k, "noise", "noise_seed").id, "noise");
+  assert.equal(settingsNode(g.k, "latent_image", "steps"), null);     // unwired
+});
+
+t("SplitSigmasDenoise is passed: its denoise is a split point, the scheduler holds the settings", () => {
+  const g = graph({ sch: ["BasicScheduler", {}, W({ scheduler: "simple", steps: 8, denoise: 1 })],
+    sd: ["SplitSigmasDenoise", { sigmas: "sch" }, W({ denoise: 0.3 })], k: ["SamplerCustomAdvanced", { sigmas: ["sd", 1] }] });
+  assert.equal(settingsNode(g.k, "sigmas", "steps").id, "sch");
+});
+
+t("the settings walk never reads past a sampler", () => {
+  const g = graph({ k1: ["KSampler", {}, W({ steps: 30 })], x: ["SomeSigmas", { from: "k1" }], k: ["SamplerCustom", { sigmas: "x" }] });
+  assert.equal(settingsNode(g.k, "sigmas", "steps"), null);
+});
+
+t("a widget whose input is wired is not a literal (the API prompt has a link there)", () => {
+  const g = graph({ seed: ["Seed (rgthree)", {}, W({ seed: 7 })], noise: ["RandomNoise", { noise_seed: "seed" }, W({ noise_seed: 0 })] });
+  assert.equal(literal(g.noise, "noise_seed"), null);
+  assert.equal(literal(g.seed, "seed"), 7);
+  // A legacy PrimitiveNode is virtual: the API prompt holds its value, and the frontend syncs it into the widget.
+  const p = graph({ prim: ["PrimitiveNode", {}, { isVirtualNode: true, ...W({ value: 9 }) }],
+    rr: ["Reroute", { "": "prim" }, { isVirtualNode: true }], k: ["KSampler", { seed: "rr" }, W({ seed: 9 })] });
+  assert.equal(literal(p.k, "seed"), 9);
+  // Inside a subgraph a promoted widget's link starts at the SubgraphInput, which getNodeById can't find:
+  // keep the widget value, as before (the flattened API prompt carries the literal).
+  const sg = graph({ k: ["KSampler", { steps: "subgraph-input" }, W({ steps: 20 })] });
+  assert.equal(literal(sg.k, "steps"), 20);
+});
+
+t("legacy Reroute nodes are passed through, like the API prompt", () => {
+  const r = graph({ ...ENC, g: ["CFGGuider", { model: "ckpt", positive: "pos", negative: "neg" }, W({ cfg: 3.5 })],
+    rr: ["Reroute", { "": "g" }], rr2: ["Reroute", { "": "rr" }], k: ["SamplerCustomAdvanced", { guider: "rr2" }] });
+  assert.equal(guiderOf(r.k).holder.id, "g");
 });
 
 console.log(`${n} checks passed`);
