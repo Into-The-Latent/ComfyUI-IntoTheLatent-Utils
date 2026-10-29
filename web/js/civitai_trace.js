@@ -52,6 +52,18 @@ export const GUIDER_INPUTS = {
   BasicGuider: ["conditioning", null, null],
 };
 const DEFAULT_GUIDER_INPUTS = ["positive", "negative", "cfg"];
+// Mirror of tracer.SAMPLER_NODE_NAMES / SCHEDULER_NODE_NAMES: core nodes that say what runs by their class.
+export const SAMPLER_NODE_NAMES = {
+  SamplerEulerAncestral: "euler_ancestral", SamplerEulerAncestralCFGPP: "euler_ancestral_cfg_pp",
+  SamplerEulerCFGpp: "euler_cfg_pp", SamplerLMS: "lms", SamplerDPMPP_2S_Ancestral: "dpmpp_2s_ancestral",
+  SamplerDPMPP_SDE: "dpmpp_sde", SamplerDPMPP_2M_SDE: "dpmpp_2m_sde", SamplerDPMPP_3M_SDE: "dpmpp_3m_sde",
+  SamplerDPMAdaptative: "dpm_adaptive", SamplerER_SDE: "er_sde", SamplerSASolver: "sa_solver",
+  SamplerSEEDS2: "seeds_2", SamplerLCM: "lcm",
+};
+export const SCHEDULER_NODE_NAMES = {
+  KarrasScheduler: "karras", ExponentialScheduler: "exponential", PolyexponentialScheduler: "polyexponential",
+  LaplaceScheduler: "laplace", BetaSamplingScheduler: "beta", AlignYourStepsScheduler: "align_your_steps",
+};
 
 // Mirror of tracer._guider: the node holding the prompts, cfg and model (SamplerCustomAdvanced's guider,
 // else the sampler itself), with its [positive, negative, cfg] names.
@@ -61,10 +73,10 @@ export function guiderOf(sampler) {
 }
 
 // Mirror of tracer._settings_node: BFS back from `node`'s input `name` to the nearest node that has a `key`
-// widget or input: KSamplerSelect behind `sampler`, the scheduler behind `sigmas` (steps), RandomNoise behind
-// `noise`. Its other fields are read from it too (SplitSigmasDenoise's own denoise is a split point, not the
+// widget or input, or is one of `classes`: KSamplerSelect / a dedicated sampler node behind `sampler`, the
+// scheduler behind `sigmas` (steps), RandomNoise behind `noise`. Its other fields are read from it too (SplitSigmasDenoise's own denoise is a split point, not the
 // scheduler's). Never reads past a sampler.
-export function settingsNode(node, name, key) {
+export function settingsNode(node, name, key, classes = {}) {
   const seen = new Set();
   const queue = [originNode(node, name)];
   while (queue.length) {
@@ -73,9 +85,23 @@ export function settingsNode(node, name, key) {
     seen.add(n.id);
     if (SAMPLER_CLASSES.has(n.comfyClass || n.type)) continue;
     if (n.widgets?.some((w) => w.name === key) || (n.inputs || []).some((i) => i.name === key)) return n;
+    if (Object.hasOwn(classes, n.comfyClass || n.type)) return n;
     for (const inp of n.inputs || []) queue.push(originNode(n, inp.name));
   }
   return null;
+}
+
+// Mirror of tracer._read_sampler_fields for sampler_name / scheduler: the sampler's own widget, else the node
+// behind `sampler` / `sigmas` (its widget, or its class for the dedicated nodes).
+export function samplerName(sampler) {
+  const select = settingsNode(sampler, "sampler", "sampler_name", SAMPLER_NODE_NAMES);
+  return literal(sampler, "sampler_name") ?? literal(select, "sampler_name") ??
+    (select ? SAMPLER_NODE_NAMES[select.comfyClass || select.type] ?? null : null);
+}
+export function schedulerName(sampler) {
+  const sched = settingsNode(sampler, "sigmas", "steps");
+  return literal(sampler, "scheduler") ?? literal(sched, "scheduler") ??
+    (sched ? SCHEDULER_NODE_NAMES[sched.comfyClass || sched.type] ?? null : null);
 }
 
 const BYPASSED = 4; // LiteGraph node mode: the API prompt drops the node and wires its input through
