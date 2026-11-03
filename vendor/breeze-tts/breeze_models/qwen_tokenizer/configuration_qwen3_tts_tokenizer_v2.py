@@ -17,7 +17,7 @@
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
 
-from transformers import MimiConfig
+import math
 
 
 logger = logging.get_logger(__name__)
@@ -121,6 +121,94 @@ class Qwen3TTSTokenizerV2DecoderConfig(PretrainedConfig):
         return ["sliding_attention"] * self.num_hidden_layers
 
 
+class Qwen3TTSTokenizerV2EncoderConfig(PretrainedConfig):
+    """Settings of the audio encoder, in the field names of the checkpoint's ``encoder_config``.
+
+    The defaults are that checkpoint's values. This replaces transformers' ``MimiConfig``, whose
+    fields moved with the Mimi refactor in transformers 5.21; see ``audio_encoder.py``.
+    """
+
+    model_type = "qwen3_tts_tokenizer_12hz_encoder"
+
+    def __init__(
+        self,
+        sampling_rate=24000,
+        audio_channels=1,
+        hidden_size=512,
+        num_filters=64,
+        num_residual_layers=1,
+        upsampling_ratios=None,
+        kernel_size=7,
+        last_kernel_size=3,
+        residual_kernel_size=3,
+        dilation_growth_rate=2,
+        use_causal_conv=True,
+        pad_mode="constant",
+        compress=2,
+        use_conv_shortcut=False,
+        hidden_act="gelu",
+        intermediate_size=2048,
+        num_hidden_layers=8,
+        num_attention_heads=8,
+        num_key_value_heads=8,
+        head_dim=64,
+        norm_eps=1e-5,
+        rope_theta=10000.0,
+        sliding_window=250,
+        attention_bias=False,
+        attention_dropout=0.0,
+        layer_scale_initial_scale=0.01,
+        num_quantizers=32,
+        num_semantic_quantizers=1,
+        codebook_size=2048,
+        codebook_dim=256,
+        vector_quantization_hidden_dimension=256,
+        _frame_rate=12.5,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.sampling_rate = sampling_rate
+        self.audio_channels = audio_channels
+        self.hidden_size = hidden_size
+        self.num_filters = num_filters
+        self.num_residual_layers = num_residual_layers
+        self.upsampling_ratios = upsampling_ratios if upsampling_ratios is not None else [8, 6, 5, 4]
+        self.kernel_size = kernel_size
+        self.last_kernel_size = last_kernel_size
+        self.residual_kernel_size = residual_kernel_size
+        self.dilation_growth_rate = dilation_growth_rate
+        self.use_causal_conv = use_causal_conv
+        self.pad_mode = pad_mode
+        self.compress = compress
+        self.use_conv_shortcut = use_conv_shortcut
+        self.hidden_act = hidden_act
+        self.intermediate_size = intermediate_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.head_dim = head_dim
+        self.norm_eps = norm_eps
+        self.rope_theta = rope_theta
+        self.sliding_window = sliding_window
+        self.attention_bias = attention_bias
+        self.attention_dropout = attention_dropout
+        self.layer_scale_initial_scale = layer_scale_initial_scale
+        self.num_quantizers = num_quantizers
+        self.num_semantic_quantizers = num_semantic_quantizers
+        self.codebook_size = codebook_size
+        self.codebook_dim = codebook_dim
+        self.vector_quantization_hidden_dimension = vector_quantization_hidden_dimension
+        self._frame_rate = _frame_rate
+
+    @property
+    def frame_rate(self) -> float:
+        return self._frame_rate
+
+    @property
+    def encodec_frame_rate(self) -> int:
+        return math.ceil(self.sampling_rate / math.prod(self.upsampling_ratios))
+
+
 class Qwen3TTSTokenizerV2Config(PretrainedConfig):
     """
     This is the configuration class to store the configuration of a [`Qwen3TTSTokenizerV2Config`]. It is used to instantiate a Qwen3TTSTokenizerV2Model
@@ -136,7 +224,7 @@ class Qwen3TTSTokenizerV2Config(PretrainedConfig):
 
     model_type = "qwen3_tts_tokenizer_12hz"
     sub_configs = {
-        "encoder_config": MimiConfig,
+        "encoder_config": Qwen3TTSTokenizerV2EncoderConfig,
         "decoder_config": Qwen3TTSTokenizerV2DecoderConfig,
     }
 
@@ -159,7 +247,7 @@ class Qwen3TTSTokenizerV2Config(PretrainedConfig):
             decoder_config = {}
             logger.info("decoder_config is None. Initializing decoder with default values")
 
-        self.encoder_config = MimiConfig(**encoder_config)
+        self.encoder_config = Qwen3TTSTokenizerV2EncoderConfig(**encoder_config)
         self.decoder_config = Qwen3TTSTokenizerV2DecoderConfig(**decoder_config)
 
         self.encoder_valid_num_quantizers = encoder_valid_num_quantizers
@@ -169,4 +257,4 @@ class Qwen3TTSTokenizerV2Config(PretrainedConfig):
         self.encode_downsample_rate = encode_downsample_rate
 
 
-__all__ = ["Qwen3TTSTokenizerV2Config", "Qwen3TTSTokenizerV2DecoderConfig"]
+__all__ = ["Qwen3TTSTokenizerV2Config", "Qwen3TTSTokenizerV2DecoderConfig", "Qwen3TTSTokenizerV2EncoderConfig"]

@@ -23,7 +23,6 @@ import torch
 from torch import nn
 from torch.nn import Parameter
 from torch.nn import functional as F
-from transformers import MimiConfig, MimiModel
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.integrations import use_kernel_forward_from_hub
@@ -38,7 +37,8 @@ from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_u
 from ..rope_compat import resolve_rope_init_fn
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
-from transformers.utils import ModelOutput, auto_docstring, logging
+from transformers.utils import ModelOutput, logging
+from ..docstring_compat import auto_docstring
 from transformers.utils.deprecation import deprecate_kwarg
 def check_model_inputs(func=None):  # noqa: D401 — name kept so the diff vs upstream stays minimal
     """Compatibility shim. transformers >= 5 replaced the `check_model_inputs()` decorator
@@ -61,6 +61,7 @@ def check_model_inputs(func=None):  # noqa: D401 — name kept so the diff vs up
         return _decorate
     return _decorate(func)
 
+from .audio_encoder import Qwen3TTSAudioEncoder
 from .configuration_qwen3_tts_tokenizer_v2 import (
     Qwen3TTSTokenizerV2Config,
     Qwen3TTSTokenizerV2DecoderConfig,
@@ -921,18 +922,6 @@ class Qwen3TTSTokenizerV2Decoder(Qwen3TTSTokenizerV2DecoderPreTrainedModel):
         return torch.cat(wavs, dim=-1)
 
 
-class Qwen3TTSTokenizerV2Encoder(MimiModel):
-    def __init__(self, config: MimiConfig):
-        super().__init__(config)
-        self.config = config
-
-        self.upsample = None
-        self.decoder_transformer = None
-        self.decoder = None
-
-        self.post_init()
-
-
 @auto_docstring
 class Qwen3TTSTokenizerV2PreTrainedModel(PreTrainedModel):
     config: Qwen3TTSTokenizerV2Config
@@ -963,7 +952,7 @@ class Qwen3TTSTokenizerV2Model(Qwen3TTSTokenizerV2PreTrainedModel):
         self.decode_upsample_rate = config.decode_upsample_rate
         self.encode_downsample_rate = config.encode_downsample_rate
 
-        self.encoder = Qwen3TTSTokenizerV2Encoder._from_config(self.config.encoder_config)
+        self.encoder = Qwen3TTSAudioEncoder(self.config.encoder_config)
         self.decoder = Qwen3TTSTokenizerV2Decoder._from_config(self.config.decoder_config)
 
         self.post_init()
@@ -1003,9 +992,7 @@ class Qwen3TTSTokenizerV2Model(Qwen3TTSTokenizerV2PreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.return_dict
 
-        encoded_frames = self.encoder.encode(input_values=input_values.unsqueeze(1),
-                                             return_dict=True)
-        audio_codes = encoded_frames.audio_codes[:, :self.encoder_valid_num_quantizers]
+        audio_codes = self.encoder.encode(input_values.unsqueeze(1))[:, :self.encoder_valid_num_quantizers]
         audio_codes = [code[..., :-(-mask.sum() // self.encode_downsample_rate)].transpose(0, 1) for code, mask in zip(audio_codes, padding_mask)]
 
         if not return_dict:
