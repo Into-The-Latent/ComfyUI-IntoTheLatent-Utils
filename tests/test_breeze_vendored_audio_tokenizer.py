@@ -36,7 +36,7 @@ def test_audio_tokenizer_round_trip(qwen, tmp_path):
             "hidden_size": 32, "intermediate_size": 64, "num_filters": 4, "num_hidden_layers": 1,
             "num_attention_heads": 2, "num_key_value_heads": 2, "head_dim": 16, "codebook_size": 16,
             "codebook_dim": 8, "vector_quantization_hidden_dimension": 8, "num_quantizers": 4,
-            "sliding_window": 5, "_frame_rate": 12.5,
+            "sliding_window": 5, "_frame_rate": 12.5, "upsample_groups": 32,
         },
         decoder_config={
             "attention_bias": False, "attention_dropout": 0.0, "latent_dim": 64, "codebook_dim": 16,
