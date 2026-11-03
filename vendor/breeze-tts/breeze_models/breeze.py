@@ -43,10 +43,10 @@ from transformers.processing_utils import Unpack
 from transformers.utils import (
     ModelOutput,
     TransformersKwargs,
-    auto_docstring,
     can_return_tuple,
     logging,
 )
+from .docstring_compat import auto_docstring
 from transformers.utils.deprecation import deprecate_kwarg
 
 from .breeze_config import BreezeConfig, BreezeDepthDecoderConfig

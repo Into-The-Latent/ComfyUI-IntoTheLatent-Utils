@@ -72,6 +72,21 @@ def update_generation_config_for_breeze(
     vars(model.generation_config).update(generation_config)
 
 
+def _load_text_tokenizer(ckpt_dir: Path) -> AutoTokenizer:
+    try:
+        return AutoTokenizer.from_pretrained(
+            ckpt_dir,
+            fix_mistral_regex=False,
+        )
+    except TypeError as exc:
+        # transformers 5.3.0 forwards fix_mistral_regex to _patch_mistral_regex both by name and in
+        # **kwargs, so setting it fails with "got multiple values for keyword argument". Left unset
+        # it is None there, which applies no patch either: the same tokenizer, plus a warning.
+        if "fix_mistral_regex" not in str(exc):
+            raise
+        return AutoTokenizer.from_pretrained(ckpt_dir)
+
+
 def load_runtime(
     ckpt_dir: Path,
     *,
@@ -89,10 +104,7 @@ def load_runtime(
                 f"device={device} rank={rank} world_size={world_size} local_rank={local_rank} "
                 f"device_count={torch.cuda.device_count()}"
             ) from exc
-    tokenizer = AutoTokenizer.from_pretrained(
-        ckpt_dir,
-        fix_mistral_regex=False,
-    )
+    tokenizer = _load_text_tokenizer(ckpt_dir)
     model = BreezeForConditionalGeneration.from_pretrained(
         ckpt_dir,
         dtype=torch.bfloat16,
