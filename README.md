@@ -450,13 +450,17 @@ Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (
 Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
 `fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
 
+On transformers 4.57.x, reference clips over 10 seconds encode differently than in pack versions before
+1.14.1: the voice-clone encoder now applies the same attention window on every transformers version, as
+transformers 5 already did.
+
 **Freeing VRAM:** the loaded model stays resident between runs so repeated generations are fast, and
 ComfyUI's own model manager cannot evict it. If an image or video model runs later in the same
 workflow, turn on `unload_after` on the generate node (or wire the audio through **ITL Breeze TTS
 Unload**); the next Breeze node reloads the weights (~20 s).
 
 The model code ships inside this pack: `vendor/breeze-tts` is our fork of
-`breezeblue-ai/breeze-tts` (tag `comfyui-v1.8`, Apache-2.0; provenance and re-sync steps in
+`breezeblue-ai/breeze-tts` (tag `comfyui-v1.12`, Apache-2.0; provenance and re-sync steps in
 `vendor/breeze-tts/VENDORED.md`), which works with transformers 4.57–5.x. Nothing is installed from
 GitHub, so `git` is not needed and the Comfy registry's scanner accepts the pack (versions 1.8.0–1.9.1
 were hidden from ComfyUI Manager because they pulled the fork by URL). Requirements: transformers
