@@ -61,6 +61,10 @@ def test_audio_tokenizer_round_trip(qwen, tmp_path):
     saved = model.state_dict()
     for name, tensor in loaded.encoder.state_dict().items():
         assert torch.equal(tensor, saved[f"encoder.{name}"]), name
+    # load_runtime does this too: transformers 5 leaves the decoder's rotary buffer uninitialised.
+    from breeze_models.buffer_compat import reinit_computed_buffers
+
+    reinit_computed_buffers(loaded)
     audio = torch.randn(1, 4800, generator=torch.Generator().manual_seed(2))
     with torch.inference_mode():
         codes = loaded.encode(audio, torch.ones_like(audio, dtype=torch.long), return_dict=True).audio_codes[0]

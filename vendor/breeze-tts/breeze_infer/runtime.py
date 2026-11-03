@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,6 @@ from typing import Any
 import numpy as np
 import torch
 from transformers import AutoTokenizer
-from transformers.utils import logging as hf_logging
 
 from breeze_models.breeze import BreezeForConditionalGeneration
 from breeze_models.buffer_compat import reinit_computed_buffers
@@ -73,6 +73,11 @@ def update_generation_config_for_breeze(
     vars(model.generation_config).update(generation_config)
 
 
+class _HideFalseRegexWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "incorrect regex pattern" not in record.getMessage()
+
+
 def _load_text_tokenizer(ckpt_dir: Path) -> AutoTokenizer:
     try:
         return AutoTokenizer.from_pretrained(
@@ -86,12 +91,13 @@ def _load_text_tokenizer(ckpt_dir: Path) -> AutoTokenizer:
         # this non-Mistral tokenizer would tokenize incorrectly. That warning is false, so hide it.
         if "fix_mistral_regex" not in str(exc):
             raise
-    verbosity = hf_logging.get_verbosity()
-    hf_logging.set_verbosity_error()
+    logger = logging.getLogger("transformers.tokenization_utils_tokenizers")
+    false_warning = _HideFalseRegexWarning()
+    logger.addFilter(false_warning)
     try:
         return AutoTokenizer.from_pretrained(ckpt_dir)
     finally:
-        hf_logging.set_verbosity(verbosity)
+        logger.removeFilter(false_warning)
 
 
 def load_runtime(
