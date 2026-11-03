@@ -1,14 +1,24 @@
+# Copyright 2024 Kyutai, and the HuggingFace Inc. team. All rights reserved.
+# Modified 2026 by Into The Latent: reduced to whole-clip encoding and made independent of transformers.
+# SPDX-License-Identifier: Apache-2.0
 """The encoder half of the Qwen3-TTS audio tokenizer, as self-contained PyTorch.
 
 Voice cloning turns the reference clip into codes with this. The checkpoint stores it in the layout
 of transformers' Mimi model, and upstream subclassed that model. transformers is free to reorganise
 its model classes between releases and did so in 5.21: the old subclass then crashed at load, so
-this file owns the code instead. Nothing here imports a transformers model, so no release can break
-it. Only the path the tokenizer uses is kept: whole-clip encoding, without streaming or caches.
+this file owns the code instead. Nothing here imports a transformers model, so a change to those
+classes cannot reach it. Only the path the tokenizer uses is kept: whole-clip encoding, without
+streaming or caches.
 
-The arithmetic follows transformers' ``modeling_mimi.py`` (Apache-2.0, The Kyutai and HuggingFace
-teams) and the parameter names match the checkpoint. ``tests/test_qwen_audio_encoder.py`` compares
-the codes against transformers' model whenever it can still be taken apart.
+The arithmetic follows transformers' ``modeling_mimi.py`` and the parameter names match the
+checkpoint. The tests in the fork (Into-The-Latent/breeze-tts, ``tests/test_qwen_audio_encoder.py``)
+compare the codes against transformers' model whenever it can still be taken apart.
+
+The attention window is deliberately the same on every transformers version: each frame sees
+``sliding_window`` frames, as the config says and as transformers 5 does. transformers 4.57 ignored
+that setting and used the full context, so on 4.57 reference clips over 10 seconds now encode
+differently than they did with the subclass. Round trips of generated speech through the
+checkpoint's decoder came out closer to the input with the window on 15 of 16 clips over 10 seconds.
 
 Computed values live in plain attributes or are built per call rather than in non-persistent
 buffers: transformers 5 leaves those uninitialised after ``from_pretrained`` (see buffer_compat).

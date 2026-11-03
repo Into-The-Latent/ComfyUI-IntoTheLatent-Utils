@@ -65,7 +65,9 @@ class Qwen3TTSTokenizer:
                 HuggingFace repo id or local directory.
             **kwargs (Any):
                 Forwarded to `AutoModel.from_pretrained(...)` directly.
-                Typical examples: device_map="cuda:0", dtype=torch.bfloat16, attn_implementation="eager".
+                Typical examples: dtype=torch.bfloat16, attn_implementation="eager". Do not pass device_map:
+                it needs the optional accelerate package. Load, then call `tok.model.to(device)` and set
+                `tok.device = tok.model.device`, as breeze_infer.runtime.load_runtime does.
 
         Returns:
             Qwen3TTSTokenizer:

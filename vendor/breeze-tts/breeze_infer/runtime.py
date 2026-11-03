@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import torch
 from transformers import AutoTokenizer
+from transformers.utils import logging as hf_logging
 
 from breeze_models.breeze import BreezeForConditionalGeneration
 from breeze_models.buffer_compat import reinit_computed_buffers
@@ -81,10 +82,16 @@ def _load_text_tokenizer(ckpt_dir: Path) -> AutoTokenizer:
     except TypeError as exc:
         # transformers 5.3.0 forwards fix_mistral_regex to _patch_mistral_regex both by name and in
         # **kwargs, so setting it fails with "got multiple values for keyword argument". Left unset
-        # it is None there, which applies no patch either: the same tokenizer, plus a warning.
+        # it is None there, which applies no patch either: the same tokenizer, plus a warning that
+        # this non-Mistral tokenizer would tokenize incorrectly. That warning is false, so hide it.
         if "fix_mistral_regex" not in str(exc):
             raise
+    verbosity = hf_logging.get_verbosity()
+    hf_logging.set_verbosity_error()
+    try:
         return AutoTokenizer.from_pretrained(ckpt_dir)
+    finally:
+        hf_logging.set_verbosity(verbosity)
 
 
 def load_runtime(

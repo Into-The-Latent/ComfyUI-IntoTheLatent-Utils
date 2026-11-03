@@ -1197,7 +1197,7 @@ class BreezeGenerationMixin(GenerationMixin):
         ...     return_dict=True,
         ... ).to(torch_device)
 
-        >>> model = BreezeForConditionalGeneration.from_pretrained(model_id, device_map=torch_device)
+        >>> model = BreezeForConditionalGeneration.from_pretrained(model_id).to(torch_device)
         >>> audio = model.generate(**inputs, output_audio=True)
         >>> processor.save_audio(audio, "output.wav")
         ```
