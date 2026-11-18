@@ -446,9 +446,18 @@ Advanced nodes add `temperature`, `top_k`, `top_p`, `repetition_penalty`, `max_n
 Clone has no CFG — its prompt template has no negative branch.
 
 **First run** downloads the weights (~7.2 GB) from Hugging Face into `models/breeze_tts/Breeze-TTS-2/`.
-Needs an NVIDIA GPU: ~7.7 GiB VRAM, or ~14.4 GiB with the loader's `fast_path` (CUDA graphs).
-Changing Advanced sampling settings with `fast_path` on re-captures the graphs (a few seconds).
-`fast_path` only works with transformers 4.57.x; on transformers 5 the loader refuses it (leave it off).
+Needs an NVIDIA GPU with about 8.5 GiB of VRAM.
+
+**`fast_path`** on the loader is on by default. It replays the three stages that run once per audio frame
+(backbone, depth decoder, codec) as captured CUDA graphs instead of sending every small step from Python.
+The audio is the same: the sampled tokens are identical to the slow path for the same seed, and the memory
+use is the same. Measured on an RTX 5090 on Windows with transformers 5.15, Voice Direction with CFG: 0.55 s
+of work per second of speech instead of 9.6 s. The first clip after loading the model, or after a change of
+Advanced sampling settings, takes about 7 s longer while the graphs are captured. It runs under ComfyUI's
+default GPU memory allocator (cudaMallocAsync) and under the native one (`--disable-cuda-malloc`). Nothing is compiled, so
+no compiler is needed. It runs on transformers 4.57, 5.3 and 5.15 (tested on 5.3 and 5.15). Where the
+installed transformers cannot do it, the loader says so once in the console and uses the slow path.
+Workflows saved before this version keep their `fast_path` off: switch it on in the loader.
 
 On transformers 4.57.x, reference clips over 10 seconds encode differently than in pack versions before
 1.14.1: the voice-clone encoder now applies the same attention window on every transformers version, as
@@ -460,14 +469,13 @@ workflow, turn on `unload_after` on the generate node (or wire the audio through
 Unload**); the next Breeze node reloads the weights (~20 s).
 
 The model code ships inside this pack: `vendor/breeze-tts` is our fork of
-`breezeblue-ai/breeze-tts` (tag `comfyui-v1.12`, Apache-2.0; provenance and re-sync steps in
+`breezeblue-ai/breeze-tts` (tag `comfyui-v1.14`, Apache-2.0; provenance and re-sync steps in
 `vendor/breeze-tts/VENDORED.md`), which works with transformers 4.57–5.x. Nothing is installed from
 GitHub, so `git` is not needed and the Comfy registry's scanner accepts the pack (versions 1.8.0–1.9.1
 were hidden from ComfyUI Manager because they pulled the fork by URL). Requirements: transformers
 >= 4.57 (< 6), torch >= 2.7. **The install never upgrades or replaces torch:** the pack declares no
 torch dependency at all, so your existing CUDA build stays exactly as it is. pip may still move
-transformers within 4.57–5.x; if it lands on 5.x, `fast_path` is refused (see above), everything else
-works. If your torch is older than 2.7 the nodes say so at load time instead of pip swapping it for a
+transformers within 4.57–5.x, and the nodes work on all of it. If your torch is older than 2.7 the nodes say so at load time instead of pip swapping it for a
 CPU-only wheel. If the nodes report that Breeze's dependencies are missing, run ComfyUI Manager's
 *Try fix* on this pack.
 

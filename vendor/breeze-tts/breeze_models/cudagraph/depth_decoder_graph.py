@@ -34,6 +34,7 @@ import torch.nn.functional as F
 from transformers import StaticCache
 
 from ..cache_compat import lazy_init_static_layer
+from ..capture_stream import capture_stream
 from ..mask_compat import create_causal_mask
 
 from ..logits_process import mask_invalid_codec_token_logits
@@ -108,6 +109,7 @@ class DepthDecoderGraph:
         num_codebooks=None,
         codec_codebook_size=None,
         fast: bool = False,
+        compile: bool = True,
         debug: bool = False,
         batch_size=2,
         bucket_sizes: list[int] | None = None,
@@ -162,10 +164,13 @@ class DepthDecoderGraph:
         # (module forward still fires hooks, and F.linear works with fp32 input)
         self.codebooks_head.weight.data = self.codebooks_head.weight.data.float()
         self.fast = bool(fast)
+        # Compiled kernels are faster, and round differently from the eager ones. Without them the
+        # captured graph samples the same tokens as the eager loop.
+        self.compiled = self.fast and bool(compile)
 
         # The fast path uses one maintained compile configuration before
         # manual CUDA Graph capture. Compile modes are intentionally not public.
-        if self.fast:
+        if self.compiled:
             compile_mode = "default"
             _limit = self.num_layers * 4 + 16
             torch._dynamo.config.cache_size_limit = max(
@@ -790,8 +795,8 @@ class DepthDecoderGraph:
             self._full_loop()
         torch.cuda.synchronize(device=self.device)
 
-        # Capture
-        s = torch.cuda.Stream(device=self.device)
+        # Capture, on the stream every graph shares (see capture_stream.py)
+        s = capture_stream(self.device)
         s.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(s):
             self.graph = torch.cuda.CUDAGraph()
@@ -800,7 +805,7 @@ class DepthDecoderGraph:
             torch.cuda.synchronize(device=self.device)
 
             self.static_cache.reset()
-            with torch.cuda.graph(self.graph):
+            with torch.cuda.graph(self.graph, stream=s):
                 self._full_loop()
 
         torch.cuda.current_stream().wait_stream(s)
@@ -813,7 +818,7 @@ class DepthDecoderGraph:
     @torch.inference_mode()
     def capture(self, num_warmup=3):
         """Warmup and capture CUDA graphs for all bucket sizes."""
-        if self.fast:
+        if self.compiled:
             num_warmup = max(num_warmup, 8)
         print(
             f"Capturing depth decoder graphs for buckets={self.bucket_sizes} "

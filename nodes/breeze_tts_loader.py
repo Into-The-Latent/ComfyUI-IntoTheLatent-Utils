@@ -25,6 +25,7 @@ folder_paths.add_model_folder_path(_MODELS_SUBDIR, os.path.join(folder_paths.mod
 
 _CACHE: dict = {}          # cache_key -> BreezeHandle; at most one entry (one 7 GB model resident)
 _LICENSE_PRINTED = False
+_FAST_PATH_NOTE_PRINTED = False
 INSTALL_HINT = ("Breeze TTS's dependencies are not installed (transformers >= 4.57, < 6; numpy; librosa; "
                 "soundfile). Run ComfyUI Manager's 'Try fix' for ComfyUI-IntoTheLatent-Utils, or: "
                 "pip install -r custom_nodes/ComfyUI-IntoTheLatent-Utils/requirements.txt (the model code itself "
@@ -58,17 +59,29 @@ def ensure_snapshot(ckpt_dir: str) -> str:
     return ckpt_dir
 
 
-def _require_fast_path_support(fast_path: bool):
-    """fast_path captures CUDA graphs around transformers' StaticCache. transformers >= 5 advances
-    that cache from a Python integer, which a replayed graph never re-executes, so capture would
-    silently write every step into the same slot. Refuse instead of producing garbage."""
-    if not fast_path:
-        return
-    import transformers
-    major = int(str(transformers.__version__).split(".")[0])
-    if major >= 5:
-        raise RuntimeError("Breeze TTS fast_path needs transformers 4.57.x; this environment has "
-                           f"transformers {transformers.__version__}. Turn fast_path off.")
+def _fast_path_works() -> bool:
+    """Can this transformers run Breeze's CUDA graphs? The fork decides it from how the installed
+    StaticCache moves on, not from the version number (4.57, 5.3 and 5.15 all can)."""
+    ensure_on_path()
+    try:
+        from breeze_models.fast_streaming import static_cache_advances_on_device
+    except ImportError as e:
+        raise ImportError(INSTALL_HINT) from e
+    return static_cache_advances_on_device()
+
+
+def _effective_fast_path(fast_path: bool) -> bool:
+    """fast_path as it will run. Where the graphs cannot work the node says so once and runs the
+    slow path, which gives the same audio, instead of failing a workflow that only asked for speed."""
+    global _FAST_PATH_NOTE_PRINTED
+    if not fast_path or _fast_path_works():
+        return bool(fast_path)
+    if not _FAST_PATH_NOTE_PRINTED:
+        import transformers
+        print(f"[Breeze TTS] fast_path cannot run on transformers {transformers.__version__}: its StaticCache "
+              "counts in Python, which a replayed CUDA graph never does. Using the slow path, same audio.")
+        _FAST_PATH_NOTE_PRINTED = True
+    return False
 
 
 def _require_cuda():
@@ -98,7 +111,15 @@ def _runtime_factory(fast_path: bool):
         raise ImportError(INSTALL_HINT) from e
 
     def build(model, audio_tokenizer, tokenizer, kwargs):
-        config = FastStreamingConfig(fast_all=True if fast_path else None, **kwargs)
+        # The three stages that are replayed once per audio frame. As CUDA graphs without torch.compile
+        # they sample exactly the tokens of the slow path for the same seed, and need no compiler.
+        # Left slow on purpose: the text encoder and the backbone prefill run once per clip, save well
+        # under a second, and give another take for the same seed. cudnn_benchmark is a process-wide
+        # flag that costs ~18 GiB of VRAM for a moment on the first clip, and other nodes' models
+        # share this process.
+        config = FastStreamingConfig(fast_backbone_decode=fast_path, fast_depth_decoder=fast_path,
+                                     fast_codec=fast_path, compile_modules=False, cudnn_benchmark=False,
+                                     **kwargs)
         return FastBreezeStreamingRuntime(model, audio_tokenizer, config, tokenizer=tokenizer)
     return build
 
@@ -127,7 +148,7 @@ def unload():
 def load_handle(attention: str, fast_path: bool) -> BreezeHandle:
     global _LICENSE_PRINTED
     _require_cuda()
-    _require_fast_path_support(fast_path)
+    fast_path = _effective_fast_path(fast_path)
     ckpt_dir = ensure_snapshot(_snapshot_dir())
     key = cache_key(ckpt_dir, attention, fast_path)
     handle = _CACHE.get(key)
@@ -169,21 +190,22 @@ class ITLBreezeTTSLoader(io.ComfyNode):
 Loads Breeze TTS 2 (BreezeBlue — English + Chinese text-to-speech, voice clone / design / direction).
 
 First run downloads the weights (~7.2 GB) from Hugging Face into models/breeze_tts/Breeze-TTS-2/.
-Needs an NVIDIA GPU: ~7.7 GiB VRAM (fast_path off) or ~14.4 GiB (fast_path on).
+Needs an NVIDIA GPU with ~8.5 GiB VRAM, with fast_path on or off.
 Weights are research / non-commercial (BreezeBlue license).""",
             inputs=[
                 io.Combo.Input("attention", options=["sdpa", "eager"], default="sdpa",
                                tooltip="Attention kernel. 'sdpa' is faster; 'eager' is upstream's reference path."),
-                io.Boolean.Input("fast_path", default=False,
-                                 tooltip="Capture CUDA graphs for every stage (upstream --fast-all). Faster "
-                                         "generation, ~2x VRAM, longer first run. Changing sampling settings "
-                                         "re-captures."),
+                io.Boolean.Input("fast_path", default=True,
+                                 tooltip="Replay the per-frame stages (backbone, depth decoder, codec) as "
+                                         "captured CUDA graphs. Same audio for the same seed, same VRAM, "
+                                         "many times faster. The first clip after loading, or after a change "
+                                         "of sampling settings, takes ~7 s longer for the captures."),
             ],
             outputs=[BREEZE_TTS.Output(display_name="model")],
         )
 
     @classmethod
-    def execute(cls, attention="sdpa", fast_path=False) -> io.NodeOutput:
+    def execute(cls, attention="sdpa", fast_path=True) -> io.NodeOutput:
         return io.NodeOutput(load_handle(attention, fast_path).key)
 
 

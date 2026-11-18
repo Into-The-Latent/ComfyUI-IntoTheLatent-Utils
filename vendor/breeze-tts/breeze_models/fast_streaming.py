@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import time
 import uuid
@@ -39,6 +40,14 @@ class FastStreamingConfig:
     fast_backbone_decode: bool = False
     fast_depth_decoder: bool = False
     fast_codec: bool = False
+    # torch.compile on the depth decoder layers and on the codec's Snake activations before their
+    # graphs are captured. Off, the stages still replay captured CUDA graphs, only without compiled
+    # kernels: no compiler is needed, the first request starts minutes sooner, and the sampled tokens
+    # stay identical to the eager path for the same seed (compiled kernels round differently).
+    compile_modules: bool = True
+    # cudnn.benchmark for the fast codec, a process-wide switch. On, cuDNN tries every convolution
+    # algorithm on the first request, which takes about 18 GiB of extra GPU memory for a moment.
+    cudnn_benchmark: bool = True
     temperature: float | None = None
     top_k: int | None = None
     top_p: float | None = None
@@ -173,29 +182,46 @@ def _extract_audio_np(audio: torch.Tensor) -> np.ndarray:
     return audio.detach().float().cpu().numpy()
 
 
-def require_fast_path_support(config: FastStreamingConfig) -> None:
-    """Refuse the CUDA-graph fast path on transformers >= 5.
+def static_cache_advances_on_device() -> bool:
+    """Can a replayed CUDA graph move transformers' ``StaticLayer`` on to its next slot?
 
-    Capture wraps transformers' StaticCache. From 5.0 on, ``StaticLayer.update`` ignores
-    ``cache_kwargs["cache_position"]`` and advances the cache from a Python counter that a replayed
-    graph never re-executes, so every decode step would be written into the same slot and the audio
-    would be silently corrupt. The eager path is unaffected.
+    Two ways of writing into the cache work with the graphs here:
+
+    - ``StaticLayer.update`` writes where ``cache_kwargs["cache_position"]`` says (transformers 4.57,
+      and still 5.3). That is a tensor the graphs update before every replay.
+    - ``update`` no longer takes that argument and keeps the position itself, in
+      ``StaticLayer.cumulative_length``, as a tensor that is advanced in place (transformers 5.15).
+      The addition is then part of the captured graph, so every replay moves on by one step.
+
+    A position kept as a Python number would not work: a replay never runs that addition, and every
+    step would land in the same slot.
     """
-    if not config.any_stage_fast():
+    try:
+        from transformers.cache_utils import StaticLayer
+    except ImportError:  # pragma: no cover - before StaticCache had layers; positions are explicit
+        return True
+    if "cache_kwargs" in inspect.signature(StaticLayer.update).parameters:
+        return True
+    return isinstance(
+        getattr(StaticLayer(max_cache_len=1), "cumulative_length", None), torch.Tensor
+    )
+
+
+def require_fast_path_support(config: FastStreamingConfig) -> None:
+    """Refuse the CUDA-graph fast path where a replayed graph cannot move the StaticCache on.
+
+    See ``static_cache_advances_on_device``. The eager path is unaffected.
+    """
+    if not config.any_stage_fast() or static_cache_advances_on_device():
         return
     import transformers
 
-    version = str(transformers.__version__)
-    try:
-        major = int(version.split(".")[0])
-    except ValueError:  # pragma: no cover - unparseable dev version string
-        return
-    if major >= 5:
-        raise RuntimeError(
-            "Breeze fast streaming (CUDA graphs) needs transformers 4.57.x; this environment has "
-            f"transformers {version}, whose StaticCache advances from a Python counter that a "
-            "replayed graph never re-runs. Disable every fast_* stage (fast_all=False)."
-        )
+    raise RuntimeError(
+        "Breeze fast streaming (CUDA graphs) does not work with transformers "
+        f"{transformers.__version__}: its StaticCache advances from a Python counter that a replayed "
+        "graph never re-runs. The fast path is made for transformers 4.57 and tested with 5.3 and 5.15. "
+        "Otherwise disable every fast_* stage (fast_all=False)."
+    )
 
 
 class FastBreezeStreamingRuntime:
@@ -313,6 +339,7 @@ class FastBreezeStreamingRuntime:
                 num_codebooks=self.model.config.num_codebooks,
                 codec_codebook_size=self._codec_codebook_size,
                 fast=self._fast_depth_decoder,
+                compile=self.config.compile_modules,
                 batch_size=depth_bucket_sizes[0],
                 bucket_sizes=depth_bucket_sizes,
                 **depth_params,
@@ -342,6 +369,8 @@ class FastBreezeStreamingRuntime:
             num_lanes=1,
             max_active_reqs=1,
             fast=self._fast_codec,
+            compile_snakes=self.config.compile_modules,
+            cudnn_benchmark=self.config.cudnn_benchmark,
             device=self.device,
             dtype=codec_dtype,
         )
