@@ -41,6 +41,9 @@ class QwenStreamRuntimeConfig:
     num_lanes: int = 1
     max_active_reqs: int | None = None
     fast: bool = False
+    # Only read with fast. See FastStreamingConfig.compile_modules and .cudnn_benchmark.
+    compile_snakes: bool = True
+    cudnn_benchmark: bool = True
     lifecycle_assert_mode: str = "warn"
     tombstone_capacity: int = 1024
     device: torch.device | None = None
@@ -283,6 +286,7 @@ class MultiRequestStreamRuntime:
             raise ValueError("fast codec requires num_lanes=1 and max_active_reqs<=1")
         if (
             self.config.fast
+            and self.config.cudnn_benchmark
             and self.config.device is not None
             and self.config.device.type == "cuda"
         ):
@@ -412,7 +416,7 @@ class MultiRequestStreamRuntime:
         return int(observed_spc)
 
     def _compile_snakes(self) -> None:
-        if not self.config.fast:
+        if not self.config.fast or not self.config.compile_snakes:
             return
         torch._dynamo.config.recompile_limit = max(
             int(torch._dynamo.config.recompile_limit), 64

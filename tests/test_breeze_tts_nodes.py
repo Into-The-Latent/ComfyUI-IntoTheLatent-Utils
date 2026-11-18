@@ -230,11 +230,66 @@ def test_pack_registers_all_eight_breeze_nodes():
             del sys.modules[name]
 
 
-def test_fast_path_refused_on_transformers_5(monkeypatch):
-    import transformers
-    monkeypatch.setattr(transformers, "__version__", "5.15.0")
-    loader._require_fast_path_support(False)  # eager path always fine
-    with pytest.raises(RuntimeError, match="fast_path"):
-        loader._require_fast_path_support(True)
-    monkeypatch.setattr(transformers, "__version__", "4.57.3")
-    loader._require_fast_path_support(True)
+def test_fast_path_runs_slow_with_one_note_where_the_graphs_cannot_work(monkeypatch, capsys):
+    """fast_path is on by default, so an environment that cannot replay the graphs must still speak."""
+    monkeypatch.setattr(loader, "_FAST_PATH_NOTE_PRINTED", False)
+    monkeypatch.setattr(loader, "_fast_path_works", lambda: False)
+    assert loader._effective_fast_path(False) is False
+    assert capsys.readouterr().out == ""           # nothing to say when it was not asked for
+    assert loader._effective_fast_path(True) is False
+    assert loader._effective_fast_path(True) is False
+    assert capsys.readouterr().out.count("fast_path cannot run") == 1
+    monkeypatch.setattr(loader, "_fast_path_works", lambda: True)
+    assert loader._effective_fast_path(True) is True
+    assert loader._effective_fast_path(False) is False
+
+
+def test_fast_path_works_on_the_installed_transformers():
+    """Decided by the vendored fork from the real StaticCache, not from a version number."""
+    assert loader._fast_path_works() is True
+
+
+def test_load_handle_keys_the_model_by_the_path_that_really_runs(monkeypatch, tmp_path):
+    loader._CACHE.clear()
+    monkeypatch.setattr(loader, "_require_cuda", lambda: None)
+    monkeypatch.setattr(loader, "ensure_snapshot", lambda d: d)
+    monkeypatch.setattr(loader, "_snapshot_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(loader, "_load_pieces", lambda d, attention: ("tok", "model", "atok"))
+    built = []
+    monkeypatch.setattr(loader, "_runtime_factory", lambda fast_path: built.append(fast_path))
+    monkeypatch.setattr(loader, "_fast_path_works", lambda: False)
+    monkeypatch.setattr(loader, "_FAST_PATH_NOTE_PRINTED", True)
+    handle = loader.load_handle("sdpa", True)
+    assert handle.fast_path is False and built == [False]
+    assert loader.resolve_handle(handle.key) is handle      # the key leads back to the same model
+    loader._CACHE.clear()
+
+
+def test_fast_runtime_is_the_three_per_frame_stages_without_compiling(monkeypatch):
+    """These three, as plain CUDA graphs, sample the slow path's tokens for the same seed. The text
+    encoder and the prefill would give another take, torch.compile too, and cudnn.benchmark is a flag
+    of the whole ComfyUI process."""
+    from breeze_models import fast_streaming
+
+    seen = {}
+
+    class Runtime:
+        def __init__(self, model, audio_tokenizer, config, tokenizer=None):
+            seen["config"] = config
+
+    monkeypatch.setattr(fast_streaming, "FastBreezeStreamingRuntime", Runtime)
+    loader._runtime_factory(True)("model", "atok", "tok", core.DEFAULT_SAMPLING.fast_config_kwargs())
+    config = seen["config"]
+    assert [stage for stage in ("text_encoder", "backbone_prefill", "backbone_decode", "depth_decoder", "codec")
+            if config.stage_fast(stage)] == ["backbone_decode", "depth_decoder", "codec"]
+    assert config.compile_modules is False and config.cudnn_benchmark is False
+    assert config.max_new_tokens == 750 and config.max_seq_len == 1262
+
+    loader._runtime_factory(False)("model", "atok", "tok", core.DEFAULT_SAMPLING.fast_config_kwargs())
+    assert not seen["config"].any_stage_fast()
+
+
+def test_loader_node_has_the_fast_path_on_by_default():
+    schema = loader.ITLBreezeTTSLoader.define_schema()
+    fast = next(i for i in schema.inputs if i.id == "fast_path")
+    assert fast.default is True

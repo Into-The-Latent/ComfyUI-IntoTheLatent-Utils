@@ -92,6 +92,16 @@ class BackbonePrefillGraphCache:
         causal_mask.fill_(torch.finfo(causal_mask.dtype).min)
         causal_mask[:, 0].masked_fill_(allowed, 0.0)
 
+    def _rewind_cache(self) -> None:
+        """Start the next prefill at slot 0 of the decode StaticCache.
+
+        transformers 4.57 writes where ``cache_position`` says, so this only clears what the pass
+        overwrites anyway. transformers 5 keeps the write position inside the cache and adds to it
+        on every update, also inside a replayed graph, so without the rewind a second pass would be
+        written behind the first, and past the end of the cache.
+        """
+        self.backbone_graph.static_cache.reset()
+
     def _forward(
         self,
         inputs_embeds: torch.Tensor,
@@ -172,12 +182,14 @@ class BackbonePrefillGraphCache:
                 )
                 with torch.cuda.stream(capture_stream):
                     for _ in range(3):
+                        self._rewind_cache()
                         hidden_states, logits = self._forward(
                             static_embeds,
                             static_causal_mask,
                             static_positions,
                             cache_position,
                         )
+                    self._rewind_cache()
                 capture_stream.synchronize()
 
                 graph = torch.cuda.CUDAGraph()
@@ -215,6 +227,7 @@ class BackbonePrefillGraphCache:
                 record.position_ids,
             )
             self._update_causal_mask(record.attention_mask, record.causal_mask)
+            self._rewind_cache()
             current_stream = torch.cuda.current_stream(inputs_embeds.device)
             record.stream.wait_stream(current_stream)
             record.graph.replay()

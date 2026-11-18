@@ -108,6 +108,7 @@ class DepthDecoderGraph:
         num_codebooks=None,
         codec_codebook_size=None,
         fast: bool = False,
+        compile: bool = True,
         debug: bool = False,
         batch_size=2,
         bucket_sizes: list[int] | None = None,
@@ -162,10 +163,13 @@ class DepthDecoderGraph:
         # (module forward still fires hooks, and F.linear works with fp32 input)
         self.codebooks_head.weight.data = self.codebooks_head.weight.data.float()
         self.fast = bool(fast)
+        # Compiled kernels are faster, and round differently from the eager ones. Without them the
+        # captured graph samples the same tokens as the eager loop.
+        self.compiled = self.fast and bool(compile)
 
         # The fast path uses one maintained compile configuration before
         # manual CUDA Graph capture. Compile modes are intentionally not public.
-        if self.fast:
+        if self.compiled:
             compile_mode = "default"
             _limit = self.num_layers * 4 + 16
             torch._dynamo.config.cache_size_limit = max(
@@ -813,7 +817,7 @@ class DepthDecoderGraph:
     @torch.inference_mode()
     def capture(self, num_warmup=3):
         """Warmup and capture CUDA graphs for all bucket sizes."""
-        if self.fast:
+        if self.compiled:
             num_warmup = max(num_warmup, 8)
         print(
             f"Capturing depth decoder graphs for buckets={self.bucket_sizes} "
