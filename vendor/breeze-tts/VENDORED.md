@@ -8,8 +8,8 @@ BreezeBlue).
 | | |
 |---|---|
 | Source repo | https://github.com/Into-The-Latent/breeze-tts |
-| Tag | `comfyui-v1.13` |
-| Commit | `954485cec206b8a4501aca781a7054e38b71cbb7` |
+| Tag | `comfyui-v1.14` |
+| Commit | `059ec4b6b056b63082ae5c13cb1d406ebf83dd2b` |
 | License | Apache-2.0 (see `LICENSE` here; `breeze_models/qwen_tokenizer/NOTICE` covers the vendored Qwen tokenizer) |
 | Left out | `breeze_infer/api.py` (the fork's FastAPI server; not used by the nodes, needs fastapi/uvicorn) |
 

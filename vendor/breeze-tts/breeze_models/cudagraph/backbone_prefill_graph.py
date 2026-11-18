@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import torch
 
+from ..capture_stream import capture_stream as shared_capture_stream
+
 
 @dataclass
 class BackbonePrefillOutput:
@@ -176,7 +178,7 @@ class BackbonePrefillGraphCache:
                 )
                 self._update_causal_mask(static_mask, static_causal_mask)
 
-                capture_stream = torch.cuda.Stream(device=inputs_embeds.device)
+                capture_stream = shared_capture_stream(inputs_embeds.device)
                 capture_stream.wait_stream(
                     torch.cuda.current_stream(inputs_embeds.device)
                 )

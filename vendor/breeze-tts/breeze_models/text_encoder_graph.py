@@ -9,6 +9,8 @@ from typing import Any
 
 import torch
 
+from .capture_stream import capture_stream as shared_capture_stream
+
 
 @dataclass
 class _GraphRecord:
@@ -113,7 +115,7 @@ class TextEncoderGraphCache:
                 static_positions = torch.zeros_like(static_mask)
                 self._copy_inputs(segments, static_ids, static_mask, static_positions)
 
-                capture_stream = torch.cuda.Stream(device=device)
+                capture_stream = shared_capture_stream(device)
                 capture_stream.wait_stream(torch.cuda.current_stream(device))
                 with torch.cuda.stream(capture_stream):
                     for _ in range(3):

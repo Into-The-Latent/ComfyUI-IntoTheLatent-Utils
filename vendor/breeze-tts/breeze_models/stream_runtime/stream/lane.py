@@ -14,6 +14,7 @@ from ..core.compat import (
     Qwen3TTSTokenizerV2DecoderDecoderBlock,
     Qwen3TTSTokenizerV2DecoderDecoderResidualUnit,
 )
+from ...capture_stream import capture_stream as shared_capture_stream
 from .kv_cache import StaticShiftKVCache, make_fixed_attention_mask
 from .state import ConvStateBlock, RequestStateSlot, TransConvStateBlock
 from .workspace import ConvWorkspaceBlock, TransConvWorkspaceBlock, WorkspaceSlot
@@ -396,7 +397,7 @@ class ExecutionLane:
         device = self.codes_in_buf.device
         if device.type != "cuda":
             raise RuntimeError("codec CUDA Graph fast path requires CUDA")
-        capture_stream = torch.cuda.Stream(device=device)
+        capture_stream = shared_capture_stream(device)
         capture_stream.wait_stream(torch.cuda.current_stream(device))
         with torch.cuda.stream(capture_stream):
             for _ in range(max(1, warmup_rounds)):

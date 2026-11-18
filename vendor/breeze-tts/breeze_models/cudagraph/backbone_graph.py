@@ -18,6 +18,7 @@ import torch
 from transformers import StaticCache
 
 from ..cache_compat import cache_layer_kv, lazy_init_static_layer
+from ..capture_stream import capture_stream
 from ..mask_compat import create_causal_mask
 
 
@@ -307,13 +308,13 @@ class BackboneGraph:
         print("Capturing CUDA graph for backbone decode...")
         self.graph = torch.cuda.CUDAGraph()
 
-        s = torch.cuda.Stream(device=self.device)
+        s = capture_stream(self.device)
         s.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(s):
             self._decode_step()
             torch.cuda.synchronize(device=self.device)
 
-            with torch.cuda.graph(self.graph):
+            with torch.cuda.graph(self.graph, stream=s):
                 self._decode_step()
 
         torch.cuda.current_stream().wait_stream(s)

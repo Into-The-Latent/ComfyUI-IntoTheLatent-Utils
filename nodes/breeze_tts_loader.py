@@ -199,7 +199,7 @@ Weights are research / non-commercial (BreezeBlue license).""",
                                  tooltip="Replay the per-frame stages (backbone, depth decoder, codec) as "
                                          "captured CUDA graphs. Same audio for the same seed, same VRAM, "
                                          "many times faster. The first clip after loading, or after a change "
-                                         "of sampling settings, takes ~15 s longer for the captures."),
+                                         "of sampling settings, takes ~7 s longer for the captures."),
             ],
             outputs=[BREEZE_TTS.Output(display_name="model")],
         )

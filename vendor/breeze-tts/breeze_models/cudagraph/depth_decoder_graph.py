@@ -34,6 +34,7 @@ import torch.nn.functional as F
 from transformers import StaticCache
 
 from ..cache_compat import lazy_init_static_layer
+from ..capture_stream import capture_stream
 from ..mask_compat import create_causal_mask
 
 from ..logits_process import mask_invalid_codec_token_logits
@@ -794,8 +795,8 @@ class DepthDecoderGraph:
             self._full_loop()
         torch.cuda.synchronize(device=self.device)
 
-        # Capture
-        s = torch.cuda.Stream(device=self.device)
+        # Capture, on the stream every graph shares (see capture_stream.py)
+        s = capture_stream(self.device)
         s.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(s):
             self.graph = torch.cuda.CUDAGraph()
@@ -804,7 +805,7 @@ class DepthDecoderGraph:
             torch.cuda.synchronize(device=self.device)
 
             self.static_cache.reset()
-            with torch.cuda.graph(self.graph):
+            with torch.cuda.graph(self.graph, stream=s):
                 self._full_loop()
 
         torch.cuda.current_stream().wait_stream(s)
